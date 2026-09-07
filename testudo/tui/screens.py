@@ -71,7 +71,6 @@ class DashboardScreen(Screen):
         header = self.query_one(TestudoHeader)
         header.sim_time_active = self.app.sim_time_active
         header.paused = self.app.paused
-        header.live = self.app.data_source.is_live()
 
     def on_snapshot(self, snapshot: WatchSnapshot) -> None:
         self.sync_header()

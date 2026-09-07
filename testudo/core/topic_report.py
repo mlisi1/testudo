@@ -22,6 +22,7 @@ class TopicReport:
     msg_type: str
     tier: str  # "vitals" or "full"
     status: CheckStatus
+    rate_hz: float | None = None
 
 
 def liveness_status(vitals: TopicVitals, now: float, stale_after_seconds: float) -> CheckStatus | None:
@@ -74,7 +75,7 @@ def vitals_report(
     """
     liveness = liveness_status(vitals, now, stale_after_seconds)
     if liveness is not None:
-        return TopicReport(topic=topic_name, msg_type=msg_type, tier="vitals", status=liveness)
+        return TopicReport(topic=topic_name, msg_type=msg_type, tier="vitals", status=liveness, rate_hz=vitals.rate_hz())
     age = vitals.age_seconds(now)
     rate = vitals.rate_hz()
     values = vitals_values(vitals, age)
@@ -87,7 +88,7 @@ def vitals_report(
             message = f"rate {rate:.2f}Hz below configured threshold"
 
     status = CheckStatus(severity=severity, label="liveness", message=message, values=values)
-    return TopicReport(topic=topic_name, msg_type=msg_type, tier="vitals", status=status)
+    return TopicReport(topic=topic_name, msg_type=msg_type, tier="vitals", status=status, rate_hz=rate)
 
 
 def full_tier_report(
@@ -102,9 +103,9 @@ def full_tier_report(
     """Build a full-tier report: liveness verdict takes priority, else the (debounced) content status."""
     liveness = liveness_status(vitals, now, stale_after_seconds)
     if liveness is not None:
-        return TopicReport(topic=topic_name, msg_type=msg_type, tier="full", status=liveness)
+        return TopicReport(topic=topic_name, msg_type=msg_type, tier="full", status=liveness, rate_hz=vitals.rate_hz())
     status = debounced_status if debounced_status is not None else fallback_status
-    return TopicReport(topic=topic_name, msg_type=msg_type, tier="full", status=status)
+    return TopicReport(topic=topic_name, msg_type=msg_type, tier="full", status=status, rate_hz=vitals.rate_hz())
 
 
 def suppress_if_inactive(
@@ -128,4 +129,4 @@ def suppress_if_inactive(
         message=f"node '{owning_node}' is {state}; diagnostics suppressed",
         values={"lifecycle_state": state or ""},
     )
-    return TopicReport(topic=report.topic, msg_type=report.msg_type, tier=report.tier, status=status)
+    return TopicReport(topic=report.topic, msg_type=report.msg_type, tier=report.tier, status=status, rate_hz=report.rate_hz)

@@ -1,4 +1,4 @@
-"""Drill-down view: every topic within one selected category."""
+"""Topic Panel: every topic within one selected category."""
 from __future__ import annotations
 
 from testudo.core.topic_report import TopicReport
@@ -8,7 +8,7 @@ from testudo.tui.keybinds import NavDataTable
 #: Text capacity of the "Topic" column. A name longer than this scrolls
 #: back and forth (see `_advance_marquee`) rather than being hard-clipped
 #: or growing the column to fit -- keeping this narrow is what leaves room
-#: for Status/Message without a horizontal scrollbar.
+#: for Status/Hz without a horizontal scrollbar.
 TOPIC_COLUMN_WIDTH = 16
 
 #: How often the marquee shifts by one character.
@@ -33,12 +33,23 @@ def next_marquee_offset(text_length: int, width: int, offset: int, direction: in
     return offset, direction
 
 
+def format_rate(rate_hz: float | None) -> str:
+    """"12.3" Hz, or "-" when no rate is available yet (e.g. topic just appeared)."""
+    return f"{rate_hz:.1f}" if rate_hz is not None else "-"
+
+
 class TopicDetailTable(NavDataTable):
-    """One row per topic: name, status, message.
+    """One row per topic: name, status, publish rate.
 
     No "tier" column here -- it's shown in the detail pane's header line
     instead (`/topic  (msg_type, tier tier)`), freeing that width for
-    Topic/Status/Message, the three fields that matter for scanning a list.
+    Topic/Status/Hz, the fields that matter for scanning a list. The full
+    status message is only shown in the detail pane below, not here.
+
+    Hz comes straight from `TopicVitals.rate_hz()`, which is already
+    updated on every message arrival for every subscribed topic regardless
+    of tier or content-check decimation -- displaying it here is free, not
+    an extra measurement.
 
     See `CategorySummaryTable`'s docstring for why routine updates avoid
     `clear()` (it resets scroll position and cursor, reading as flicker on
@@ -60,12 +71,12 @@ class TopicDetailTable(NavDataTable):
     def on_mount(self) -> None:
         # Fixed widths, not auto (content-fit): an auto "Topic" column grows
         # to fit the single longest topic name it's ever shown, which was
-        # free to dominate the row and push Status/Message off-screen
+        # free to dominate the row and push the other columns off-screen
         # (needing a horizontal scroll to see them at all). The full,
         # untruncated message is always available in the detail pane below.
         self.add_column("Topic", key="topic", width=TOPIC_COLUMN_WIDTH)
         self.add_column("Status", key="status", width=8)
-        self.add_column("Message", key="message", width=32)
+        self.add_column("Hz", key="rate", width=6)
         self.set_interval(MARQUEE_INTERVAL_SECONDS, self._advance_marquee)
 
     @property
@@ -124,7 +135,7 @@ class TopicDetailTable(NavDataTable):
         offset = self._marquee_offset.get(report.topic, 0)
         self.update_cell(report.topic, "topic", marquee_window(report.topic, TOPIC_COLUMN_WIDTH, offset))
         self.update_cell(report.topic, "status", f"[{style}]{label}[/{style}]")
-        self.update_cell(report.topic, "message", report.status.message)
+        self.update_cell(report.topic, "rate", format_rate(report.rate_hz))
 
     def _advance_marquee(self) -> None:
         for topic in self._topic_order:

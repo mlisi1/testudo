@@ -34,6 +34,30 @@ def test_vitals_report_alive_without_rate_threshold_is_ok() -> None:
     assert report.status.message == "alive"
 
 
+def test_vitals_report_exposes_rate_hz_on_the_report_itself() -> None:
+    """Hz is surfaced as a top-level field, independent of whatever the
+    plugin/liveness status message happens to say -- this is what the
+    Topic Panel's Hz column reads."""
+    vitals = _vitals_with_messages(3, [0.0, 0.5, 1.0])  # 2 Hz
+    report = vitals_report("/x", "std_msgs/msg/String", vitals, now=1.0, stale_after_seconds=5.0)
+    assert report.rate_hz == 2.0
+
+
+def test_vitals_report_rate_hz_is_none_with_no_messages() -> None:
+    vitals = TopicVitals(topic="/x")
+    report = vitals_report("/x", "std_msgs/msg/String", vitals, now=10.0, stale_after_seconds=2.0)
+    assert report.rate_hz is None
+
+
+def test_full_tier_report_exposes_rate_hz_regardless_of_content_status() -> None:
+    vitals = _vitals_with_messages(3, [0.0, 0.5, 1.0])  # 2 Hz
+    debounced = CheckStatus(severity=Severity.WARN, label="plugin", message="debounced")
+    report = full_tier_report(
+        "/x", "t", vitals, debounced_status=debounced, fallback_status=debounced, now=1.0, stale_after_seconds=5.0
+    )
+    assert report.rate_hz == 2.0
+
+
 def test_vitals_report_rate_below_threshold_is_flagged() -> None:
     # Two messages 1s apart => 1 Hz, below both green(4.0) and orange(1.0)... actually 1.0<=orange -> WARN not ERROR.
     vitals = _vitals_with_messages(2, [0.0, 1.0])

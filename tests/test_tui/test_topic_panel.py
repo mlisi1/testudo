@@ -1,7 +1,15 @@
-"""Unit tests for TopicDetailTable's pure marquee-window logic."""
+"""Unit tests for TopicDetailTable's pure marquee-window and rate-formatting logic."""
 from __future__ import annotations
 
-from testudo.tui.widgets.topic_panel import marquee_window, next_marquee_offset
+from testudo.tui.widgets.topic_panel import format_rate, marquee_window, next_marquee_offset
+
+
+def test_format_rate_none_is_a_dash() -> None:
+    assert format_rate(None) == "-"
+
+
+def test_format_rate_formats_to_one_decimal() -> None:
+    assert format_rate(12.345) == "12.3"
 
 
 def test_marquee_window_returns_text_unchanged_when_it_fits() -> None:

@@ -41,7 +41,9 @@ covariance sanity, TF tree health) those tools don't cover out of the box.
 - **Hysteresis debouncing** so a single noisy sample doesn't flap a
   status, plus configurable **worst / weighted / both** severity
   aggregation.
-- **A live TUI** (`testudo watch`) — category summary, drill-down,
+- **A live TUI** (`testudo watch`) — four panes visible at once (status
+  bar, plugin panel, topic panel, detail panel), all updating as you move
+  the cursor rather than a list you drill into one entry at a time —
   filter, sort, pause, reset stats — and the same view for a finished
   bag (`testudo replay --watch`).
 - **Standard output.** Publishes `diagnostic_msgs/DiagnosticArray`,
@@ -63,11 +65,16 @@ $ testudo check
 [ERROR] 3 topic(s): OK=1, WARN=1, ERROR=1
 ```
 
-`testudo watch` shows the same data live: one line per category in the
-summary view (worst status, color-coded), `Enter` to drill down into a
-category's topics, `Enter` again for a topic's full detail, `Esc` back,
-`/` to filter, `s` to cycle sort, `p` to pause, `r` to reset accumulated
-stats, `?` for help.
+`testudo watch` shows the same data live, in four panes visible at once:
+a **status bar** (hostname, ROS distro, uptime, pause state), a **plugin
+panel** (one row per category with a per-severity icon+count breakdown),
+a **topic panel** (every topic in the highlighted category, with its
+status and publish rate in Hz), and a **detail panel** (the highlighted
+topic's full status). Moving the cursor — not pressing `Enter` — is what
+drives the other panes live; `Enter` switches focus between the plugin
+and topic panels, `Esc` refocuses the plugin panel (or clears an active
+filter), `/` to filter the focused panel, `s` to cycle its sort order,
+`p` to pause, `r` to reset accumulated stats, `?` for help.
 
 ## Requirements
 

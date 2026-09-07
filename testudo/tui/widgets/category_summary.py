@@ -1,8 +1,8 @@
-"""Summary view: one row per category (~ one row per plugin/check domain),
+"""Plugin Panel: one row per category (~ one row per plugin/check domain),
 worst-status colored, with a compact per-severity breakdown.
 
 137 topics won't fit one screen; this is the entry point, with drill-down
-into a category's individual topics handled by `topic_panel.py`.
+into a category's individual topics handled by the Topic Panel (`topic_panel.py`).
 """
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ class CategorySummaryTable(NavDataTable):
         # otherwise be free to push the others -- or the whole table --
         # wider than the pane, forcing a horizontal scroll to see the rest.
         self.add_column("Category", key="category", width=14)
-        self.add_column("Status", key="status", width=16)
+        self.add_column("Status", key="status", width=12)
 
     @property
     def sort_by_severity(self) -> bool:
