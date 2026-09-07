@@ -55,10 +55,18 @@ def subscribe_tf_watch(manager: "SubscriptionManager", topics_by_name: dict[str,
     from independently re-subscribing them -- /tf_static in particular
     isn't declared in `config.topics`, so the usual `related_topics`
     reservation never sees it.
+
+    Safe to call repeatedly (periodic rediscovery calls this every pass):
+    an already-actively-subscribed TF watch is left alone, while one
+    previously recorded as publisher-less is retried.
     """
     plugin_class = manager._plugin_class_by_msg_type.get(TF_TYPE)
     if plugin_class is None or TF_TOPIC not in topics_by_name:
         return set()
+
+    claimed = {TF_TOPIC} | ({TF_STATIC_TOPIC} if TF_STATIC_TOPIC in topics_by_name else set())
+    if TF_TOPIC in manager._full_tier:
+        return claimed
 
     manager._msg_type_by_topic[TF_TOPIC] = TF_TYPE
     try:
@@ -66,7 +74,8 @@ def subscribe_tf_watch(manager: "SubscriptionManager", topics_by_name: dict[str,
     except NoPublishersError:
         _logger.warning("'%s' has no publishers", TF_TOPIC)
         manager._no_publishers.add(TF_TOPIC)
-        return {TF_TOPIC}
+        return claimed
+    manager._no_publishers.discard(TF_TOPIC)
     manager._owning_node_by_topic[TF_TOPIC] = fully_qualified_node_name(
         publisher_info.node_namespace, publisher_info.node_name
     )
@@ -75,7 +84,7 @@ def subscribe_tf_watch(manager: "SubscriptionManager", topics_by_name: dict[str,
         msg_class = get_message(TF_TYPE)
     except Exception:
         _logger.exception("could not resolve message class for '%s'", TF_TOPIC)
-        return {TF_TOPIC}
+        return claimed
 
     topic_config = manager._topic_config_by_name.get(TF_TOPIC)
     thresholds = dict(plugin_class.default_thresholds())
@@ -93,7 +102,7 @@ def subscribe_tf_watch(manager: "SubscriptionManager", topics_by_name: dict[str,
     if hasattr(state.plugin, "set_watched_pairs"):
         state.plugin.set_watched_pairs([(pair.parent, pair.child) for pair in manager._config.tf])
 
-    return {TF_TOPIC} | set(related_topics.values())
+    return claimed
 
 
 def subscribe_lifecycle_tracking(manager: "SubscriptionManager", topics_by_name: dict[str, TopicInfo]) -> None:
@@ -110,11 +119,18 @@ def subscribe_lifecycle_tracking(manager: "SubscriptionManager", topics_by_name:
 
     Pure side-channel bookkeeping: these never get their own report row,
     only inform `suppress_if_inactive` for topics owned by that node.
+
+    Safe to call repeatedly (periodic rediscovery calls this every pass):
+    a node already successfully subscribed is filtered out up front, since
+    a failed attempt is never recorded in `_msg_type_by_topic` in the first
+    place -- so an unresponsive node's transition_event is naturally
+    retried on the next pass without any extra bookkeeping here.
     """
     lifecycle_nodes = [
         lifecycle_node
         for lifecycle_node in list_lifecycle_nodes(manager._node)
         if f"{lifecycle_node.node_name}{LIFECYCLE_TRANSITION_EVENT_SUFFIX}" in topics_by_name
+        and f"{lifecycle_node.node_name}{LIFECYCLE_TRANSITION_EVENT_SUFFIX}" not in manager._msg_type_by_topic
     ]
     _seed_current_lifecycle_states(manager, [n.node_name for n in lifecycle_nodes])
 
@@ -136,7 +152,9 @@ def subscribe_lifecycle_tracking(manager: "SubscriptionManager", topics_by_name:
         def _on_transition_event(msg: object, _node_name: str = node_name) -> None:
             manager._lifecycle_tracker.on_transition_event(_node_name, msg.goal_state.label)
 
-        manager._node.create_subscription(msg_class, status_topic, _on_transition_event, qos_profile)
+        manager._subscriptions[status_topic] = manager._node.create_subscription(
+            msg_class, status_topic, _on_transition_event, qos_profile
+        )
         manager._msg_type_by_topic[status_topic] = TRANSITION_EVENT_TYPE
 
 

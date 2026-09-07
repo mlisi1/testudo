@@ -94,13 +94,18 @@ def cmd_watch(args: argparse.Namespace) -> int:
     rclpy.init()
     node = rclpy.create_node("testudo_watch")
     stop_spinning = threading.Event()
-    # Textual owns the main thread's event loop, so subscription callbacks
-    # need their own thread to actually get serviced -- the TUI's poll timer
-    # just reads state that thread has already updated.
-    spin_thread = threading.Thread(target=_spin_until_stopped, args=(node, stop_spinning), daemon=True)
+    spin_thread: threading.Thread | None = None
     try:
         manager = SubscriptionManager(node, config, plugins)
         manager.start()
+        # Textual owns the main thread's event loop, so subscription
+        # callbacks need their own thread to actually get serviced -- the
+        # TUI's poll timer just reads state that thread has already
+        # updated. Periodic rediscovery/stale-stack clearing (`manager.
+        # maintain()`) rides along on this same thread rather than the
+        # TUI's, since both create/destroy rclpy subscriptions and that
+        # isn't safe to interleave with a concurrent `spin_once` elsewhere.
+        spin_thread = threading.Thread(target=_spin_until_stopped, args=(node, stop_spinning, manager), daemon=True)
         spin_thread.start()
 
         diagnostics_publisher = node.create_publisher(DiagnosticArray, config.publish.topic, 10)
@@ -119,16 +124,18 @@ def cmd_watch(args: argparse.Namespace) -> int:
         app.run()
     finally:
         stop_spinning.set()
-        spin_thread.join(timeout=2.0)
+        if spin_thread is not None:
+            spin_thread.join(timeout=2.0)
         node.destroy_node()
         rclpy.shutdown()
 
     return 0
 
 
-def _spin_until_stopped(node: rclpy.node.Node, stop_event: threading.Event) -> None:
+def _spin_until_stopped(node: rclpy.node.Node, stop_event: threading.Event, manager: SubscriptionManager) -> None:
     while not stop_event.is_set():
         rclpy.spin_once(node, timeout_sec=0.1)
+        manager.maintain()
 
 
 def cmd_check(args: argparse.Namespace) -> int:

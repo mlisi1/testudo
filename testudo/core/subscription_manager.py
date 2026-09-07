@@ -19,6 +19,13 @@ type-matching alone would give them two plugin instances unaware of each
 other instead of one that sees the whole tree) and every lifecycle node's
 `~/transition_event` topic (pure side-channel bookkeeping, feeding
 lifecycle-aware suppression -- it never gets a report row of its own).
+
+A live session's `start()` is followed by ongoing `maintain()` calls (see
+maintenance.py): periodic rediscovery for topics -- or a whole stack --
+started after Testudo, and clearing all tracked state if the observed
+stack looks like it's gone away. `maintain()` is deliberately separate
+from `tick()` (which any thread may call): it mutates the node's
+subscriptions, so it must run on whichever thread owns the spin loop.
 """
 from __future__ import annotations
 
@@ -38,16 +45,19 @@ from testudo.core.discovery import (
     NoPublishersError,
     TopicInfo,
     fully_qualified_node_name,
-    list_topics,
     resolve_publisher_info,
     resolve_subscription_qos,
 )
-from testudo.core.global_watches import (
-    DEFAULT_GET_STATE_TIMEOUT_SECONDS,
-    subscribe_lifecycle_tracking,
-    subscribe_tf_watch,
-)
+from testudo.core.global_watches import DEFAULT_GET_STATE_TIMEOUT_SECONDS
 from testudo.core.lifecycle import LifecycleTracker
+from testudo.core.maintenance import (
+    DEFAULT_REDISCOVERY_INTERVAL_SECONDS,
+    DEFAULT_STALE_CHECK_INTERVAL_SECONDS,
+    DEFAULT_STALE_STACK_FRACTION,
+    DEFAULT_STALE_STACK_GRACE_SECONDS,
+)
+from testudo.core.maintenance import discover_and_subscribe as _discover_and_subscribe
+from testudo.core.maintenance import maintain as _maintain
 from testudo.core.topic_report import TopicReport, full_tier_report, suppress_if_inactive, vitals_report
 from testudo.core.vitals import DEFAULT_STALE_AFTER_SECONDS, TopicVitals
 from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, ThresholdZone
@@ -125,6 +135,10 @@ class SubscriptionManager:
         max_check_rate_hz: float = DEFAULT_MAX_CHECK_RATE_HZ,
         hysteresis_required_consecutive: int = DEFAULT_REQUIRED_CONSECUTIVE,
         get_state_timeout_seconds: float = DEFAULT_GET_STATE_TIMEOUT_SECONDS,
+        rediscovery_interval_seconds: float = DEFAULT_REDISCOVERY_INTERVAL_SECONDS,
+        stale_stack_fraction: float = DEFAULT_STALE_STACK_FRACTION,
+        stale_stack_grace_seconds: float = DEFAULT_STALE_STACK_GRACE_SECONDS,
+        stale_check_interval_seconds: float = DEFAULT_STALE_CHECK_INTERVAL_SECONDS,
         spin_once: Callable[[Any, float], None] = rclpy.spin_once,
     ) -> None:
         self._node = node
@@ -135,6 +149,10 @@ class SubscriptionManager:
         self._max_check_rate_hz = max_check_rate_hz
         self._hysteresis_required_consecutive = hysteresis_required_consecutive
         self._get_state_timeout_seconds = get_state_timeout_seconds
+        self._rediscovery_interval_seconds = rediscovery_interval_seconds
+        self._stale_stack_fraction = stale_stack_fraction
+        self._stale_stack_grace_seconds = stale_stack_grace_seconds
+        self._stale_check_interval_seconds = stale_check_interval_seconds
         # Injectable so `~/get_state` service-response waiting (used to seed
         # lifecycle state at startup) is testable without a live rclpy node.
         self._spin_once = spin_once
@@ -148,42 +166,45 @@ class SubscriptionManager:
         self._msg_type_by_topic: dict[str, str] = {}
         self._owning_node_by_topic: dict[str, str] = {}
         self._no_publishers: set[str] = set()
+        # topic name -> live Subscription handle, for every subscription this
+        # manager holds (vitals, full-tier, related-topic, and lifecycle
+        # transition_event alike -- the latter populated by
+        # `global_watches.subscribe_lifecycle_tracking`, which reaches into
+        # this dict the same way it does `_msg_type_by_topic`). Only needed
+        # so maintenance.py's `_clear_all_topics` can destroy everything cleanly.
+        self._subscriptions: dict[str, Any] = {}
         # related-topic name -> (owning plugin instance, its primary topic
         # name). Populated by `_subscribe_full_tier` and consulted by replay
         # (`feed_replayed_message`), which has no live-subscription callback
         # of its own to close over the plugin the way `_subscribe_related_topic` does.
         self._related_topic_targets: dict[str, tuple[CheckPlugin, str]] = {}
+        # Only `start()` flips this on -- `replay`/one-shot `check` construct
+        # a manager and drive `tick()` without ever calling `start()`'s live
+        # discovery, so periodic rediscovery and stale-stack clearing (both
+        # gated on this) must stay inert until a real live session opts in.
+        self._live = False
+        self._last_rediscovery_monotonic: float | None = None
+        self._last_stale_check_monotonic: float | None = None
+        self._stale_since_monotonic: float | None = None
 
     def excluded_topics(self) -> set[str]:
         """Default excludes plus self-exclusion of Testudo's own published diagnostics topic."""
         return set(DEFAULT_EXCLUDED_TOPICS) | {self._config.publish.topic}
 
     def start(self) -> None:
-        """Subscribe to every currently-discovered, non-excluded topic not already handled.
+        """Subscribe to every currently-discovered, non-excluded topic, then arm live rediscovery.
 
-        Topics with no publishers at call time are recorded as such but not
-        retried; re-running discovery for a live session is a `watch`-mode
-        concern (milestone M5), not this one-shot pass. A topic used as
-        another topic's `related_topics` companion (e.g. a cmd_vel
-        cross-check input), or /tf_static, is reserved up front so the
-        generic loop never subscribes it independently.
+        A topic used as another topic's `related_topics` companion (e.g. a
+        cmd_vel cross-check input), or /tf_static, is reserved up front so
+        the generic loop never subscribes it independently. After this
+        initial pass, `maintain()` re-runs the same discovery periodically
+        (see maintenance.py) so topics -- or a whole stack -- started after
+        Testudo still get picked up.
         """
         self._wait_for_graph_settle()
-        excluded = self.excluded_topics()
-        topics_by_name = {topic_info.name: topic_info for topic_info in list_topics(self._node)}
-
-        reserved = self._reserved_related_topic_names()
-        reserved |= subscribe_tf_watch(self, topics_by_name)
-        subscribe_lifecycle_tracking(self, topics_by_name)
-
-        already_handled = set(self._msg_type_by_topic)
-        for name, topic_info in topics_by_name.items():
-            if name in excluded or name in already_handled or name in reserved:
-                continue
-            if not topic_info.msg_types:
-                _logger.warning("topic '%s' has no known message type; skipping", name)
-                continue
-            self._subscribe_topic(name, topic_info.msg_types[0], topics_by_name)
+        _discover_and_subscribe(self)
+        self._last_rediscovery_monotonic = time.monotonic()
+        self._live = True
 
     def _reserved_related_topic_names(self) -> set[str]:
         reserved: set[str] = set()
@@ -211,6 +232,7 @@ class SubscriptionManager:
             _logger.warning("topic '%s' has no publishers", topic_name)
             self._no_publishers.add(topic_name)
             return
+        self._no_publishers.discard(topic_name)
         self._owning_node_by_topic[topic_name] = fully_qualified_node_name(
             publisher_info.node_namespace, publisher_info.node_name
         )
@@ -249,7 +271,9 @@ class SubscriptionManager:
         # raw=True: the middleware still needs the real message type to match
         # publishers, but the callback receives serialized bytes and never
         # deserializes -- that's the whole cost saving of this tier.
-        self._node.create_subscription(msg_class, topic_name, _on_raw_message, qos_profile, raw=True)
+        self._subscriptions[topic_name] = self._node.create_subscription(
+            msg_class, topic_name, _on_raw_message, qos_profile, raw=True
+        )
 
     def _subscribe_full_tier(
         self,
@@ -272,7 +296,7 @@ class SubscriptionManager:
         def _on_message(msg: object) -> None:
             self._process_full_tier_message(state, topic_name, msg, self._clock.now_seconds())
 
-        self._node.create_subscription(msg_class, topic_name, _on_message, qos_profile)
+        self._subscriptions[topic_name] = self._node.create_subscription(msg_class, topic_name, _on_message, qos_profile)
 
         for related_topic_name in related_topics.values():
             self._related_topic_targets[related_topic_name] = (plugin, topic_name)
@@ -331,13 +355,28 @@ class SubscriptionManager:
             plugin.on_tick(self._clock.now_seconds())
             plugin.on_message(related_topic_name, msg)
 
-        self._node.create_subscription(msg_class, related_topic_name, _on_related_message, qos_profile)
+        self._subscriptions[related_topic_name] = self._node.create_subscription(
+            msg_class, related_topic_name, _on_related_message, qos_profile
+        )
 
     def tick(self) -> None:
         """Advance every full-tier plugin's time-based state. Call on a fixed timer."""
         now = self._clock.now_seconds()
         for state in self._full_tier.values():
             state.plugin.on_tick(now)
+
+    def maintain(self) -> None:
+        """Periodic housekeeping for a live session: rediscover new topics, and clear a dead stack.
+
+        No-op unless `start()` was called (`check`/`replay` construct a
+        manager and drive `tick()` directly without it, so this stays
+        inert for them). Must be called from the same thread that owns
+        `self._node`'s spin loop (`watch`'s background spin thread) --
+        see maintenance.py's `maintain()` for why. `tick()` itself stays
+        callable from any thread (as it already was) since it only touches
+        plugin-internal state, never the node's subscriptions.
+        """
+        _maintain(self)
 
     def reports(self) -> list[TopicReport]:
         """Current health of every subscribed (or publisher-less) topic, sorted by name."""

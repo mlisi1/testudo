@@ -100,6 +100,9 @@ class _FakeNode:
     def destroy_client(self, client: object) -> None:
         pass
 
+    def destroy_subscription(self, subscription: object) -> None:
+        self.subscriptions.remove(subscription)
+
 
 def _fixed_clock(seconds: float) -> TestudoClock:
     class _Fixed:
@@ -810,3 +813,217 @@ def test_overall_status_weighted_mode_differs_from_worst() -> None:
     assert weighted.severity == Severity.ERROR
     assert "weighted_score" in weighted.values
     assert "weighted_score" not in worst.values
+
+
+def _mutable_clock(clock_seconds: list[float]) -> TestudoClock:
+    class _MutableClock:
+        def now(self):
+            class _T:
+                nanoseconds = int(clock_seconds[0] * 1e9)
+
+            return _T()
+
+    return TestudoClock(_MutableClock(), sim_time_query=lambda: False)
+
+
+def test_maintain_is_a_noop_until_start_is_called() -> None:
+    node = _FakeNode(
+        topics=[("/odom", ["nav_msgs/msg/Odometry"])],
+        publishers_by_topic={"/odom": [_FakeEndpointInfo(qos_profile=_qos())]},
+    )
+    manager = SubscriptionManager(
+        node, _config(), [], clock=_fixed_clock(0.0), rediscovery_interval_seconds=0.0, **_FAST_SETTLE
+    )
+
+    # start() deliberately never called -- mirrors check/replay, which drive
+    # tick() directly without it.
+    manager.maintain()
+
+    assert node.subscriptions == []
+    assert manager.reports() == []
+
+
+def test_maintain_subscribes_a_topic_added_to_the_graph_after_start() -> None:
+    topics = [("/odom", ["nav_msgs/msg/Odometry"])]
+    publishers: dict[str, list[object]] = {"/odom": [_FakeEndpointInfo(qos_profile=_qos())]}
+    node = _FakeNode(topics=topics, publishers_by_topic=publishers)
+    manager = SubscriptionManager(
+        node, _config(), [], clock=_fixed_clock(0.0), rediscovery_interval_seconds=0.0, **_FAST_SETTLE
+    )
+    manager.start()
+    assert {sub.topic for sub in node.subscriptions} == {"/odom"}
+
+    # A new topic appears on the graph after Testudo started (e.g. the rest
+    # of the stack was launched later).
+    topics.append(("/scan", ["sensor_msgs/msg/LaserScan"]))
+    publishers["/scan"] = [_FakeEndpointInfo(qos_profile=_qos())]
+
+    manager.maintain()
+
+    assert {sub.topic for sub in node.subscriptions} == {"/odom", "/scan"}
+    assert {report.topic for report in manager.reports()} == {"/odom", "/scan"}
+
+
+def test_maintain_retries_a_topic_that_previously_had_no_publishers() -> None:
+    topics = [("/scan", ["sensor_msgs/msg/LaserScan"])]
+    publishers: dict[str, list[object]] = {}
+    node = _FakeNode(topics=topics, publishers_by_topic=publishers)
+    manager = SubscriptionManager(
+        node, _config(), [], clock=_fixed_clock(0.0), rediscovery_interval_seconds=0.0, **_FAST_SETTLE
+    )
+    manager.start()
+
+    assert node.subscriptions == []
+    reports = manager.reports()
+    assert len(reports) == 1
+    assert "no publishers" in reports[0].status.message
+
+    # The publisher shows up later.
+    publishers["/scan"] = [_FakeEndpointInfo(qos_profile=_qos())]
+    manager.maintain()
+
+    assert {sub.topic for sub in node.subscriptions} == {"/scan"}
+    reports = manager.reports()
+    # Exactly one row -- the earlier "no publishers" entry must not linger
+    # alongside the now-subscribed topic's own report.
+    assert len(reports) == 1
+    assert "no publishers" not in reports[0].status.message
+
+
+def test_maintain_clears_all_topics_once_the_stack_goes_stale_and_disappears() -> None:
+    topics = [("/odom", ["nav_msgs/msg/Odometry"]), ("/scan", ["sensor_msgs/msg/LaserScan"])]
+    publishers: dict[str, list[object]] = {
+        "/odom": [_FakeEndpointInfo(qos_profile=_qos())],
+        "/scan": [_FakeEndpointInfo(qos_profile=_qos())],
+    }
+    node = _FakeNode(topics=topics, publishers_by_topic=publishers)
+    clock_seconds = [0.0]
+    manager = SubscriptionManager(
+        node,
+        _config(),
+        [],
+        clock=_mutable_clock(clock_seconds),
+        stale_after_seconds=2.0,
+        rediscovery_interval_seconds=0.0,
+        stale_stack_fraction=0.9,
+        stale_stack_grace_seconds=0.0,
+        stale_check_interval_seconds=0.0,
+        **_FAST_SETTLE,
+    )
+    manager.start()
+    for sub in node.subscriptions:
+        sub.callback(b"")
+    assert len(node.subscriptions) == 2
+
+    clock_seconds[0] = 10.0  # advance well past staleness for both topics
+    assert all(report.status.severity == Severity.STALE for report in manager.reports())
+
+    manager.maintain()  # first pass: mostly-stale detected, grace timer armed
+    assert len(node.subscriptions) == 2  # not cleared yet -- grace not elapsed
+
+    # The observed stack has actually gone away: nothing left on the graph.
+    topics.clear()
+    publishers.clear()
+
+    manager.maintain()  # grace period (0s) has now elapsed -> clears
+    assert node.subscriptions == []
+    assert manager.reports() == []
+
+
+def test_maintain_clears_when_some_topics_are_stale_and_others_never_received_a_message() -> None:
+    """Regression: a topic with a publisher but zero messages ever received stays at
+    ERROR ("no messages received") forever -- `liveness_status` checks
+    `message_count == 0` before it ever looks at age, so that ERROR never
+    transitions to STALE no matter how long nothing arrives. A real stack
+    shutdown can easily leave some topics STALE and others stuck in this
+    permanent zero-message ERROR state; both must count toward "the stack
+    looks dead", or the fraction never reaches the threshold and stale rows
+    accumulate forever.
+    """
+    topics = [("/odom", ["nav_msgs/msg/Odometry"]), ("/scan", ["sensor_msgs/msg/LaserScan"])]
+    publishers: dict[str, list[object]] = {
+        "/odom": [_FakeEndpointInfo(qos_profile=_qos())],
+        "/scan": [_FakeEndpointInfo(qos_profile=_qos())],
+    }
+    node = _FakeNode(topics=topics, publishers_by_topic=publishers)
+    clock_seconds = [0.0]
+    manager = SubscriptionManager(
+        node,
+        _config(),
+        [],
+        clock=_mutable_clock(clock_seconds),
+        stale_after_seconds=2.0,
+        rediscovery_interval_seconds=0.0,
+        stale_stack_fraction=0.9,
+        stale_stack_grace_seconds=0.0,
+        stale_check_interval_seconds=0.0,
+        **_FAST_SETTLE,
+    )
+    manager.start()
+    # /odom receives one message and later goes properly STALE; /scan never
+    # receives anything and stays at "no messages received" ERROR.
+    odom_sub = next(sub for sub in node.subscriptions if sub.topic == "/odom")
+    odom_sub.callback(b"")
+
+    clock_seconds[0] = 10.0
+    reports = {report.topic: report.status.severity for report in manager.reports()}
+    assert reports == {"/odom": Severity.STALE, "/scan": Severity.ERROR}
+
+    manager.maintain()  # first pass: both count as dead, grace timer armed
+    assert len(node.subscriptions) == 2  # not cleared yet -- grace not elapsed
+
+    topics.clear()
+    publishers.clear()
+
+    manager.maintain()  # grace period (0s) has now elapsed -> clears
+    assert node.subscriptions == []
+    assert manager.reports() == []
+
+
+def test_maintain_does_not_clear_for_a_content_check_error_on_an_actively_received_topic() -> None:
+    """A plugin's own content-check ERROR (bad covariance, NaN, etc.) on a topic that's
+    actively receiving messages must not count toward "the stack looks
+    dead" -- only liveness failures (STALE, or the permanent zero-message/
+    no-publishers ERROR) should. Distinguished via `status.label`:
+    liveness-derived statuses are always labelled "liveness"
+    (topic_report.py); a plugin's content status uses its own label.
+    """
+    topics = [("/odom", ["nav_msgs/msg/Odometry"]), ("/scan", ["sensor_msgs/msg/LaserScan"])]
+    publishers: dict[str, list[object]] = {
+        "/odom": [_FakeEndpointInfo(qos_profile=_qos())],
+        "/scan": [_FakeEndpointInfo(qos_profile=_qos())],
+    }
+    node = _FakeNode(topics=topics, publishers_by_topic=publishers)
+    clock_seconds = [0.0]
+    discovered = [DiscoveredPlugin(name="recording", plugin_class=_RecordingPlugin, source="packaged")]
+    manager = SubscriptionManager(
+        node,
+        _config(),
+        discovered,
+        clock=_mutable_clock(clock_seconds),
+        stale_after_seconds=2.0,
+        rediscovery_interval_seconds=0.0,
+        stale_stack_fraction=0.9,
+        stale_stack_grace_seconds=0.0,
+        stale_check_interval_seconds=0.0,
+        hysteresis_required_consecutive=1,
+        **_FAST_SETTLE,
+    )
+    manager.start()
+
+    clock_seconds[0] = 10.0  # /odom's message arrives "now" -- not stale
+    odom_sub = next(sub for sub in node.subscriptions if sub.topic == "/odom")
+    manager._full_tier["/odom"].plugin.next_severity = Severity.ERROR
+    odom_sub.callback(object())  # /odom: alive, but its plugin flags content ERROR
+
+    # /scan never receives anything -- a genuine (if minority) liveness dead spot.
+    reports = manager.reports()
+    assert {r.topic: (r.status.label, r.status.severity) for r in reports} == {
+        "/odom": ("recording", Severity.ERROR),
+        "/scan": ("liveness", Severity.ERROR),
+    }
+
+    manager.maintain()
+    manager.maintain()
+
+    assert len(node.subscriptions) == 2
