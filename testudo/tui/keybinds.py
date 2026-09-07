@@ -2,9 +2,10 @@
 
 Textual's DataTable already binds the arrow keys to cursor movement; this
 module only adds the vim-style aliases and documents the rest of the
-project's keybind set (`q` quit, `p` pause, `/` filter, `j`/`k`/arrows
-navigate, `Enter` drill down, `Esc` back, `s` cycle sort, `r` reset stats,
-`?` help overlay) in one place other modules can point at.
+project's keybind set (`q` quit, `p` pause, `/` filter, `j`/`k`/arrows/Tab
+navigate, `Enter` switch pane, `Esc` back to categories (or clear the
+filter), `s` cycle sort, `r` reset stats, `?` help overlay) in one place
+other modules can point at.
 """
 from __future__ import annotations
 
@@ -26,15 +27,16 @@ SORT_BINDING = Binding("s", "cycle_sort", "Sort")
 HELP_TEXT = """\
 [b]Testudo -- keybindings[/b]
 
-  q          quit
-  p          pause / resume the live view
-  r          reset stats (clear accumulated history, keep watching)
-  /          filter the current table by name
-  j / k / arrows   move the cursor
-  enter      drill down
-  esc        back (or clear the filter)
-  s          cycle sort order
-  ?          this help
+  q                quit
+  p                pause / resume the live view
+  r                reset stats (clear accumulated history, keep watching)
+  /                filter the focused table by name
+  j / k / arrows   move the cursor -- updates the panes to the right live
+  tab / shift+tab  switch focus between the categories and topics tables
+  enter            switch focus (categories <-> topics)
+  esc              focus categories (or clear the filter)
+  s                cycle the focused table's sort order
+  ?                this help
 
 Press any key to close.
 """

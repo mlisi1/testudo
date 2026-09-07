@@ -125,7 +125,7 @@ class SubscriptionManager:
         max_check_rate_hz: float = DEFAULT_MAX_CHECK_RATE_HZ,
         hysteresis_required_consecutive: int = DEFAULT_REQUIRED_CONSECUTIVE,
         get_state_timeout_seconds: float = DEFAULT_GET_STATE_TIMEOUT_SECONDS,
-        spin_until_future_complete: Callable[[Any, Any, float], None] = rclpy.spin_until_future_complete,
+        spin_once: Callable[[Any, float], None] = rclpy.spin_once,
     ) -> None:
         self._node = node
         self._config = config
@@ -137,7 +137,7 @@ class SubscriptionManager:
         self._get_state_timeout_seconds = get_state_timeout_seconds
         # Injectable so `~/get_state` service-response waiting (used to seed
         # lifecycle state at startup) is testable without a live rclpy node.
-        self._spin_until_future_complete = spin_until_future_complete
+        self._spin_once = spin_once
         self._plugin_class_by_msg_type = _index_plugins_by_msg_type(discovered_plugins)
         self._topic_config_by_name = _index_topic_configs_by_name(config)
         self._action_config_by_status_topic = _index_action_configs_by_status_topic(config)

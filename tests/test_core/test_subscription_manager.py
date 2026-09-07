@@ -61,7 +61,7 @@ class _FakeGetStateClient:
     def __init__(self, response_label: str | None) -> None:
         self._response_label = response_label
 
-    def wait_for_service(self, timeout_sec: float | None = None) -> bool:
+    def service_is_ready(self) -> bool:
         return self._response_label is not None
 
     def call_async(self, request: object) -> _FakeFuture:
@@ -201,12 +201,16 @@ def _qos() -> QoSProfile:
     return QoSProfile(depth=10)
 
 
-# The fake node's topic list is static and needs no real discovery wait, and
-# its `~/get_state` futures are already resolved when created, needing no
-# real spin -- keep both settings hermetic so tests avoid production ROS I/O.
+# The fake node's topic list is static and needs no real discovery wait,
+# its `~/get_state` clients report readiness instantly, and its futures are
+# already resolved when created, needing no real spin -- keep all three
+# hermetic (and the timeout tiny, so a genuinely-unavailable fake service
+# doesn't busy-loop for the real production budget) so tests avoid
+# production ROS I/O and stay fast.
 _FAST_SETTLE = {
     "graph_settle_seconds": 0.0,
-    "spin_until_future_complete": lambda node, future, timeout_sec=None: None,
+    "get_state_timeout_seconds": 0.01,
+    "spin_once": lambda node, timeout_sec=None: None,
 }
 
 

@@ -1,14 +1,16 @@
-"""The three screens the app navigates between: category summary (the entry
-point), a category's topic list (drill-down), and one topic's full detail
-(a modal), plus a help overlay.
+"""The dashboard: categories, that category's topics, and the highlighted
+topic's full detail, all visible and updating live at once -- moving the
+cursor (not pressing Enter) is what drives the other panes, since the
+point is monitoring several things at a glance rather than a list you
+have to select into one entry at a time. Plus a help overlay.
 """
 from __future__ import annotations
 
 from textual.app import ComposeResult
+from textual.containers import Horizontal
 from textual.screen import ModalScreen, Screen
 from textual.widgets import DataTable, Input, Static
 
-from testudo.core.topic_report import TopicReport
 from testudo.tui.categorize import category_for
 from testudo.tui.data_source import WatchSnapshot
 from testudo.tui.keybinds import FILTER_BINDING, HELP_TEXT, SORT_BINDING
@@ -27,48 +29,43 @@ class HelpScreen(ModalScreen):
         self.dismiss()
 
 
-class TopicDetailScreen(ModalScreen):
-    """Enter on a topic row: its full status message + every value. Esc closes it."""
+class DashboardScreen(Screen):
+    """Categories | topics side by side, with a detail pane below for
+    whichever topic is currently highlighted -- three views of the data
+    on screen together, none of them requiring a keypress to populate.
+    """
 
-    BINDINGS = [("escape", "dismiss", "Back")]
-
-    def __init__(self, report: TopicReport) -> None:
-        super().__init__()
-        self._report = report
-
-    def compose(self) -> ComposeResult:
-        lines = [
-            f"[b]{self._report.topic}[/b]  ({self._report.msg_type}, {self._report.tier} tier)",
-            "",
-            self._report.status.message,
-        ]
-        if self._report.status.values:
-            lines.append("")
-            lines.extend(f"  {key}: {value}" for key, value in self._report.status.values.items())
-        yield Static("\n".join(lines), id="topic-detail")
-
-
-class TableScreen(Screen):
-    """Shared filter/sort/header-sync behavior for the summary and category screens."""
-
-    BINDINGS = [FILTER_BINDING, SORT_BINDING, ("escape", "go_back", "Back")]
+    BINDINGS = [
+        FILTER_BINDING,
+        SORT_BINDING,
+        ("escape", "handle_escape", "Categories"),
+    ]
 
     def __init__(self) -> None:
         super().__init__()
-        self._sort_by_severity = True
         self._filtering = False
+        self._filtered_table: DataTable | None = None
 
     def compose(self) -> ComposeResult:
         yield TestudoHeader(self.app.ros_distro)
-        yield self._build_table()
+        with Horizontal(id="panes"):
+            yield CategorySummaryTable(id="category-table")
+            yield TopicDetailTable(id="topic-table")
+        yield Static("", id="detail-pane")
         yield Input(placeholder="filter by name, enter/esc to apply", id="filter-input")
         yield Static(self._hint_text(), id="hint")
 
     def on_mount(self) -> None:
         self.query_one("#filter-input", Input).display = False
         self.sync_header()
-        self.refresh_table()
-        self.set_focus(self._table())
+        self.refresh_categories()
+        self.query_one(CategorySummaryTable).focus()
+
+    def _hint_text(self) -> str:
+        return (
+            "arrows/j/k: move (updates the panes live)   tab: switch pane   "
+            "/: filter   s: sort   p: pause   r: reset   ?: help   q: quit"
+        )
 
     def sync_header(self) -> None:
         header = self.query_one(TestudoHeader)
@@ -78,9 +75,54 @@ class TableScreen(Screen):
 
     def on_snapshot(self, snapshot: WatchSnapshot) -> None:
         self.sync_header()
-        self.refresh_table()
+        self.refresh_categories()
+
+    def refresh_categories(self) -> None:
+        self.query_one(CategorySummaryTable).update_categories(self.app.latest_snapshot.reports)
+        self.refresh_topics()
+
+    def refresh_topics(self) -> None:
+        category = self.query_one(CategorySummaryTable).selected_category
+        reports = [r for r in self.app.latest_snapshot.reports if category is not None and category_for(r) == category]
+        self.query_one(TopicDetailTable).update_topics(reports)
+        self.refresh_detail()
+
+    def refresh_detail(self) -> None:
+        detail = self.query_one("#detail-pane", Static)
+        report = self.query_one(TopicDetailTable).selected_report
+        if report is None:
+            detail.update("[dim]no topic selected[/dim]")
+            return
+        lines = [f"[b]{report.topic}[/b]  ({report.msg_type}, {report.tier} tier)", "", report.status.message]
+        if report.status.values:
+            lines.append("")
+            lines.extend(f"  {key}: {value}" for key, value in report.status.values.items())
+        detail.update("\n".join(lines))
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        if isinstance(event.data_table, CategorySummaryTable):
+            self.refresh_topics()
+        elif isinstance(event.data_table, TopicDetailTable):
+            self.refresh_detail()
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        # Enter jumps focus to "the next pane in" -- categories -> topics ->
+        # back to categories -- since both are already visible and live, there's
+        # no separate screen left to "drill into".
+        if isinstance(event.data_table, CategorySummaryTable):
+            self.query_one(TopicDetailTable).focus()
+        elif isinstance(event.data_table, TopicDetailTable):
+            self.query_one(CategorySummaryTable).focus()
+
+    def _focused_table(self) -> DataTable | None:
+        focused = self.focused
+        return focused if isinstance(focused, (CategorySummaryTable, TopicDetailTable)) else None
 
     def action_start_filter(self) -> None:
+        table = self._focused_table()
+        if table is None:
+            return
+        self._filtered_table = table
         filter_input = self.query_one("#filter-input", Input)
         filter_input.display = True
         self._filtering = True
@@ -90,90 +132,36 @@ class TableScreen(Screen):
         self._stop_filtering()
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        self._table().set_filter(event.value)
-        self.refresh_table()
+        if self._filtered_table is not None:
+            self._filtered_table.set_filter(event.value)
+            self._refresh_from(self._filtered_table)
 
     def _stop_filtering(self) -> None:
         filter_input = self.query_one("#filter-input", Input)
         filter_input.display = False
         self._filtering = False
-        self.set_focus(self._table())
+        self.set_focus(self._filtered_table or self.query_one(CategorySummaryTable))
 
-    def action_go_back(self) -> None:
+    def action_handle_escape(self) -> None:
         if self._filtering:
             filter_input = self.query_one("#filter-input", Input)
             filter_input.value = ""
-            self._table().set_filter("")
-            self.refresh_table()
+            if self._filtered_table is not None:
+                self._filtered_table.set_filter("")
+                self._refresh_from(self._filtered_table)
             self._stop_filtering()
             return
-        self.go_back()
+        self.query_one(CategorySummaryTable).focus()
 
     def action_cycle_sort(self) -> None:
-        self._sort_by_severity = not self._sort_by_severity
-        self._table().set_sort_by_severity(self._sort_by_severity)
-        self.refresh_table()
+        table = self._focused_table()
+        if table is None:
+            return
+        table.set_sort_by_severity(not table.sort_by_severity)
+        self._refresh_from(table)
 
-    # -- overridden by subclasses --
-
-    def _build_table(self) -> DataTable:
-        raise NotImplementedError
-
-    def _table(self) -> DataTable:
-        raise NotImplementedError
-
-    def refresh_table(self) -> None:
-        raise NotImplementedError
-
-    def _hint_text(self) -> str:
-        return "enter: drill down   /: filter   s: sort   ?: help   q: quit"
-
-    def go_back(self) -> None:
-        """Default: nothing to go back to. Overridden by CategoryScreen."""
-
-
-class SummaryScreen(TableScreen):
-    """The top-level view: one row per category."""
-
-    def _build_table(self) -> DataTable:
-        return CategorySummaryTable(id="category-table")
-
-    def _table(self) -> CategorySummaryTable:
-        return self.query_one(CategorySummaryTable)
-
-    def refresh_table(self) -> None:
-        self._table().update_categories(self.app.latest_snapshot.reports)
-
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        category = self._table().selected_category
-        if category is not None:
-            self.app.push_screen(CategoryScreen(category))
-
-
-class CategoryScreen(TableScreen):
-    """Drill-down: every topic in one category."""
-
-    def __init__(self, category: str) -> None:
-        super().__init__()
-        self._category = category
-
-    def _build_table(self) -> DataTable:
-        return TopicDetailTable(id="topic-table")
-
-    def _table(self) -> TopicDetailTable:
-        return self.query_one(TopicDetailTable)
-
-    def refresh_table(self) -> None:
-        reports = [r for r in self.app.latest_snapshot.reports if category_for(r) == self._category]
-        self._table().update_topics(reports)
-
-    def _hint_text(self) -> str:
-        return f"{self._category}   |   enter: details   esc: back   /: filter   s: sort   ?: help   q: quit"
-
-    def go_back(self) -> None:
-        self.app.pop_screen()
-
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        report = self._table().selected_report
-        if report is not None:
-            self.app.push_screen(TopicDetailScreen(report))
+    def _refresh_from(self, table: DataTable) -> None:
+        if isinstance(table, CategorySummaryTable):
+            self.refresh_categories()
+        else:
+            self.refresh_topics()

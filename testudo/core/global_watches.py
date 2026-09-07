@@ -10,6 +10,7 @@ they're companions to that class, not a separate public API.
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING
 
 from lifecycle_msgs.srv import GetState
@@ -35,9 +36,9 @@ TF_TOPIC = "/tf"
 TF_STATIC_TOPIC = "/tf_static"
 TRANSITION_EVENT_TYPE = "lifecycle_msgs/msg/TransitionEvent"
 
-#: How long to wait for a lifecycle node's `~/get_state` service, both to
-#: appear and to respond, when seeding its current state at startup.
-DEFAULT_GET_STATE_TIMEOUT_SECONDS = 0.5
+#: Total shared budget for seeding *every* lifecycle node's current state at
+#: startup (not per-node -- see `_seed_current_lifecycle_states`).
+DEFAULT_GET_STATE_TIMEOUT_SECONDS = 0.3
 
 
 def subscribe_tf_watch(manager: "SubscriptionManager", topics_by_name: dict[str, TopicInfo]) -> set[str]:
@@ -98,28 +99,31 @@ def subscribe_tf_watch(manager: "SubscriptionManager", topics_by_name: dict[str,
 def subscribe_lifecycle_tracking(manager: "SubscriptionManager", topics_by_name: dict[str, TopicInfo]) -> None:
     """Subscribe every lifecycle node's `~/transition_event` topic to feed the lifecycle tracker.
 
-    Also queries `~/get_state` once per node first: `~/transition_event` is
-    VOLATILE (confirmed against a live rclpy_lifecycle node), so a
-    late-joining subscriber -- which Testudo always is -- never sees
-    transitions that already happened. Without this, a node that was
-    already inactive/unconfigured before Testudo started observing would
-    only get suppressed if it happened to transition again during the
-    (typically short) observation window.
+    Also queries `~/get_state` once per node first (concurrently -- see
+    `_seed_current_lifecycle_states`): `~/transition_event` is VOLATILE
+    (confirmed against a live rclpy_lifecycle node), so a late-joining
+    subscriber -- which Testudo always is -- never sees transitions that
+    already happened. Without this, a node that was already inactive/
+    unconfigured before Testudo started observing would only get
+    suppressed if it happened to transition again during the (typically
+    short) observation window.
 
     Pure side-channel bookkeeping: these never get their own report row,
     only inform `suppress_if_inactive` for topics owned by that node.
     """
-    for lifecycle_node in list_lifecycle_nodes(manager._node):
+    lifecycle_nodes = [
+        lifecycle_node
+        for lifecycle_node in list_lifecycle_nodes(manager._node)
+        if f"{lifecycle_node.node_name}{LIFECYCLE_TRANSITION_EVENT_SUFFIX}" in topics_by_name
+    ]
+    _seed_current_lifecycle_states(manager, [n.node_name for n in lifecycle_nodes])
+
+    for lifecycle_node in lifecycle_nodes:
         status_topic = f"{lifecycle_node.node_name}{LIFECYCLE_TRANSITION_EVENT_SUFFIX}"
-        if status_topic not in topics_by_name:
-            continue
-
-        _seed_current_lifecycle_state(manager, lifecycle_node.node_name)
-
         try:
             qos_profile = resolve_subscription_qos(manager._node, status_topic)
         except NoPublishersError:
-            _logger.warning("lifecycle node '%s' has no transition_event publisher", lifecycle_node.node_name)
+            _logger.debug("lifecycle node '%s' has no transition_event publisher", lifecycle_node.node_name)
             continue
         try:
             msg_class = get_message(TRANSITION_EVENT_TYPE)
@@ -136,23 +140,48 @@ def subscribe_lifecycle_tracking(manager: "SubscriptionManager", topics_by_name:
         manager._msg_type_by_topic[status_topic] = TRANSITION_EVENT_TYPE
 
 
-def _seed_current_lifecycle_state(manager: "SubscriptionManager", node_name: str) -> None:
-    """Query `<node_name>/get_state` once and record the result, best-effort.
+def _seed_current_lifecycle_states(manager: "SubscriptionManager", node_names: list[str]) -> None:
+    """Query every lifecycle node's `~/get_state` concurrently, sharing one wait budget.
 
-    A missing/slow service (node doesn't expose it, or doesn't respond
-    within `get_state_timeout_seconds`) is logged and skipped -- the
-    transition-event subscription still covers whatever happens from here.
+    Waiting per node sequentially would multiply the startup delay by the
+    node count -- a real Nav2 stack (behavior_server, bt_navigator,
+    controller_server, planner_server, ...) would otherwise cost several
+    seconds before `watch` shows its first frame. All requests share one
+    deadline instead, so the worst case is one timeout, not N of them.
+
+    A missing/non-responding service is the common case, not a fault --
+    most visibly during `ros2 bag play`, which republishes a node's
+    recorded topics (including `~/transition_event`) without the node
+    itself running to answer a service call -- so this logs at debug, not
+    warning, and the transition-event subscription still covers whatever
+    happens from here regardless.
     """
-    client = manager._node.create_client(GetState, f"{node_name}/get_state")
+    if not node_names:
+        return
+
+    clients = {name: manager._node.create_client(GetState, f"{name}/get_state") for name in node_names}
     try:
-        if not client.wait_for_service(timeout_sec=manager._get_state_timeout_seconds):
-            _logger.warning("'%s/get_state' service not available; skipping initial state query", node_name)
-            return
-        future = client.call_async(GetState.Request())
-        manager._spin_until_future_complete(manager._node, future, timeout_sec=manager._get_state_timeout_seconds)
-        if not future.done() or future.result() is None:
-            _logger.warning("'%s/get_state' did not respond in time", node_name)
-            return
-        manager._lifecycle_tracker.on_transition_event(node_name, future.result().current_state.label)
+        deadline = time.monotonic() + manager._get_state_timeout_seconds
+        futures: dict[str, object] = {}
+        while time.monotonic() < deadline and len(futures) < len(clients):
+            for name, client in clients.items():
+                if name not in futures and client.service_is_ready():
+                    futures[name] = client.call_async(GetState.Request())
+            if len(futures) < len(clients):
+                manager._spin_once(manager._node, timeout_sec=0.02)
+
+        while time.monotonic() < deadline and not all(future.done() for future in futures.values()):
+            manager._spin_once(manager._node, timeout_sec=0.02)
+
+        for name in node_names:
+            future = futures.get(name)
+            if future is None:
+                _logger.debug("'%s/get_state' service not available; skipping initial state query", name)
+                continue
+            if not future.done() or future.result() is None:
+                _logger.debug("'%s/get_state' did not respond in time", name)
+                continue
+            manager._lifecycle_tracker.on_transition_event(name, future.result().current_state.label)
     finally:
-        manager._node.destroy_client(client)
+        for client in clients.values():
+            manager._node.destroy_client(client)

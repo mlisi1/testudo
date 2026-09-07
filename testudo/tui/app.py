@@ -1,4 +1,5 @@
-"""Testudo's Textual TUI: category summary -> topic drill-down -> topic detail.
+"""Testudo's Textual TUI: a live dashboard -- categories, that category's
+topics, and the highlighted topic's full detail, all visible at once.
 
 Driven by a live SubscriptionManager (`testudo watch`) or a finished
 replay (`testudo replay --watch`) via the `WatchDataSource` the app is
@@ -13,7 +14,7 @@ from textual.app import App
 
 from testudo.tui.data_source import WatchDataSource, WatchSnapshot
 from testudo.tui.keybinds import APP_BINDINGS
-from testudo.tui.screens import HelpScreen, SummaryScreen, TableScreen
+from testudo.tui.screens import DashboardScreen, HelpScreen
 
 _logger = logging.getLogger(__name__)
 
@@ -24,10 +25,24 @@ class TestudoApp(App):
     """The "neofetch for your nav stack" TUI."""
 
     CSS = """
+    Screen { layout: vertical; }
     TestudoHeader { dock: top; height: 1; background: $panel; padding: 0 1; }
+    #panes { height: 1fr; }
+    /* Both tables use fixed (not auto-fit) column widths, so their total
+       width is bounded and known -- auto-sizing the panes to that, rather
+       than splitting by percentage, means every column always fits without
+       its own horizontal scroll, regardless of terminal width. Explicit
+       height: 1fr so each pane's background fills the full vertical space
+       down to the detail pane, not just however many rows it has data for.
+       overflow-x: hidden is the enforced "no horizontal scrollbar" --
+       content that doesn't fit a fixed column is clipped (Topic) or
+       marqueed (Topic, when wider than its column), never scrolled to. */
+    #category-table { width: auto; height: 1fr; overflow-x: hidden; }
+    #topic-table { width: 1fr; min-width: 40; height: 1fr; overflow-x: hidden; }
+    #detail-pane { height: 30%; border-top: solid $primary; padding: 0 1; overflow-y: auto; }
     #hint { dock: bottom; height: 1; color: $text-muted; padding: 0 1; }
     #filter-input { dock: bottom; }
-    #help-text, #topic-detail { padding: 1 2; border: round $primary; }
+    #help-text { padding: 1 2; border: round $primary; }
     """
     BINDINGS = APP_BINDINGS
     TITLE = "testudo"
@@ -50,7 +65,7 @@ class TestudoApp(App):
         self.latest_snapshot: WatchSnapshot = data_source.poll()
 
     def on_mount(self) -> None:
-        self.push_screen(SummaryScreen())
+        self.push_screen(DashboardScreen())
         if self.data_source.is_live():
             self.set_interval(1.0 / self._poll_rate_hz, self._poll)
 
@@ -60,11 +75,11 @@ class TestudoApp(App):
         self.latest_snapshot = self.data_source.poll()
         if self._on_snapshot is not None:
             self._on_snapshot(self.latest_snapshot)
-        self._notify_table_screens()
+        self._notify_dashboard()
 
-    def _notify_table_screens(self) -> None:
+    def _notify_dashboard(self) -> None:
         for screen in self.screen_stack:
-            if isinstance(screen, TableScreen):
+            if isinstance(screen, DashboardScreen):
                 screen.on_snapshot(self.latest_snapshot)
 
     def action_toggle_pause(self) -> None:
@@ -72,7 +87,7 @@ class TestudoApp(App):
             return
         self.paused = not self.paused
         for screen in self.screen_stack:
-            if isinstance(screen, TableScreen):
+            if isinstance(screen, DashboardScreen):
                 screen.sync_header()
 
     def action_reset_stats(self) -> None:

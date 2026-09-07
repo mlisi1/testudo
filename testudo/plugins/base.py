@@ -38,6 +38,29 @@ SEVERITY_LABELS: dict[int, str] = {
     Severity.STALE: "STALE",
 }
 
+#: Display color per severity, as a Rich/Textual style name -- both the
+#: TUI's markup (`[green]...[/green]`) and `rich.console.Console.print`
+#: understand the identical syntax, so `testudo check`'s plain-text report
+#: and the TUI stay visually consistent from one shared mapping.
+SEVERITY_COLORS: dict[int, str] = {
+    Severity.OK: "green",
+    Severity.WARN: "yellow",
+    Severity.ERROR: "bold red",
+    Severity.STALE: "bold magenta",
+}
+
+#: Single-cell-width glyph per severity, for compact breakdowns (e.g. the
+#: TUI's category summary: "[red]✗ 1[/red] [yellow]▲ 2[/yellow]") where a
+#: full "ERROR"/"WARN" label per entry would take more room than the count
+#: itself. A distinct shape per severity (not just color) keeps it readable
+#: without color too.
+SEVERITY_ICONS: dict[int, str] = {
+    Severity.OK: "✓",  # check mark
+    Severity.WARN: "▲",  # up-pointing triangle
+    Severity.ERROR: "✗",  # ballot X
+    Severity.STALE: "■",  # black square
+}
+
 
 @dataclass(frozen=True)
 class ThresholdZone:

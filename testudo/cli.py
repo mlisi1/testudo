@@ -15,12 +15,14 @@ import time
 import rclpy
 import rclpy.node
 from diagnostic_msgs.msg import DiagnosticArray
+from rich.console import Console
+from rich.text import Text
 
 from testudo.core.clock import TestudoClock
 from testudo.core.config import ConfigError, TestudoConfig, load_config
 from testudo.core.publisher import DiagnosticPublisher
 from testudo.core.subscription_manager import SubscriptionManager, TopicReport
-from testudo.plugins.base import SEVERITY_LABELS, CheckStatus, Severity
+from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_LABELS, CheckStatus, Severity
 from testudo.plugins.registry import discover_all_plugins
 
 _logger = logging.getLogger("testudo")
@@ -180,28 +182,54 @@ def _print_report(reports: list[TopicReport], overall: CheckStatus) -> int:
     Which severity drives `overall` (worst vs. weighted) is decided by
     `SubscriptionManager.overall_status` per `config.severity_mode` --
     printing/exit-coding here just reads the result, so both always agree
-    with what got published to `/diagnostics`.
+    with what got published to `/diagnostics`. Colored via `rich.Text`
+    (content is always literal there, never markup, so a status message
+    that happens to contain square brackets can't be misread as
+    formatting); `Console` auto-disables color when stdout isn't a terminal.
     """
+    console = Console()
     if not reports:
         _logger.info("no topics discovered")
         return 0
 
     for report in sorted(reports, key=lambda r: (-r.status.severity, r.topic)):
-        label = SEVERITY_LABELS.get(report.status.severity, str(report.status.severity))
-        detail = ", ".join(f"{key}={value}" for key, value in report.status.values.items())
-        suffix = f" ({detail})" if detail else ""
-        print(f"[{label:5s}] {report.topic:30s} [{report.tier:6s}] {report.msg_type:35s} {report.status.message}{suffix}")
+        console.print(_topic_line(report))
 
-    overall_label = SEVERITY_LABELS.get(overall.severity, str(overall.severity))
-    overall_detail = ", ".join(f"{key}={value}" for key, value in overall.values.items())
-    overall_suffix = f" ({overall_detail})" if overall_detail else ""
-    print(f"\n[{overall_label}] {overall.message}{overall_suffix}")
+    console.print()
+    console.print(_status_line(overall))
 
     if overall.severity == Severity.OK:
         return 0
     if overall.severity == Severity.WARN:
         return 1
     return 2
+
+
+def _topic_line(report: TopicReport) -> Text:
+    color = SEVERITY_COLORS.get(report.status.severity, "white")
+    label = SEVERITY_LABELS.get(report.status.severity, str(report.status.severity))
+    detail = ", ".join(f"{key}={value}" for key, value in report.status.values.items())
+    suffix = f" ({detail})" if detail else ""
+
+    line = Text()
+    line.append(f"{label:5s} ", style=color)
+    line.append(f"{report.topic:30s} ")
+    line.append(f"[{report.tier:6s}] ", style="dim")
+    line.append(f"{report.msg_type:35s} ")
+    line.append(f"{report.status.message}{suffix}")
+    return line
+
+
+def _status_line(status: CheckStatus) -> Text:
+    color = SEVERITY_COLORS.get(status.severity, "white")
+    label = SEVERITY_LABELS.get(status.severity, str(status.severity))
+    detail = ", ".join(f"{key}={value}" for key, value in status.values.items())
+    suffix = f" ({detail})" if detail else ""
+
+    line = Text()
+    line.append(f"[{label}]", style=color)
+    line.append(f" {status.message}{suffix}")
+    return line
 
 
 def cmd_replay(args: argparse.Namespace) -> int:
