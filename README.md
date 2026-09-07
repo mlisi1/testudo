@@ -1,1 +1,174 @@
-# testudo
+# Testudo
+
+**Black-box diagnostics for ROS 2 navigation stacks — neofetch for your nav stack.**
+
+Testudo watches a running robot from the outside: no instrumentation of
+existing nodes required. It reports on topic health, sensor sanity,
+odometry/covariance quality, TF integrity, and Nav2 goal/action outcomes,
+then shows you the result in a live terminal UI, a one-shot CI-friendly
+report, or a standard `diagnostic_msgs/DiagnosticArray` you can pipe into
+rqt_robot_monitor, Foxglove, or PlotJuggler.
+
+It fills the gap `diagnostic_updater`/`diagnostic_aggregator` leave for
+everything you *can't* or don't want to instrument — drivers, Nav2
+internals, third-party nodes — and for semantic checks (goal outcomes,
+covariance sanity, TF tree health) those tools don't cover out of the box.
+
+## Features
+
+- **Two-tier subscription model.** Every topic on the graph gets watched
+  for liveness and frequency for free (raw subscriptions, no
+  deserialization). Topics you declare — or that a plugin recognizes by
+  message type — additionally get full content checks. This is what
+  keeps watching 137 topics on a real robot cheap.
+- **Built-in content checks**, all through the same plugin interface
+  external users build against:
+
+  | Plugin | Message type | Checks |
+  |---|---|---|
+  | Odometry | `nav_msgs/msg/Odometry` | covariance threshold zones, positive-semi-definiteness, growth-rate sanity, optional `cmd_vel` cross-check |
+  | Generic sensor | `sensor_msgs/msg/LaserScan`, `sensor_msgs/msg/Imu` | NaN/Inf, stuck/zero values, range/magnitude plausibility, `frame_id` consistency |
+  | Nav2 goals | `action_msgs/msg/GoalStatusArray` | goal lifecycle, success rate, mean duration, invocation frequency — covers both navigation goals and recovery behaviors |
+  | TF watch | `tf2_msgs/msg/TFMessage` | missing chains, multi-parent frames, stale-edge (extrapolation-risk) detection |
+
+  Actual-vs-configured *rate* checks (a planner/controller/costmap
+  publishing slower than expected) need no dedicated plugin at all —
+  declare a `rate_hz` threshold on any topic.
+- **Lifecycle-aware.** Diagnostics for a topic owned by an
+  `inactive`/`unconfigured` lifecycle node are suppressed rather than
+  flagged red.
+- **`use_sim_time`-aware** staleness/frequency checks.
+- **Hysteresis debouncing** so a single noisy sample doesn't flap a
+  status, plus configurable **worst / weighted / both** severity
+  aggregation.
+- **A live TUI** (`testudo watch`) — category summary, drill-down,
+  filter, sort, pause, reset stats — and the same view for a finished
+  bag (`testudo replay --watch`).
+- **Standard output.** Publishes `diagnostic_msgs/DiagnosticArray`,
+  decoupled from each check's own sampling rate — interoperable with
+  rqt_robot_monitor, Foxglove, PlotJuggler, and bag-recordable for free.
+- **Extensible.** Drop a `.py` file with a decorated class into a
+  configured directory (no packaging needed), or ship a plugin as its own
+  installable package via a `testudo.checks` entry point. Built-in
+  plugins use the exact same interface external users get.
+
+## Example
+
+```
+$ testudo check
+[WARN ] /odom                          [full  ] nav_msgs/msg/Odometry               position covariance trace 0.06 out of bounds
+[OK   ] /scan                          [full  ] sensor_msgs/msg/LaserScan           0 invalid, 0 out-of-bounds of 8
+[ERROR] /local_costmap/costmap         [vitals] nav_msgs/msg/OccupancyGrid          rate 0.50Hz below configured threshold
+
+[ERROR] 3 topic(s): OK=1, WARN=1, ERROR=1
+```
+
+`testudo watch` shows the same data live: one line per category in the
+summary view (worst status, color-coded), `Enter` to drill down into a
+category's topics, `Enter` again for a topic's full detail, `Esc` back,
+`/` to filter, `s` to cycle sort, `p` to pause, `r` to reset accumulated
+stats, `?` for help.
+
+## Requirements
+
+- ROS 2 Humble or newer (primary development/test target: **Jazzy**)
+- Python 3.10+
+- [Textual](https://github.com/Textualize/textual) for `testudo watch` —
+  `rosdep`'s `python3-textual` resolves to an apt package far too old to
+  work; install a current one with `pip install textual` (also pulled in
+  automatically by `pip install -e .`).
+
+## Installation
+
+```bash
+cd ~/your_ws/src
+git clone git@github.com:mlisi1/testudo.git
+cd ~/your_ws
+rosdep install --from-paths src --ignore-src -r -y
+pip install textual   # see note above
+colcon build --packages-select testudo
+source install/setup.bash
+```
+
+## Quick start
+
+```bash
+# One-shot report for CI / pre-flight checks. Exit codes: 0 OK, 1 WARN, 2 ERROR/STALE.
+testudo check -c config/example_config.yaml
+
+# Live TUI.
+testudo watch -c config/example_config.yaml
+
+# Batch report over a recorded bag, or --watch to browse it in the TUI.
+testudo replay -c config/example_config.yaml --watch my_bag/
+
+# What plugins are available, and what they cover.
+testudo plugins
+```
+
+Every command validates its config up front and fails loudly with a
+specific error if it's malformed, rather than failing three modules deep
+with a `KeyError`.
+
+## Configuration
+
+Three top-level sections, all optional — anything you don't declare still
+gets the cheap vitals tier automatically:
+
+```yaml
+severity_mode: worst   # worst | weighted | both
+
+topics:
+  nav_msgs/msg/Odometry:
+    - name: /odom
+      weight: 2
+      related_topics:
+        cmd_vel: /cmd_vel
+      thresholds:
+        position_covariance_trace: {green: 0.02, orange: 0.2}
+
+actions:
+  - name: navigate_to_pose
+    action_type: nav2_msgs/action/NavigateToPose
+    thresholds:
+      success_rate: {green: 0.9, orange: 0.7}
+
+tf:
+  - {parent: map, child: base_link}
+```
+
+See [`config/example_config.yaml`](config/example_config.yaml) for a
+complete, commented example.
+
+## Extending Testudo
+
+A check plugin is a small, stable interface:
+
+```python
+class CheckPlugin(abc.ABC):
+    def msg_types(cls) -> tuple[str, ...]: ...
+    def default_thresholds(cls) -> dict[str, ThresholdZone]: ...
+    def on_message(self, topic: str, msg: Any) -> None: ...
+    def on_tick(self, now_seconds: float) -> None: ...
+    def get_status(self) -> CheckStatus: ...
+```
+
+Register it two ways: drop a `.py` file decorated with `@register_plugin`
+into the directory named by `plugins_dir` in your config (no packaging
+needed), or expose it via a `testudo.checks` entry point in your own
+installable package. A full plugin-authoring guide is planned; in the
+meantime the built-in plugins in
+[`testudo/plugins/builtin/`](testudo/plugins/builtin/) are real,
+representative examples to build from.
+
+## Status
+
+Testudo is under active development. Discovery, the two-tier subscription
+core, all four built-in content plugins, `DiagnosticArray` publishing,
+severity aggregation, bag replay, and the TUI are implemented and tested.
+See [`CLAUDE.md`](CLAUDE.md) for the full milestone plan and architecture
+notes.
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE).

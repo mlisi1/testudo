@@ -1,0 +1,96 @@
+# Example Testudo configuration.
+#
+# Only `topics`, `actions`, and `tf` need entries specific to your robot.
+# Any topic you don't declare here still gets the vitals tier (liveness +
+# frequency) automatically. A topic you *do* declare, whose message type a
+# discovered plugin covers, also gets that plugin's content checks -- with
+# thresholds merged over the plugin's own defaults, so you only need to
+# override the metrics you actually want to change.
+
+severity_mode: worst  # worst | weighted | both
+
+publish:
+  rate_hz: 5.0
+  topic: /diagnostics
+
+# Optional: a directory of light-path plugin files (see plugins/base.py and
+# the plugin-authoring guide once it exists). Relative paths are resolved
+# from the current working directory.
+# plugins_dir: ./my_plugins
+
+topics:
+  nav_msgs/msg/Odometry:
+    - name: /odom
+      weight: 2
+      # cmd_vel cross-check: OdometryPlugin looks this up by the logical
+      # name "cmd_vel" to compare commanded vs. reported motion.
+      related_topics:
+        cmd_vel: /cmd_vel
+      thresholds:
+        # This robot's EKF is noisier than the plugin default tolerates.
+        position_covariance_trace:
+          green: 0.02
+          orange: 0.2
+        # ...but heading precision matters more here, so tighten yaw.
+        yaw_variance:
+          green: 0.005
+          orange: 0.05
+        # covariance_growth_rate isn't overridden: the plugin default applies.
+
+  sensor_msgs/msg/LaserScan:
+    - name: /scan
+      weight: 1
+      thresholds:
+        # A rough outdoor lidar returns more out-of-range readings than
+        # the plugin's indoor-tuned default tolerates.
+        invalid_ratio:
+          green: 0.02
+          orange: 0.1
+
+  sensor_msgs/msg/Imu:
+    - name: /imu/data
+      weight: 1
+      thresholds:
+        # A frozen IMU is a serious fault on this robot -- flag it fast.
+        stuck_count:
+          green: 1
+          orange: 5
+
+  # Costmap/planner/controller actual-vs-configured rate: no dedicated
+  # plugin needed for this -- any declared topic's vitals-tier rate gets
+  # checked against `rate_hz` if it's set (lower is worse). This costmap
+  # is configured to update at 5 Hz; falling much below that means the
+  # controller isn't keeping up.
+  nav_msgs/msg/OccupancyGrid:
+    - name: /local_costmap/costmap
+      weight: 2
+      thresholds:
+        rate_hz:
+          green: 4.0
+          orange: 1.0
+
+actions:
+  - name: navigate_to_pose
+    action_type: nav2_msgs/action/NavigateToPose
+    weight: 3
+    thresholds:
+      success_rate:
+        green: 0.9
+        orange: 0.7
+
+  # Recovery-behavior frequency, via the same action-tracking mechanism as
+  # navigate_to_pose above. A high spin rate usually means the planner
+  # keeps getting stuck, not that spinning itself is the problem.
+  - name: spin
+    action_type: nav2_msgs/action/Spin
+    weight: 1
+    thresholds:
+      frequency_per_min:
+        green: 2.0
+        orange: 6.0
+
+tf:
+  - parent: map
+    child: odom
+  - parent: odom
+    child: base_link
