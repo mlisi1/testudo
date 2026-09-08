@@ -333,3 +333,45 @@ def test_detail_pane_shows_active_error_codes_not_the_free_text_message() -> Non
             assert "covariance too high" not in detail
 
     run(body())
+
+
+def test_moving_cursor_up_on_an_empty_category_table_does_not_crash() -> None:
+    """Regression: DataTable.action_cursor_up on an empty table (cursor
+    starts at (0, 0), "up" moves to (-1, 0)) hits an edge case in Textual's
+    own coordinate clamp -- with row_count == 0 the clamp range is
+    inverted (0, -1), and clamp leaves -1 unclamped -- so it posts
+    RowHighlighted(cursor_row=-1, row_key=None) instead of skipping it.
+    selected_category then indexed `_category_order[-1]` on an empty list
+    and raised IndexError instead of returning None.
+    """
+
+    async def body():
+        overall = CheckStatus(Severity.OK, "overall", "0 topic(s)")
+        app = TestudoApp(StaticDataSource([], overall), ros_distro="jazzy", sim_time_active=False)
+        async with app.run_test() as pilot:
+            categories = app.screen.query_one(CategorySummaryTable)
+            assert categories.row_count == 0
+            await pilot.press("k")  # must not raise
+            assert categories.selected_category is None
+
+    run(body())
+
+
+def test_moving_cursor_up_on_an_empty_topic_table_does_not_crash() -> None:
+    """Same regression as above, for TopicDetailTable.selected_topic --
+    e.g. a category whose only topic just dropped out of the filtered view."""
+
+    async def body():
+        app = _make_app()
+        async with app.run_test() as pilot:
+            await pilot.press("enter")  # focus topics (1 row: /odom)
+            await pilot.press("slash")
+            for char in "nonexistent-topic":
+                await pilot.press(char)
+            await pilot.press("enter")  # apply filter -- topics table now empty
+            topics = app.screen.query_one(TopicDetailTable)
+            assert topics.row_count == 0
+            await pilot.press("k")  # must not raise
+            assert topics.selected_topic is None
+
+    run(body())

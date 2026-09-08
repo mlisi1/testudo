@@ -206,7 +206,12 @@ class TopicDetailTable(NavDataTable):
 
     @property
     def selected_topic(self) -> str | None:
-        if self.cursor_row is None or self.cursor_row >= len(self._topic_order):
+        # cursor_row is -1 (Textual's "no valid row" sentinel, e.g. an
+        # empty table) whenever a RowHighlighted fires with no rows left to
+        # highlight -- not caught by the `>= len(...)` check below, and
+        # `list[-1]` on an empty list raises IndexError rather than
+        # returning something out of range.
+        if self.cursor_row is None or self.cursor_row < 0 or self.cursor_row >= len(self._topic_order):
             return None
         return self._topic_order[self.cursor_row]
 
