@@ -56,6 +56,19 @@ topics:
           green: 1
           orange: 5
 
+  # ImageStreamPlugin covers both sensor_msgs/msg/Image and
+  # sensor_msgs/msg/CompressedImage -- declare whichever one your driver
+  # actually publishes.
+  sensor_msgs/msg/CompressedImage:
+    - name: /camera/image_raw/compressed
+      weight: 1
+      thresholds:
+        # This camera's bitrate is naturally spiky (auto-exposure changes),
+        # so only flag a much steeper drop than the plugin default.
+        size_drop_ratio:
+          green: 0.4
+          orange: 0.15
+
   # Costmap/planner/controller actual-vs-configured rate: no dedicated
   # plugin needed for this -- any declared topic's vitals-tier rate gets
   # checked against `rate_hz` if it's set (lower is worse). This costmap

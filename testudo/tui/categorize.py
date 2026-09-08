@@ -12,6 +12,8 @@ from testudo.core.topic_report import TopicReport
 _FRIENDLY_NAMES = {
     "action_msgs/msg/GoalStatusArray": "Nav2 Actions",
     "tf2_msgs/msg/TFMessage": "TF",
+    "sensor_msgs/msg/Image": "ImageStream",
+    "sensor_msgs/msg/CompressedImage": "ImageStream",
 }
 
 #: Vitals-tier topics have no plugin identity to group by, so they all land here.

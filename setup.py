@@ -26,6 +26,7 @@ setup(
             "dummy = testudo.plugins.builtin.dummy:DummyPlugin",
             "odometry = testudo.plugins.builtin.odometry:OdometryPlugin",
             "sensors_generic = testudo.plugins.builtin.sensors_generic:GenericSensorPlugin",
+            "image_stream = testudo.plugins.builtin.image_stream:ImageStreamPlugin",
             "nav2_goals = testudo.plugins.builtin.nav2_goals:Nav2GoalPlugin",
             "tf_watch = testudo.plugins.builtin.tf_watch:TFWatchPlugin",
         ],
