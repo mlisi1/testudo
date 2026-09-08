@@ -453,6 +453,7 @@ def test_topic_with_no_publishers_is_reported_as_error_without_subscribing() -> 
     assert reports[0].topic == "/scan"
     assert reports[0].status.severity == Severity.ERROR
     assert "no publishers" in reports[0].status.message
+    assert "LIVE-001" in reports[0].status.codes
 
 
 def test_vitals_topic_with_no_messages_received_is_error() -> None:

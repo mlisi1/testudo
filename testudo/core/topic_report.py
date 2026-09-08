@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from testudo.core.lifecycle import LifecycleTracker
 from testudo.core.vitals import TopicVitals
-from testudo.plugins.base import CheckStatus, Severity, ThresholdZone, evaluate_zone
+from testudo.plugins.base import CheckStatus, Severity, ThresholdZone, colorize, evaluate_zone
 
 
 @dataclass(frozen=True)
@@ -33,16 +33,22 @@ def liveness_status(vitals: TopicVitals, now: float, stale_after_seconds: float)
     checks, since content can't be trusted without live data.
     """
     if vitals.message_count == 0:
+        message = "publisher(s) present but no messages received"
         return CheckStatus(
-            severity=Severity.ERROR, label="liveness", message="publisher(s) present but no messages received"
+            severity=Severity.ERROR,
+            label="liveness",
+            message=message,
+            codes={"LIVE-002": colorize(message, Severity.ERROR)},
         )
     age = vitals.age_seconds(now)
     if age is not None and age > stale_after_seconds:
+        message = f"no message in the last {age:.1f}s"
         return CheckStatus(
             severity=Severity.STALE,
             label="liveness",
-            message=f"no message in the last {age:.1f}s",
+            message=message,
             values=vitals_values(vitals, age),
+            codes={"LIVE-003": colorize(message, Severity.STALE)},
         )
     return None
 
@@ -82,12 +88,14 @@ def vitals_report(
 
     severity = Severity.OK
     message = "alive"
+    codes: dict[str, str] = {}
     if rate_threshold is not None and rate is not None:
         severity = evaluate_zone(rate, rate_threshold, higher_is_worse=False)
         if severity != Severity.OK:
             message = f"rate {rate:.2f}Hz below configured threshold"
+            codes["LIVE-004"] = colorize(message, severity)
 
-    status = CheckStatus(severity=severity, label="liveness", message=message, values=values)
+    status = CheckStatus(severity=severity, label="liveness", message=message, values=values, codes=codes)
     return TopicReport(topic=topic_name, msg_type=msg_type, tier="vitals", status=status, rate_hz=rate)
 
 

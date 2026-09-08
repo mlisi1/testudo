@@ -60,7 +60,7 @@ from testudo.core.maintenance import discover_and_subscribe as _discover_and_sub
 from testudo.core.maintenance import maintain as _maintain
 from testudo.core.topic_report import TopicReport, full_tier_report, suppress_if_inactive, vitals_report
 from testudo.core.vitals import DEFAULT_STALE_AFTER_SECONDS, TopicVitals
-from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, ThresholdZone
+from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, ThresholdZone, colorize
 from testudo.plugins.registry import DiscoveredPlugin
 
 _logger = logging.getLogger(__name__)
@@ -389,7 +389,12 @@ class SubscriptionManager:
                     topic=topic_name,
                     msg_type=self._msg_type_by_topic[topic_name],
                     tier="vitals",
-                    status=CheckStatus(severity=Severity.ERROR, label="liveness", message="no publishers"),
+                    status=CheckStatus(
+                        severity=Severity.ERROR,
+                        label="liveness",
+                        message="no publishers",
+                        codes={"LIVE-001": colorize("no publishers", Severity.ERROR)},
+                    ),
                 )
             )
         for topic_name, vitals in self._vitals.items():

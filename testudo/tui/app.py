@@ -39,8 +39,22 @@ class TestudoApp(App):
        marqueed (Topic, when wider than its column), never scrolled to. */
     #category-table { width: auto; height: 1fr; overflow-x: hidden; }
     #topic-table { width: 1fr; min-width: 40; height: 1fr; overflow-x: hidden; }
-    #detail-pane { height: 30%; border-top: solid $primary; padding: 0 1; overflow-y: auto; }
-    #hint { dock: bottom; height: 1; color: $text-muted; padding: 0 1; }
+    /* 45%, not 30% -- on a genuinely small pane (a quarter-tiled terminal,
+       the realistic use case, not a fullscreen one) 30% of an already-short
+       screen left the detail pane only 1-2 visible rows even after
+       tightening its content, well short of a single topic's data. */
+    #detail-pane { height: 45%; border-top: solid $primary; padding: 0 1; overflow-y: auto; }
+    /* height: auto (not a fixed 1) so the hint text can wrap onto a second
+       line on a narrow terminal instead of being clipped -- a fixed height
+       of 1 let Textual wrap the Text internally but then clipped everything
+       past the first wrapped row, silently dropping the tail of the
+       keybind list ("reset"/"help"/"quit"). A filled $panel background
+       (matching TestudoHeader's own treatment above) makes this read as its
+       own footer band, the way a border-top line alone didn't -- a 1-row
+       border drawn in a lighter color still sits on the same dark
+       background as the pane above it, so it reads as a divider *within*
+       one region rather than the edge of a visually distinct one. */
+    #hint { dock: bottom; height: auto; background: $panel; color: $text-muted; padding: 0 1; }
     #filter-input { dock: bottom; }
     #help-text { padding: 1 2; border: round $primary; }
     """
@@ -51,6 +65,8 @@ class TestudoApp(App):
         self,
         data_source: WatchDataSource,
         ros_distro: str,
+        ros_domain_id: str = "0",
+        dds_implementation: str = "unknown",
         poll_rate_hz: float = DEFAULT_POLL_RATE_HZ,
         sim_time_active: bool = False,
         on_snapshot: Callable[[WatchSnapshot], None] | None = None,
@@ -58,6 +74,8 @@ class TestudoApp(App):
         super().__init__()
         self.data_source = data_source
         self.ros_distro = ros_distro
+        self.ros_domain_id = ros_domain_id
+        self.dds_implementation = dds_implementation
         self.sim_time_active = sim_time_active
         self.paused = False
         self._poll_rate_hz = poll_rate_hz

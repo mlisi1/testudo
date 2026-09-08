@@ -1,7 +1,6 @@
-"""Status Bar: hostname, ROS distro, uptime, clock source, pause state."""
+"""Status Bar: ROS distro, domain ID, DDS implementation, uptime, clock source, pause state."""
 from __future__ import annotations
 
-import socket
 import time
 
 from textual.reactive import reactive
@@ -33,10 +32,17 @@ class TestudoHeader(Static):
     sim_time_active: reactive[bool] = reactive(False)
     paused: reactive[bool] = reactive(False)
 
-    def __init__(self, ros_distro: str, **kwargs) -> None:
+    def __init__(
+        self,
+        ros_distro: str,
+        ros_domain_id: str = "0",
+        dds_implementation: str = "unknown",
+        **kwargs,
+    ) -> None:
         super().__init__(**kwargs)
         self._ros_distro = ros_distro or "unknown"
-        self._hostname = socket.gethostname()
+        self._ros_domain_id = ros_domain_id or "0"
+        self._dds_implementation = dds_implementation or "unknown"
         self._started_monotonic = time.monotonic()
 
     def on_mount(self) -> None:
@@ -53,8 +59,8 @@ class TestudoHeader(Static):
         clock_segment = "  |  clock: sim" if self.sim_time_active else ""
         flags = " [b][PAUSED][/b]" if self.paused else ""
         return (
-            f"[b]testudo[/b]  |  {self._hostname}  |  ROS {self._ros_distro}  |  "
-            f"uptime {format_duration(self.uptime_seconds)}{clock_segment}{flags}"
+            f"[b]testudo[/b]  |  ROS {self._ros_distro}  |  domain {self._ros_domain_id}  |  "
+            f"{self._dds_implementation}  |  uptime {format_duration(self.uptime_seconds)}{clock_segment}{flags}"
         )
 
     def watch_uptime_seconds(self) -> None:

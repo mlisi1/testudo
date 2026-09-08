@@ -28,6 +28,20 @@ from testudo.plugins.registry import discover_all_plugins
 _logger = logging.getLogger("testudo")
 
 DEFAULT_CONFIG_PATH = "config/example_config.yaml"
+
+
+def _dds_implementation() -> str:
+    """The RMW/DDS implementation actually in use (e.g. `rmw_cyclonedds_cpp`).
+
+    Queried from rclpy itself rather than reading `$RMW_IMPLEMENTATION`
+    directly -- that variable reflects an explicit override, but ROS 2 has
+    a compiled-in default RMW when it's unset, which this still reports
+    correctly.
+    """
+    try:
+        return rclpy.get_rmw_implementation_identifier()
+    except Exception:
+        return os.environ.get("RMW_IMPLEMENTATION", "unknown")
 DEFAULT_CHECK_DURATION_SECONDS = 3.0
 
 
@@ -117,6 +131,8 @@ def cmd_watch(args: argparse.Namespace) -> int:
         app = TestudoApp(
             data_source=LiveDataSource(manager, config.severity_mode),
             ros_distro=os.environ.get("ROS_DISTRO", "unknown"),
+            ros_domain_id=os.environ.get("ROS_DOMAIN_ID", "0"),
+            dds_implementation=_dds_implementation(),
             poll_rate_hz=config.publish.rate_hz,
             sim_time_active=TestudoClock.from_node(node).is_sim_time_active(),
             on_snapshot=on_snapshot,
@@ -272,6 +288,8 @@ def cmd_replay(args: argparse.Namespace) -> int:
             app = TestudoApp(
                 data_source=StaticDataSource(reports, overall),
                 ros_distro=os.environ.get("ROS_DISTRO", "unknown"),
+                ros_domain_id=os.environ.get("ROS_DOMAIN_ID", "0"),
+                dds_implementation=_dds_implementation(),
                 sim_time_active=True,
             )
             app.run()

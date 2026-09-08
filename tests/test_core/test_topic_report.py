@@ -19,12 +19,14 @@ def test_vitals_report_no_messages_is_error() -> None:
     report = vitals_report("/x", "std_msgs/msg/String", vitals, now=10.0, stale_after_seconds=2.0)
     assert report.status.severity == Severity.ERROR
     assert "no messages received" in report.status.message
+    assert "LIVE-002" in report.status.codes
 
 
 def test_vitals_report_stale_after_threshold() -> None:
     vitals = _vitals_with_messages(1, [0.0])
     report = vitals_report("/x", "std_msgs/msg/String", vitals, now=10.0, stale_after_seconds=2.0)
     assert report.status.severity == Severity.STALE
+    assert "LIVE-003" in report.status.codes
 
 
 def test_vitals_report_alive_without_rate_threshold_is_ok() -> None:
@@ -65,6 +67,13 @@ def test_vitals_report_rate_below_threshold_is_flagged() -> None:
     report = vitals_report("/x", "nav_msgs/msg/OccupancyGrid", vitals, now=1.0, stale_after_seconds=5.0, rate_threshold=zone)
     assert report.status.severity == Severity.WARN
     assert "below configured threshold" in report.status.message
+    assert "LIVE-004" in report.status.codes
+
+
+def test_vitals_report_alive_and_ok_has_no_active_codes() -> None:
+    vitals = _vitals_with_messages(2, [0.0, 0.1])
+    report = vitals_report("/x", "std_msgs/msg/String", vitals, now=0.2, stale_after_seconds=2.0)
+    assert report.status.codes == {}
 
 
 def test_vitals_report_rate_far_below_threshold_is_error() -> None:

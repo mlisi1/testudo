@@ -11,6 +11,16 @@ from testudo.tui.keybinds import NavDataTable
 #: for Status/Hz without a horizontal scrollbar.
 TOPIC_COLUMN_WIDTH = 16
 
+#: Width of the optional plugin-defined extra column (`CheckStatus.
+#: topic_panel_column`/`topic_panel_value`) -- short by design, same budget
+#: class as Status/Hz, never a sentence.
+EXTRA_COLUMN_WIDTH = 10
+
+#: The extra column's fixed DataTable key. Its *label* changes per category
+#: (whichever plugin currently owns the visible topics), so it's removed and
+#: re-added with a new label rather than renamed in place.
+EXTRA_COLUMN_KEY = "extra"
+
 #: How often the marquee shifts by one character.
 MARQUEE_INTERVAL_SECONDS = 0.4
 
@@ -39,7 +49,8 @@ def format_rate(rate_hz: float | None) -> str:
 
 
 class TopicDetailTable(NavDataTable):
-    """One row per topic: name, status, publish rate.
+    """One row per topic: name, status, publish rate, plus an optional
+    plugin-defined extra column.
 
     No "tier" column here -- it's shown in the detail pane's header line
     instead (`/topic  (msg_type, tier tier)`), freeing that width for
@@ -51,10 +62,18 @@ class TopicDetailTable(NavDataTable):
     of tier or content-check decimation -- displaying it here is free, not
     an extra measurement.
 
+    A 4th column appears when the visible category's reports carry a
+    `CheckStatus.topic_panel_column` (e.g. odometry's "Cov"), and disappears
+    again for a category that doesn't (e.g. "Other Topics") -- see
+    `_extra_column_header_for`/`_set_extra_column`. A topic currently
+    liveness-overridden (stale/no-messages) has no `topic_panel_column` of
+    its own even within such a category; its cell just reads "-".
+
     See `CategorySummaryTable`'s docstring for why routine updates avoid
     `clear()` (it resets scroll position and cursor, reading as flicker on
     a scrolled, actively-updating table): a full rebuild only happens when
-    the visible topic *set* changes or sort order was just toggled.
+    the visible topic *set* changes, the extra column's presence/label
+    changes, or sort order was just toggled.
     """
 
     def __init__(self, **kwargs) -> None:
@@ -67,6 +86,7 @@ class TopicDetailTable(NavDataTable):
         self._needs_rebuild = True
         self._marquee_offset: dict[str, int] = {}
         self._marquee_direction: dict[str, int] = {}
+        self._extra_column_header: str | None = None
 
     def on_mount(self) -> None:
         # Fixed widths, not auto (content-fit): an auto "Topic" column grows
@@ -99,6 +119,11 @@ class TopicDetailTable(NavDataTable):
             if not self._filter_text or self._filter_text in report.topic.lower()
         }
 
+        extra_header = self._extra_column_header_for(visible.values())
+        if extra_header != self._extra_column_header:
+            self._set_extra_column(extra_header)
+            self._needs_rebuild = True
+
         if self._needs_rebuild or set(self._topic_order) != set(visible):
             self._rebuild(visible)
             return
@@ -106,6 +131,31 @@ class TopicDetailTable(NavDataTable):
         self._reports_by_topic = visible
         for topic in self._topic_order:
             self._write_row(visible[topic])
+
+    @staticmethod
+    def _extra_column_header_for(reports) -> str | None:
+        """The plugin-defined extra column header shared by `reports`, or None if none is set.
+
+        A category is one plugin's topics, so every report's
+        `topic_panel_column` agrees when set at all -- except a topic
+        currently liveness-overridden (stale/no-messages), which reports ""
+        instead of its plugin's header. The first non-empty header found
+        wins, rather than requiring unanimous agreement, so the column
+        doesn't flicker away just because one topic in the category is
+        currently stale.
+        """
+        for report in reports:
+            if report.status.topic_panel_column:
+                return report.status.topic_panel_column
+        return None
+
+    def _set_extra_column(self, header: str | None) -> None:
+        """Add/remove/relabel the extra column to match `header` (None = no extra column)."""
+        if self._extra_column_header is not None:
+            self.remove_column(EXTRA_COLUMN_KEY)
+        if header is not None:
+            self.add_column(header, key=EXTRA_COLUMN_KEY, width=EXTRA_COLUMN_WIDTH)
+        self._extra_column_header = header
 
     def _rebuild(self, visible: dict[str, TopicReport]) -> None:
         previous_selection = self.selected_topic
@@ -121,8 +171,9 @@ class TopicDetailTable(NavDataTable):
         self._marquee_direction = {t: v for t, v in self._marquee_direction.items() if t in visible}
 
         self.clear()
+        blank_row = ("", "", "", "") if self._extra_column_header is not None else ("", "", "")
         for topic in self._topic_order:
-            self.add_row("", "", "", key=topic)
+            self.add_row(*blank_row, key=topic)
             self._write_row(visible[topic])
 
         if previous_selection in self._topic_order:
@@ -136,6 +187,8 @@ class TopicDetailTable(NavDataTable):
         self.update_cell(report.topic, "topic", marquee_window(report.topic, TOPIC_COLUMN_WIDTH, offset))
         self.update_cell(report.topic, "status", f"[{style}]{label}[/{style}]")
         self.update_cell(report.topic, "rate", format_rate(report.rate_hz))
+        if self._extra_column_header is not None:
+            self.update_cell(report.topic, EXTRA_COLUMN_KEY, report.status.topic_panel_value or "-")
 
     def _advance_marquee(self) -> None:
         for topic in self._topic_order:

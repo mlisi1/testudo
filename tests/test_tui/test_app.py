@@ -21,7 +21,18 @@ from testudo.tui.widgets.topic_panel import TopicDetailTable
 
 def _reports() -> list[TopicReport]:
     return [
-        TopicReport("/odom", "nav_msgs/msg/Odometry", "full", CheckStatus(Severity.ERROR, "odometry", "covariance too high")),
+        TopicReport(
+            "/odom",
+            "nav_msgs/msg/Odometry",
+            "full",
+            CheckStatus(
+                Severity.ERROR,
+                "odometry",
+                "covariance too high",
+                topic_panel_column="Cov",
+                topic_panel_value="[bold red]0.6[/bold red]",
+            ),
+        ),
         TopicReport("/scan", "sensor_msgs/msg/LaserScan", "full", CheckStatus(Severity.OK, "sensor", "nominal")),
         TopicReport("/battery", "sensor_msgs/msg/BatteryState", "vitals", CheckStatus(Severity.OK, "liveness", "alive")),
     ]
@@ -52,9 +63,11 @@ def test_app_starts_with_all_three_panes_populated() -> None:
             assert topics.row_count == 1
             assert app.screen.focused is categories
 
+            # status.message ("covariance too high") is deliberately not
+            # shown -- error reporting is getting its own treatment later.
             detail = app.screen.query_one("#detail-pane").content
             assert "/odom" in str(detail)
-            assert "covariance too high" in str(detail)
+            assert "nav_msgs/msg/Odometry" in str(detail)
 
     run(body())
 
@@ -266,5 +279,57 @@ def test_other_topics_category_always_sorts_last() -> None:
             await pilot.press("s")
             names_after_sort_toggle = [categories.get_row_at(i)[0] for i in range(categories.row_count)]
             assert names_after_sort_toggle[-1] == "Other Topics"
+
+    run(body())
+
+
+def test_odometry_category_shows_a_plugin_defined_extra_column() -> None:
+    async def body():
+        app = _make_app()
+        async with app.run_test():
+            # Odometry (ERROR, worst) is selected by default -- see _make_app.
+            topics = app.screen.query_one(TopicDetailTable)
+            assert len(topics.ordered_columns) == 4
+            assert str(topics.ordered_columns[-1].label) == "Cov"
+            assert topics.get_row_at(0)[-1] == "[bold red]0.6[/bold red]"
+
+    run(body())
+
+
+def test_extra_column_disappears_for_a_category_without_one() -> None:
+    async def body():
+        app = _make_app()
+        async with app.run_test() as pilot:
+            await pilot.press("j")  # move off "Odometry" onto the next category
+            topics = app.screen.query_one(TopicDetailTable)
+            categories = app.screen.query_one(CategorySummaryTable)
+            assert categories.selected_category != "Odometry"
+            assert len(topics.ordered_columns) == 3
+
+    run(body())
+
+
+def test_detail_pane_shows_active_error_codes_not_the_free_text_message() -> None:
+    async def body():
+        reports = [
+            TopicReport(
+                "/odom",
+                "nav_msgs/msg/Odometry",
+                "full",
+                CheckStatus(
+                    Severity.ERROR,
+                    "odometry",
+                    "covariance too high",  # must NOT appear in the Detail Panel
+                    codes={"ODOM-001": "[bold red]position covariance trace 0.6 out of bounds[/bold red]"},
+                ),
+            ),
+        ]
+        overall = CheckStatus(Severity.ERROR, "overall", "1 topic(s)")
+        app = TestudoApp(StaticDataSource(reports, overall), ros_distro="jazzy", sim_time_active=False)
+        async with app.run_test():
+            detail = str(app.screen.query_one("#detail-pane").content)
+            assert "ODOM-001" in detail
+            assert "position covariance trace 0.6 out of bounds" in detail
+            assert "covariance too high" not in detail
 
     run(body())

@@ -82,12 +82,37 @@ class CheckStatus:
 
     This single struct feeds both the TUI and the published
     diagnostic_msgs/DiagnosticStatus, so plugins only need to produce it once.
+    `topic_panel_column`/`topic_panel_value` are TUI-only presentation data
+    (ignored when publishing `DiagnosticStatus`, which has no slot for them):
+    an optional short, already-formatted (Rich markup allowed) extra column
+    for the Topic Panel, e.g. `topic_panel_column="Cov"`,
+    `topic_panel_value="[yellow]0.031[/yellow]"`. A category only ever shows
+    one plugin's topics at once, so this never competes for column budget
+    with another plugin -- leave both empty (the default) to keep today's
+    plain Topic/Status/Hz layout for that category. `codes` is the
+    TUI_DATA_DESIGN.md error-code proposal: every *currently active*
+    problem this status represents, as {code: already-formatted message}
+    (e.g. `{"ODOM-001": "[bold red]position covariance trace ...[/bold red]"}`)
+    -- a topic can have several active at once, unlike `label`/`message`,
+    which only ever describe one rolled-up state. Empty (the default) means
+    no plugin-specific problem is currently active; a liveness problem
+    (no publishers, stale, ...) gets its own LIVE-* codes independently, in
+    `topic_report.py`, since liveness is checked outside any plugin.
     """
 
     severity: int
     label: str
     message: str
     values: dict[str, str] = field(default_factory=dict)
+    topic_panel_column: str = ""
+    topic_panel_value: str = ""
+    codes: dict[str, str] = field(default_factory=dict)
+
+
+def colorize(text: str, severity: int) -> str:
+    """Wrap `text` in Rich markup for `severity`'s `SEVERITY_COLORS` entry."""
+    color = SEVERITY_COLORS.get(severity, "white")
+    return f"[{color}]{text}[/{color}]"
 
 
 def evaluate_zone(value: float, zone: ThresholdZone | None, *, higher_is_worse: bool = True) -> int:

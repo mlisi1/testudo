@@ -18,6 +18,44 @@ from testudo.tui.widgets.category_summary import CategorySummaryTable
 from testudo.tui.widgets.header import TestudoHeader
 from testudo.tui.widgets.topic_panel import TopicDetailTable
 
+#: `CheckStatus.values` key suffix marking a value's narrow-terminal
+#: alternative -- e.g. a plugin emits both "gauge" (a wide multi-segment
+#: meter) and "gauge_compact" (a single colored square) for the same
+#: metric, and `_resolve_values` below picks whichever fits the Detail
+#: Panel's current width. A plain naming convention, not a CheckStatus
+#: schema change (TUI_DATA_DESIGN.md's Track A) -- any plugin can opt in.
+COMPACT_VALUE_SUFFIX = "_compact"
+
+#: Detail Panel width (columns) below which `_resolve_values` prefers a
+#: value's `_compact` variant over its full one, where both exist.
+NARROW_DETAIL_WIDTH = 60
+
+
+def _resolve_values(values: dict[str, str], is_narrow: bool) -> list[tuple[str, str]]:
+    """Collapse `<key>`/`<key>_compact` pairs in `values` down to one entry each.
+
+    Preserves `values`' insertion order. A key with no compact counterpart
+    (most of them) passes through unchanged, from either side of the pair.
+    """
+    resolved: list[tuple[str, str]] = []
+    skip: set[str] = set()
+    for key, value in values.items():
+        if key in skip:
+            continue
+        if key.endswith(COMPACT_VALUE_SUFFIX):
+            base = key[: -len(COMPACT_VALUE_SUFFIX)]
+            skip.add(base)
+            if is_narrow:
+                resolved.append((base, value))
+            continue
+        compact_key = f"{key}{COMPACT_VALUE_SUFFIX}"
+        if compact_key in values:
+            skip.add(compact_key)
+            resolved.append((key, values[compact_key] if is_narrow else value))
+            continue
+        resolved.append((key, value))
+    return resolved
+
 
 class HelpScreen(ModalScreen):
     """`?`: a full-screen overlay listing every keybind. Any key closes it."""
@@ -47,7 +85,7 @@ class DashboardScreen(Screen):
         self._filtered_table: DataTable | None = None
 
     def compose(self) -> ComposeResult:
-        yield TestudoHeader(self.app.ros_distro)
+        yield TestudoHeader(self.app.ros_distro, self.app.ros_domain_id, self.app.dds_implementation)
         with Horizontal(id="panes"):
             yield CategorySummaryTable(id="category-table")
             yield TopicDetailTable(id="topic-table")
@@ -62,10 +100,7 @@ class DashboardScreen(Screen):
         self.query_one(CategorySummaryTable).focus()
 
     def _hint_text(self) -> str:
-        return (
-            "arrows/j/k: move (updates the panes live)   tab: switch pane   "
-            "/: filter   s: sort   p: pause   r: reset   ?: help   q: quit"
-        )
+        return "arrows/j/k: move   tab: switch pane   /: filter   s: sort   p: pause   r: reset   ?: help   q: quit"
 
     def sync_header(self) -> None:
         header = self.query_one(TestudoHeader)
@@ -87,16 +122,41 @@ class DashboardScreen(Screen):
         self.refresh_detail()
 
     def refresh_detail(self) -> None:
+        """Header, then structured data, then the active-error-code list last.
+
+        `status.message` (the single rolled-up free-text summary) is
+        deliberately not shown here -- `status.codes` (TUI_DATA_DESIGN.md's
+        error-code proposal) supersedes it: every currently active problem
+        gets its own `[CODE] message` line, independently of the others,
+        rather than one string with them all run together. `values` is
+        rendered at `#detail-pane`'s *current* width via `_resolve_values`,
+        so a plugin's wide/`_compact` value pairs adapt live to terminal
+        resizes (see `on_resize` below), not just at the moment of the
+        status's own construction.
+        """
         detail = self.query_one("#detail-pane", Static)
         report = self.query_one(TopicDetailTable).selected_report
         if report is None:
             detail.update("[dim]no topic selected[/dim]")
             return
-        lines = [f"[b]{report.topic}[/b]  ({report.msg_type}, {report.tier} tier)", "", report.status.message]
+        lines = [f"[b]{report.topic}[/b]  ({report.msg_type}, {report.tier} tier)"]
         if report.status.values:
+            is_narrow = detail.size.width < NARROW_DETAIL_WIDTH
+            for key, value in _resolve_values(report.status.values, is_narrow):
+                # A value containing its own newlines is a pre-formatted,
+                # self-labeled multi-line block (Track A) -- shown as-is,
+                # without a redundant "key: " prefix on its first line.
+                lines.append(value if "\n" in value else f"{key}: {value}")
+        if report.status.codes:
             lines.append("")
-            lines.extend(f"  {key}: {value}" for key, value in report.status.values.items())
+            lines.extend(f"[b]\\[{code}][/b] {message}" for code, message in report.status.codes.items())
         detail.update("\n".join(lines))
+
+    def on_resize(self, event) -> None:
+        # The detail pane's width (used by _resolve_values above) just
+        # changed -- redraw so a wide<->narrow meter swap isn't stuck
+        # showing whichever variant happened to be picked before the resize.
+        self.refresh_detail()
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         if isinstance(event.data_table, CategorySummaryTable):
