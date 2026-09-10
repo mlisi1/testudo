@@ -25,12 +25,18 @@ class TopicReport:
     rate_hz: float | None = None
 
 
-def liveness_status(vitals: TopicVitals, now: float, stale_after_seconds: float) -> CheckStatus | None:
+def liveness_status(
+    vitals: TopicVitals, now: float, stale_after_seconds: float, monitor_hz: bool = True
+) -> CheckStatus | None:
     """The liveness-tier verdict, or None if the topic is alive and not stale.
 
     A None return means the caller should fall through to that topic's own
     content status; liveness problems always take priority over content
     checks, since content can't be trusted without live data.
+
+    `monitor_hz=False` only affects the reported `rate_hz` value (see
+    `vitals_values`) -- staleness itself is judged on message *age*, not
+    rate, so disabling Hz monitoring never masks a genuinely dead topic.
     """
     if vitals.message_count == 0:
         message = "publisher(s) present but no messages received"
@@ -47,18 +53,27 @@ def liveness_status(vitals: TopicVitals, now: float, stale_after_seconds: float)
             severity=Severity.STALE,
             label="liveness",
             message=message,
-            values=vitals_values(vitals, age),
+            values=vitals_values(vitals, age, monitor_hz),
             codes={"LIVE-003": colorize(message, Severity.STALE)},
         )
     return None
 
 
-def vitals_values(vitals: TopicVitals, age: float | None) -> dict[str, str]:
-    """The message_count/rate_hz/age_s trio every liveness-derived status reports."""
+def vitals_values(vitals: TopicVitals, age: float | None, monitor_hz: bool = True) -> dict[str, str]:
+    """The message_count/rate_hz/age_s trio every liveness-derived status reports.
+
+    `rate_hz` reads "off" rather than a computed value when `monitor_hz` is
+    False (the `--no-hz` flag) -- distinct from "n/a", which still means
+    "not enough samples yet".
+    """
     rate = vitals.rate_hz()
+    if not monitor_hz:
+        rate_str = "off"
+    else:
+        rate_str = f"{rate:.2f}" if rate is not None else "n/a"
     return {
         "message_count": str(vitals.message_count),
-        "rate_hz": f"{rate:.2f}" if rate is not None else "n/a",
+        "rate_hz": rate_str,
         "age_s": f"{age:.2f}" if age is not None else "n/a",
     }
 
@@ -70,6 +85,7 @@ def vitals_report(
     now: float,
     stale_after_seconds: float,
     rate_threshold: ThresholdZone | None = None,
+    monitor_hz: bool = True,
 ) -> TopicReport:
     """Build a vitals-tier report: liveness verdict, or "alive" (optionally rate-checked).
 
@@ -78,18 +94,24 @@ def vitals_report(
     is how "actual vs. configured rate" checks (e.g. a costmap/planner/
     controller publishing slower than expected) work: no dedicated plugin,
     just a threshold on the vitals tier every topic already has.
+
+    `monitor_hz=False` (the `--no-hz` flag) skips the rate-threshold
+    comparison entirely and reports no rate on the topic, regardless of
+    whether a threshold is configured -- arrival timestamps are still
+    recorded (staleness needs them), just not turned into a rate.
     """
-    liveness = liveness_status(vitals, now, stale_after_seconds)
+    liveness = liveness_status(vitals, now, stale_after_seconds, monitor_hz)
     if liveness is not None:
-        return TopicReport(topic=topic_name, msg_type=msg_type, tier="vitals", status=liveness, rate_hz=vitals.rate_hz())
+        reported_rate = vitals.rate_hz() if monitor_hz else None
+        return TopicReport(topic=topic_name, msg_type=msg_type, tier="vitals", status=liveness, rate_hz=reported_rate)
     age = vitals.age_seconds(now)
-    rate = vitals.rate_hz()
-    values = vitals_values(vitals, age)
+    rate = vitals.rate_hz() if monitor_hz else None
+    values = vitals_values(vitals, age, monitor_hz)
 
     severity = Severity.OK
     message = "alive"
     codes: dict[str, str] = {}
-    if rate_threshold is not None and rate is not None:
+    if monitor_hz and rate_threshold is not None and rate is not None:
         severity = evaluate_zone(rate, rate_threshold, higher_is_worse=False)
         if severity != Severity.OK:
             message = f"rate {rate:.2f}Hz below configured threshold"
@@ -107,13 +129,15 @@ def full_tier_report(
     fallback_status: CheckStatus,
     now: float,
     stale_after_seconds: float,
+    monitor_hz: bool = True,
 ) -> TopicReport:
     """Build a full-tier report: liveness verdict takes priority, else the (debounced) content status."""
-    liveness = liveness_status(vitals, now, stale_after_seconds)
+    liveness = liveness_status(vitals, now, stale_after_seconds, monitor_hz)
+    reported_rate = vitals.rate_hz() if monitor_hz else None
     if liveness is not None:
-        return TopicReport(topic=topic_name, msg_type=msg_type, tier="full", status=liveness, rate_hz=vitals.rate_hz())
+        return TopicReport(topic=topic_name, msg_type=msg_type, tier="full", status=liveness, rate_hz=reported_rate)
     status = debounced_status if debounced_status is not None else fallback_status
-    return TopicReport(topic=topic_name, msg_type=msg_type, tier="full", status=status, rate_hz=vitals.rate_hz())
+    return TopicReport(topic=topic_name, msg_type=msg_type, tier="full", status=status, rate_hz=reported_rate)
 
 
 def suppress_if_inactive(

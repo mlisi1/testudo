@@ -140,11 +140,16 @@ class SubscriptionManager:
         stale_stack_grace_seconds: float = DEFAULT_STALE_STACK_GRACE_SECONDS,
         stale_check_interval_seconds: float = DEFAULT_STALE_CHECK_INTERVAL_SECONDS,
         spin_once: Callable[[Any, float], None] = rclpy.spin_once,
+        monitor_hz: bool = True,
     ) -> None:
         self._node = node
         self._config = config
         self._clock = clock if clock is not None else TestudoClock.from_node(node)
         self._stale_after_seconds = stale_after_seconds
+        # `--no-hz`: arrival timestamps are still recorded (staleness needs
+        # them), but no rate is computed from them or checked against a
+        # configured threshold -- see topic_report.py.
+        self._monitor_hz = monitor_hz
         self._graph_settle_seconds = graph_settle_seconds
         self._max_check_rate_hz = max_check_rate_hz
         self._hysteresis_required_consecutive = hysteresis_required_consecutive
@@ -401,7 +406,13 @@ class SubscriptionManager:
             topic_config = self._topic_config_by_name.get(topic_name)
             rate_threshold = topic_config.thresholds.get("rate_hz") if topic_config is not None else None
             report = vitals_report(
-                topic_name, self._msg_type_by_topic[topic_name], vitals, now, self._stale_after_seconds, rate_threshold
+                topic_name,
+                self._msg_type_by_topic[topic_name],
+                vitals,
+                now,
+                self._stale_after_seconds,
+                rate_threshold,
+                self._monitor_hz,
             )
             reports.append(self._suppress(topic_name, report))
         for topic_name, state in self._full_tier.items():
@@ -413,6 +424,7 @@ class SubscriptionManager:
                 state.plugin.get_status(),
                 now,
                 self._stale_after_seconds,
+                self._monitor_hz,
             )
             reports.append(self._suppress(topic_name, report))
 

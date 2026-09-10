@@ -54,10 +54,17 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-v", "--verbose", action="store_true", help="enable debug logging")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    _add_config_arg(subparsers.add_parser("watch", help="live interactive TUI"))
+    watch_parser = subparsers.add_parser("watch", help="live interactive TUI")
+    _add_config_arg(watch_parser)
+    watch_parser.add_argument(
+        "--no-hz", action="store_true", help="don't monitor or report topic publish rate (Hz)"
+    )
 
     check_parser = subparsers.add_parser("check", help="one-shot, non-interactive report (CI/pre-flight)")
     _add_config_arg(check_parser)
+    check_parser.add_argument(
+        "--no-hz", action="store_true", help="don't monitor or report topic publish rate (Hz)"
+    )
     check_parser.add_argument(
         "--duration",
         type=float,
@@ -110,7 +117,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
     stop_spinning = threading.Event()
     spin_thread: threading.Thread | None = None
     try:
-        manager = SubscriptionManager(node, config, plugins)
+        manager = SubscriptionManager(node, config, plugins, monitor_hz=not args.no_hz)
         manager.start()
         # Textual owns the main thread's event loop, so subscription
         # callbacks need their own thread to actually get serviced -- the
@@ -167,7 +174,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     rclpy.init()
     node = rclpy.create_node("testudo_check")
     try:
-        manager = SubscriptionManager(node, config, plugins)
+        manager = SubscriptionManager(node, config, plugins, monitor_hz=not args.no_hz)
         manager.start()
         # Publishing runs on its own fixed-rate timer for the whole
         # observation window, decoupled from any single check's sampling

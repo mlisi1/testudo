@@ -113,6 +113,34 @@ def test_full_tier_report_uses_fallback_when_no_debounced_status_yet() -> None:
     assert report.status is fallback
 
 
+def test_vitals_report_no_hz_skips_rate_threshold_even_when_configured() -> None:
+    vitals = _vitals_with_messages(2, [0.0, 5.0])  # 0.2 Hz, well below the zone
+    zone = ThresholdZone(green=4.0, orange=1.0)
+    report = vitals_report(
+        "/x", "nav_msgs/msg/OccupancyGrid", vitals, now=5.0, stale_after_seconds=10.0, rate_threshold=zone, monitor_hz=False
+    )
+    assert report.status.severity == Severity.OK
+    assert report.rate_hz is None
+    assert report.status.values["rate_hz"] == "off"
+
+
+def test_vitals_report_no_hz_still_flags_staleness() -> None:
+    vitals = _vitals_with_messages(1, [0.0])
+    report = vitals_report("/x", "std_msgs/msg/String", vitals, now=10.0, stale_after_seconds=2.0, monitor_hz=False)
+    assert report.status.severity == Severity.STALE
+    assert report.status.values["rate_hz"] == "off"
+    assert report.rate_hz is None
+
+
+def test_full_tier_report_no_hz_reports_no_rate() -> None:
+    vitals = _vitals_with_messages(2, [0.0, 0.1])
+    fallback = CheckStatus(severity=Severity.OK, label="plugin", message="fine")
+    report = full_tier_report(
+        "/x", "t", vitals, debounced_status=None, fallback_status=fallback, now=0.1, stale_after_seconds=2.0, monitor_hz=False
+    )
+    assert report.rate_hz is None
+
+
 def test_suppress_if_inactive_leaves_unknown_owner_untouched() -> None:
     tracker = LifecycleTracker()
     report = TopicReport("/x", "t", "vitals", CheckStatus(severity=Severity.ERROR, label="liveness", message="dead"))
