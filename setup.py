@@ -11,7 +11,13 @@ setup(
         (f"share/{package_name}", ["package.xml"]),
         (f"share/{package_name}/config", ["config/example_config.yaml"]),
     ],
-    install_requires=["setuptools", "PyYAML", "textual"],
+    # numpy: package.xml declares it as an apt exec_depend (python3-numpy),
+    # which colcon/rosdep-based installs satisfy for free -- but a plain
+    # `pip install` (e.g. on a machine set up without colcon, or into a venv
+    # without --system-site-packages) won't pull it in unless it's also
+    # listed here. It's a direct import (odometry.py) as well as a
+    # transitive need of several rclpy message bindings.
+    install_requires=["setuptools", "PyYAML", "textual", "numpy"],
     zip_safe=True,
     maintainer="mlisi1",
     maintainer_email="elechim2196@gmail.com",

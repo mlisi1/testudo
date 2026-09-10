@@ -49,22 +49,37 @@ def _add_config_arg(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("-c", "--config", default=DEFAULT_CONFIG_PATH, help="path to the Testudo YAML config file")
 
 
+def _add_no_hz_arg(parser: argparse.ArgumentParser, *, dest: str = "no_hz") -> None:
+    parser.add_argument(
+        "--no-hz", dest=dest, action="store_true", help="don't monitor or report topic publish rate (Hz)"
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="testudo", description="Black-box diagnostics for navigation stacks.")
     parser.add_argument("-v", "--verbose", action="store_true", help="enable debug logging")
+    # Also registered here (into a separate `no_hz_global` dest, merged with
+    # the per-subcommand `no_hz` in `main()`) so `--no-hz` works placed
+    # before the subcommand too (`testudo --no-hz watch`, or the equivalent
+    # `ros2 run testudo testudo --no-hz watch`) -- argparse's subparsers
+    # only recognize an option registered on *that* subparser once the
+    # subcommand token is consumed, so without this it only worked placed
+    # after it. A *shared* dest here doesn't work: the subparser's own
+    # default-fill silently resets a shared `no_hz` back to False even when
+    # the parent already set it True, which is worse than the original bug
+    # (wrong value, not an error) -- hence the separate dest and the merge
+    # below instead. Harmless no-op for `replay`/`plugins`, which don't
+    # read `no_hz`.
+    _add_no_hz_arg(parser, dest="no_hz_global")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     watch_parser = subparsers.add_parser("watch", help="live interactive TUI")
     _add_config_arg(watch_parser)
-    watch_parser.add_argument(
-        "--no-hz", action="store_true", help="don't monitor or report topic publish rate (Hz)"
-    )
+    _add_no_hz_arg(watch_parser)
 
     check_parser = subparsers.add_parser("check", help="one-shot, non-interactive report (CI/pre-flight)")
     _add_config_arg(check_parser)
-    check_parser.add_argument(
-        "--no-hz", action="store_true", help="don't monitor or report topic publish rate (Hz)"
-    )
+    _add_no_hz_arg(check_parser)
     check_parser.add_argument(
         "--duration",
         type=float,
@@ -332,6 +347,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     _configure_logging(args.verbose)
+    # `no_hz` (per-subcommand, absent entirely for replay/plugins) and
+    # `no_hz_global` (top-level, always present) are merged here rather
+    # than sharing a dest -- see `_build_parser`'s comment for why.
+    args.no_hz = getattr(args, "no_hz", False) or args.no_hz_global
     return _COMMANDS[args.command](args)
 
 
