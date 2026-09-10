@@ -26,6 +26,7 @@ setup(
             "dummy = testudo.plugins.builtin.dummy:DummyPlugin",
             "odometry = testudo.plugins.builtin.odometry:OdometryPlugin",
             "sensors_generic = testudo.plugins.builtin.sensors_generic:GenericSensorPlugin",
+            "gnss = testudo.plugins.builtin.gnss:GnssPlugin",
             # image_stream temporarily disabled: caused problems on real
             # hardware. Left registered in code (not deleted), just not
             # exposed as an entry point -- re-add this line to restore it.

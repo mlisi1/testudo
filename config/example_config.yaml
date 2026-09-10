@@ -69,6 +69,24 @@ topics:
           green: 0.4
           orange: 0.15
 
+  sensor_msgs/msg/NavSatFix:
+    - name: /gps/fix
+      weight: 2
+      thresholds:
+        # This receiver is consumer/SBAS-grade, not RTK -- a few meters of
+        # std per axis is normal here, well past the plugin's RTK-tuned
+        # default (green=1e-4, orange=0.01 m^2).
+        position_covariance:
+          green: 1.0
+          orange: 9.0
+        # ...but under the canopy on this site, losing fix for a couple of
+        # readings in twenty is normal; only flag heavier dropout than that.
+        fix_dropout_ratio:
+          green: 0.15
+          orange: 0.35
+        # stuck_count, invalid_ratio, and jump_speed_mps aren't overridden:
+        # the plugin defaults apply.
+
   # Costmap/planner/controller actual-vs-configured rate: no dedicated
   # plugin needed for this -- any declared topic's vitals-tier rate gets
   # checked against `rate_hz` if it's set (lower is worse). This costmap
