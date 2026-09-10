@@ -191,6 +191,26 @@ class CheckPlugin(abc.ABC):
         """Default threshold profile, keyed by metric name. Empty unless overridden."""
         return {}
 
+    @classmethod
+    def presence_only_msg_types(cls) -> frozenset[str]:
+        """Subset of `msg_types()` that default to Testudo's presence-only tier when undeclared.
+
+        Presence-only means `SubscriptionManager` doesn't subscribe at all
+        for an undeclared topic of this type -- just the discovery check
+        every topic already gets (a publisher exists, or doesn't) -- because
+        even a raw vitals subscription isn't actually cheap for this wire
+        format. Image and point-cloud data are the motivating case: heavy
+        enough, and numerous enough per sensor (raw plus several compressed/
+        codec variants, or a dense 3D scan), that auto-watching every one of
+        them measurably starves other nodes on a real robot.
+
+        Declaring a topic of one of these types under `topics:` still opts
+        it into this plugin's full checks regardless -- this only changes
+        the *undeclared* default. Empty by default: most message types are
+        cheap enough that vitals-tier auto-watching is the right default.
+        """
+        return frozenset()
+
     @abc.abstractmethod
     def on_message(self, topic: str, msg: Any) -> None:
         """Handle one (possibly decimated) message received on `topic`.

@@ -29,6 +29,7 @@ subscriptions, so it must run on whichever thread owns the spin loop.
 """
 from __future__ import annotations
 
+import fnmatch
 import logging
 import time
 from dataclasses import dataclass, field
@@ -58,7 +59,7 @@ from testudo.core.maintenance import (
 )
 from testudo.core.maintenance import discover_and_subscribe as _discover_and_subscribe
 from testudo.core.maintenance import maintain as _maintain
-from testudo.core.topic_report import TopicReport, full_tier_report, suppress_if_inactive, vitals_report
+from testudo.core.topic_report import TopicReport, full_tier_report, presence_report, suppress_if_inactive, vitals_report
 from testudo.core.vitals import DEFAULT_STALE_AFTER_SECONDS, TopicVitals
 from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, ThresholdZone, colorize
 from testudo.plugins.registry import DiscoveredPlugin
@@ -68,6 +69,27 @@ _logger = logging.getLogger(__name__)
 #: Topics excluded from subscription by default: ROS 2 graph bookkeeping,
 #: not a useful diagnostics target.
 DEFAULT_EXCLUDED_TOPICS = frozenset({"/parameter_events", "/rosout"})
+
+#: Message types that default to the *presence* tier (see `presence_report`)
+#: even though no discovered plugin covers them, so there's nowhere for a
+#: `CheckPlugin.presence_only_msg_types()` declaration to live for them.
+#: `theora_image_transport/msg/Packet`: `image_transport`'s compressed/
+#: theora republishers are lazy publishers that only run their encoder once
+#: something subscribes -- so testudo showing up and subscribing to every
+#: topic can flip on an otherwise-idle, misconfigured encoder (observed in
+#: the wild: a depth-image theora republisher fed to a color-only encoder,
+#: erroring on every single frame once subscribed). Declaring a topic of
+#: this type under `topics:` has no effect (no plugin covers it either
+#: way) -- it stays presence-only regardless.
+_PRESENCE_ONLY_MSG_TYPES_WITHOUT_PLUGIN = frozenset({"theora_image_transport/msg/Packet"})
+
+
+def _index_presence_only_msg_types(plugins: list[DiscoveredPlugin]) -> frozenset[str]:
+    """Union of every discovered plugin's `presence_only_msg_types()`, plus the no-plugin set above."""
+    result: set[str] = set(_PRESENCE_ONLY_MSG_TYPES_WITHOUT_PLUGIN)
+    for plugin in plugins:
+        result.update(plugin.plugin_class.presence_only_msg_types())
+    return frozenset(result)
 
 #: A freshly created node's topic cache under-reports for a while after
 #: creation, while discovery info from other graph participants is still
@@ -162,12 +184,17 @@ class SubscriptionManager:
         # lifecycle state at startup) is testable without a live rclpy node.
         self._spin_once = spin_once
         self._plugin_class_by_msg_type = _index_plugins_by_msg_type(discovered_plugins)
+        self._presence_only_msg_types = _index_presence_only_msg_types(discovered_plugins)
         self._topic_config_by_name = _index_topic_configs_by_name(config)
         self._action_config_by_status_topic = _index_action_configs_by_status_topic(config)
         self._lifecycle_tracker = LifecycleTracker()
 
         self._vitals: dict[str, TopicVitals] = {}
         self._full_tier: dict[str, _FullTierState] = {}
+        # topic name -> msg type, for undeclared topics of a
+        # presence-only-by-default type (see DEFAULT_PRESENCE_ONLY_MSG_TYPES)
+        # that never get a subscription at all.
+        self._presence_only: dict[str, str] = {}
         self._msg_type_by_topic: dict[str, str] = {}
         self._owning_node_by_topic: dict[str, str] = {}
         self._no_publishers: set[str] = set()
@@ -195,6 +222,12 @@ class SubscriptionManager:
     def excluded_topics(self) -> set[str]:
         """Default excludes plus self-exclusion of Testudo's own published diagnostics topic."""
         return set(DEFAULT_EXCLUDED_TOPICS) | {self._config.publish.topic}
+
+    def is_excluded(self, topic_name: str) -> bool:
+        """True if `topic_name` is a default/self-exclusion, or matches a configured `exclude_topics` glob."""
+        if topic_name in self.excluded_topics():
+            return True
+        return any(fnmatch.fnmatch(topic_name, pattern) for pattern in self._config.exclude_topics)
 
     def start(self) -> None:
         """Subscribe to every currently-discovered, non-excluded topic, then arm live rediscovery.
@@ -241,6 +274,10 @@ class SubscriptionManager:
         self._owning_node_by_topic[topic_name] = fully_qualified_node_name(
             publisher_info.node_namespace, publisher_info.node_name
         )
+
+        if msg_type_str in self._presence_only_msg_types and topic_name not in self._topic_config_by_name:
+            self._presence_only[topic_name] = msg_type_str
+            return
 
         try:
             msg_class = get_message(msg_type_str)
@@ -402,6 +439,8 @@ class SubscriptionManager:
                     ),
                 )
             )
+        for topic_name, msg_type in self._presence_only.items():
+            reports.append(self._suppress(topic_name, presence_report(topic_name, msg_type)))
         for topic_name, vitals in self._vitals.items():
             topic_config = self._topic_config_by_name.get(topic_name)
             rate_threshold = topic_config.thresholds.get("rate_hz") if topic_config is not None else None

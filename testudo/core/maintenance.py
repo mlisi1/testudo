@@ -73,7 +73,6 @@ def discover_and_subscribe(manager: "SubscriptionManager") -> None:
     actually committed to a tier, or reserved as another topic's
     related-topic companion, are skipped.
     """
-    excluded = manager.excluded_topics()
     topics_by_name = {topic_info.name: topic_info for topic_info in list_topics(manager._node)}
 
     reserved = manager._reserved_related_topic_names()
@@ -82,7 +81,7 @@ def discover_and_subscribe(manager: "SubscriptionManager") -> None:
 
     committed = set(manager._msg_type_by_topic) - manager._no_publishers
     for name, topic_info in topics_by_name.items():
-        if name in excluded or name in committed or name in reserved:
+        if manager.is_excluded(name) or name in committed or name in reserved:
             continue
         if not topic_info.msg_types:
             _logger.warning("topic '%s' has no known message type; skipping", name)

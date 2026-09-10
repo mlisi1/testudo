@@ -41,6 +41,25 @@ def test_empty_file_yields_defaults(tmp_path: Path) -> None:
     assert config.severity_mode is SeverityMode.WORST
     assert config.publish.rate_hz == 5.0
     assert config.publish.topic == "/diagnostics"
+    assert config.exclude_topics == []
+
+
+def test_exclude_topics_parses_glob_patterns(tmp_path: Path) -> None:
+    path = _write(tmp_path, "exclude_topics:\n  - /front_camera/**\n  - /velodyne_packets\n")
+    config = load_config(path)
+    assert config.exclude_topics == ["/front_camera/**", "/velodyne_packets"]
+
+
+def test_exclude_topics_must_be_a_list(tmp_path: Path) -> None:
+    path = _write(tmp_path, "exclude_topics: not_a_list")
+    with pytest.raises(ConfigError, match="'exclude_topics' must be a list"):
+        load_config(path)
+
+
+def test_exclude_topics_entries_must_be_non_empty_strings(tmp_path: Path) -> None:
+    path = _write(tmp_path, "exclude_topics:\n  - 5\n")
+    with pytest.raises(ConfigError, match="'exclude_topics' entries must be non-empty strings"):
+        load_config(path)
 
 
 def test_full_valid_config_parses(tmp_path: Path) -> None:

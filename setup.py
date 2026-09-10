@@ -33,10 +33,11 @@ setup(
             "odometry = testudo.plugins.builtin.odometry:OdometryPlugin",
             "sensors_generic = testudo.plugins.builtin.sensors_generic:GenericSensorPlugin",
             "gnss = testudo.plugins.builtin.gnss:GnssPlugin",
-            # image_stream temporarily disabled: caused problems on real
-            # hardware. Left registered in code (not deleted), just not
-            # exposed as an entry point -- re-add this line to restore it.
-            # "image_stream = testudo.plugins.builtin.image_stream:ImageStreamPlugin",
+            # Re-enabled now that undeclared Image/CompressedImage topics
+            # default to the presence-only tier (no subscription at all) --
+            # that's what previously caused problems on real hardware.
+            "image_stream = testudo.plugins.builtin.image_stream:ImageStreamPlugin",
+            "point_stream = testudo.plugins.builtin.point_stream:PointStreamPlugin",
             "nav2_goals = testudo.plugins.builtin.nav2_goals:Nav2GoalPlugin",
             "tf_watch = testudo.plugins.builtin.tf_watch:TFWatchPlugin",
         ],

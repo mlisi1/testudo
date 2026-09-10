@@ -16,6 +16,12 @@ relative to the topic's own rolling average -- a cheap proxy for a blank or
 corrupted frame that works on compressed data without ever decompressing it.
 Frame size and a rolling bandwidth estimate are also surfaced for the
 Detail Panel, human-formatted (KB/MB) rather than as a raw byte count.
+
+Both message types default to Testudo's presence-only tier (see
+`presence_only_msg_types` and `subscription_manager.py`) when undeclared --
+even a raw vitals subscription to camera data is heavy enough to compete
+with the pipeline actually producing it. Declare a camera topic under
+`topics:` to get this plugin's checks for it.
 """
 from __future__ import annotations
 
@@ -121,6 +127,14 @@ class ImageStreamPlugin(CheckPlugin):
     @classmethod
     def msg_types(cls) -> tuple[str, ...]:
         return (_IMAGE_TYPE, _COMPRESSED_IMAGE_TYPE)
+
+    @classmethod
+    def presence_only_msg_types(cls) -> frozenset[str]:
+        # Both wire formats are heavy enough (raw frames, or several
+        # compressed/codec variants per camera) that auto-subscribing every
+        # undeclared one is what previously starved other nodes on a real
+        # robot -- see subscription_manager.py's presence-tier docs.
+        return frozenset({_IMAGE_TYPE, _COMPRESSED_IMAGE_TYPE})
 
     @classmethod
     def default_thresholds(cls) -> dict[str, ThresholdZone]:

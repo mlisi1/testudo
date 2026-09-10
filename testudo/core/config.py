@@ -76,6 +76,7 @@ class TestudoConfig:
     severity_mode: SeverityMode = SeverityMode.WORST
     publish: PublishConfig = field(default_factory=PublishConfig)
     plugins_dir: str | None = None
+    exclude_topics: list[str] = field(default_factory=list)
 
 
 def load_config(path: str | Path) -> TestudoConfig:
@@ -98,7 +99,7 @@ def load_config(path: str | Path) -> TestudoConfig:
     return _parse_config(raw, source=str(path))
 
 
-_TOP_LEVEL_KEYS = {"topics", "actions", "tf", "severity_mode", "publish", "plugins_dir"}
+_TOP_LEVEL_KEYS = {"topics", "actions", "tf", "severity_mode", "publish", "plugins_dir", "exclude_topics"}
 
 
 def _parse_config(raw: dict[str, Any], source: str) -> TestudoConfig:
@@ -117,7 +118,19 @@ def _parse_config(raw: dict[str, Any], source: str) -> TestudoConfig:
         severity_mode=_parse_severity_mode(raw.get("severity_mode", "worst"), source),
         publish=_parse_publish(raw.get("publish", {}), source),
         plugins_dir=plugins_dir,
+        exclude_topics=_parse_exclude_topics(raw.get("exclude_topics", []), source),
     )
+
+
+def _parse_exclude_topics(raw: Any, source: str) -> list[str]:
+    if not isinstance(raw, list):
+        raise ConfigError(f"{source}: 'exclude_topics' must be a list of glob patterns")
+    result = []
+    for pattern in raw:
+        if not isinstance(pattern, str) or not pattern:
+            raise ConfigError(f"{source}: 'exclude_topics' entries must be non-empty strings")
+        result.append(pattern)
+    return result
 
 
 def _parse_topics(raw: Any, source: str) -> dict[str, list[TopicConfig]]:

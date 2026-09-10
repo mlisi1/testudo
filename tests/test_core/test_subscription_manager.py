@@ -133,6 +133,28 @@ class _EmptyPlugin(CheckPlugin):
         return CheckStatus(severity=Severity.OK, label="empty", message=f"{len(self.messages)} msg(s)")
 
 
+class _ImagePlugin(CheckPlugin):
+    """Test-only plugin covering sensor_msgs/msg/Image, mirroring ImageStreamPlugin's shape."""
+
+    def __init__(self, thresholds=None, related_topics=None) -> None:
+        super().__init__(thresholds, related_topics)
+        self.messages: list[Any] = []
+
+    @classmethod
+    def msg_types(cls) -> tuple[str, ...]:
+        return ("sensor_msgs/msg/Image",)
+
+    @classmethod
+    def presence_only_msg_types(cls) -> frozenset[str]:
+        return frozenset({"sensor_msgs/msg/Image"})
+
+    def on_message(self, topic: str, msg: Any) -> None:
+        self.messages.append(msg)
+
+    def get_status(self) -> CheckStatus:
+        return CheckStatus(severity=Severity.OK, label="image", message=f"{len(self.messages)} msg(s)")
+
+
 class _RecordingPlugin(CheckPlugin):
     """Test-only plugin that records every `on_message` call and reports whatever severity is queued."""
 
@@ -270,6 +292,123 @@ def test_topic_with_covering_plugin_gets_full_tier() -> None:
     assert len(reports) == 1
     assert reports[0].tier == "full"
     assert reports[0].status.severity == Severity.OK
+
+
+def test_undeclared_image_topic_gets_presence_tier_without_subscribing() -> None:
+    """An undeclared sensor_msgs/msg/Image topic isn't subscribed at all, even with a covering plugin.
+
+    Even a raw vitals subscription still costs whatever CycloneDDS/RTPS
+    charges to transport the payload -- image data is heavy enough that
+    auto-watching every camera topic on a real robot measurably starves
+    other nodes (see DEFAULT_PRESENCE_ONLY_MSG_TYPES). Presence (a
+    publisher exists) is still reported; declaring the topic under
+    `topics:` opts it back into full monitoring.
+    """
+    node = _FakeNode(
+        topics=[("/camera/image_raw", ["sensor_msgs/msg/Image"])],
+        publishers_by_topic={"/camera/image_raw": [_FakeEndpointInfo(qos_profile=_qos())]},
+    )
+    discovered = [DiscoveredPlugin(name="image", plugin_class=_ImagePlugin, source="packaged")]
+    manager = SubscriptionManager(node, _config(), discovered, clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+
+    assert node.subscriptions == []
+    reports = manager.reports()
+    assert len(reports) == 1
+    assert reports[0].topic == "/camera/image_raw"
+    assert reports[0].tier == "presence"
+    assert reports[0].status.severity == Severity.OK
+    assert "not subscribed" in reports[0].status.message
+
+
+def test_undeclared_theora_topic_gets_presence_tier_without_subscribing() -> None:
+    """A lazy image_transport republisher (theora) shouldn't be woken up by an undeclared subscription.
+
+    `image_transport`'s compressed/theora republishers only run their
+    encoder once something subscribes -- observed in the wild waking up a
+    misconfigured depth-image theora republisher into erroring on every
+    frame, purely because Testudo subscribed to it for vitals.
+    """
+    node = _FakeNode(
+        topics=[("/camera/image/theora", ["theora_image_transport/msg/Packet"])],
+        publishers_by_topic={"/camera/image/theora": [_FakeEndpointInfo(qos_profile=_qos())]},
+    )
+    manager = SubscriptionManager(node, _config(), [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+
+    assert node.subscriptions == []
+    reports = manager.reports()
+    assert reports[0].tier == "presence"
+
+
+def test_a_plugin_can_default_only_some_of_its_own_msg_types_to_presence() -> None:
+    """A plugin covering two types (like PointStreamPlugin's LaserScan+PointCloud2) can tier them differently."""
+
+    class _MixedTierPlugin(CheckPlugin):
+        @classmethod
+        def msg_types(cls) -> tuple[str, ...]:
+            return ("sensor_msgs/msg/LaserScan", "sensor_msgs/msg/PointCloud2")
+
+        @classmethod
+        def presence_only_msg_types(cls) -> frozenset[str]:
+            return frozenset({"sensor_msgs/msg/PointCloud2"})
+
+        def on_message(self, topic: str, msg: Any) -> None:
+            pass
+
+        def get_status(self) -> CheckStatus:
+            return CheckStatus(severity=Severity.OK, label="mixed", message="ok")
+
+    node = _FakeNode(
+        topics=[("/scan", ["sensor_msgs/msg/LaserScan"]), ("/points", ["sensor_msgs/msg/PointCloud2"])],
+        publishers_by_topic={
+            "/scan": [_FakeEndpointInfo(qos_profile=_qos())],
+            "/points": [_FakeEndpointInfo(qos_profile=_qos())],
+        },
+    )
+    discovered = [DiscoveredPlugin(name="mixed", plugin_class=_MixedTierPlugin, source="packaged")]
+    manager = SubscriptionManager(node, _config(), discovered, clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+
+    subscribed_topics = {sub.topic for sub in node.subscriptions}
+    assert subscribed_topics == {"/scan"}
+    reports_by_topic = {report.topic: report.tier for report in manager.reports()}
+    assert reports_by_topic == {"/scan": "full", "/points": "presence"}
+
+
+def test_declared_image_topic_still_gets_full_tier() -> None:
+    node = _FakeNode(
+        topics=[("/camera/image_raw", ["sensor_msgs/msg/Image"])],
+        publishers_by_topic={"/camera/image_raw": [_FakeEndpointInfo(qos_profile=_qos())]},
+    )
+    discovered = [DiscoveredPlugin(name="image", plugin_class=_ImagePlugin, source="packaged")]
+    config = TestudoConfig(
+        topics={"sensor_msgs/msg/Image": [TopicConfig(name="/camera/image_raw", msg_type="sensor_msgs/msg/Image")]}
+    )
+    manager = SubscriptionManager(node, config, discovered, clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+
+    assert len(node.subscriptions) == 1
+    assert node.subscriptions[0].topic == "/camera/image_raw"
+    reports = manager.reports()
+    assert reports[0].tier == "full"
+
+
+def test_exclude_topics_glob_pattern_is_not_subscribed() -> None:
+    node = _FakeNode(
+        topics=[("/heavy/points", ["sensor_msgs/msg/PointCloud2"]), ("/odom", ["nav_msgs/msg/Odometry"])],
+        publishers_by_topic={
+            "/heavy/points": [_FakeEndpointInfo(qos_profile=_qos())],
+            "/odom": [_FakeEndpointInfo(qos_profile=_qos())],
+        },
+    )
+    config = TestudoConfig(exclude_topics=["/heavy/*"])
+    manager = SubscriptionManager(node, config, [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+
+    subscribed_topics = {sub.topic for sub in node.subscriptions}
+    assert subscribed_topics == {"/odom"}
+    assert {report.topic for report in manager.reports()} == {"/odom"}
 
 
 def test_full_tier_topic_with_no_messages_is_error_not_plugin_default() -> None:

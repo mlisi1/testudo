@@ -20,7 +20,7 @@ class TopicReport:
 
     topic: str
     msg_type: str
-    tier: str  # "vitals" or "full"
+    tier: str  # "vitals", "full", or "presence"
     status: CheckStatus
     rate_hz: float | None = None
 
@@ -138,6 +138,24 @@ def full_tier_report(
         return TopicReport(topic=topic_name, msg_type=msg_type, tier="full", status=liveness, rate_hz=reported_rate)
     status = debounced_status if debounced_status is not None else fallback_status
     return TopicReport(topic=topic_name, msg_type=msg_type, tier="full", status=status, rate_hz=reported_rate)
+
+
+def presence_report(topic_name: str, msg_type: str) -> TopicReport:
+    """Build a presence-only report: a publisher exists, but the topic isn't subscribed at all.
+
+    Used for message types heavy enough that even a raw vitals subscription
+    isn't actually cheap (see `DEFAULT_PRESENCE_ONLY_MSG_TYPES` in
+    subscription_manager.py) -- rather than pay for their data, Testudo
+    settles for knowing a publisher is there, unless the topic is declared
+    under `topics:` to opt into real monitoring.
+    """
+    message = "publisher present; not subscribed by default (heavy topic type -- declare under topics: to monitor)"
+    return TopicReport(
+        topic=topic_name,
+        msg_type=msg_type,
+        tier="presence",
+        status=CheckStatus(severity=Severity.OK, label="presence", message=message),
+    )
 
 
 def suppress_if_inactive(

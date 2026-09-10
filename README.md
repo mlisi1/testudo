@@ -16,18 +16,31 @@ covariance sanity, TF tree health) those tools don't cover out of the box.
 
 ## Features
 
-- **Two-tier subscription model.** Every topic on the graph gets watched
-  for liveness and frequency for free (raw subscriptions, no
-  deserialization). Topics you declare — or that a plugin recognizes by
-  message type — additionally get full content checks. This is what
-  keeps watching 137 topics on a real robot cheap.
+- **Two-tier subscription model, with a presence-only escape hatch for
+  heavy topics.** Every topic on the graph gets watched for liveness and
+  frequency for free (raw subscriptions, no deserialization). Topics you
+  declare — or that a plugin recognizes by message type — additionally
+  get full content checks. A plugin can mark specific message types as
+  presence-only by default instead (`CheckPlugin.presence_only_msg_types`)
+  when even a raw subscription is too heavy to auto-watch on every
+  undeclared topic: no subscription at all, just the publisher-exists
+  check every topic already gets, unless you declare that topic under
+  `topics:`. Image/CompressedImage (`ImageStreamPlugin`) and 3D
+  PointCloud2 (`PointStreamPlugin`) default this way; 2D LaserScan stays
+  on the normal full tier. `theora_image_transport/msg/Packet` is
+  presence-only too (no dedicated plugin) — subscribing to a lazy
+  `image_transport` republisher can wake up an otherwise-idle encoder. An
+  `exclude_topics:` glob list in config drops topics from discovery
+  entirely.
 - **Built-in content checks**, all through the same plugin interface
   external users build against:
 
   | Plugin | Message type | Checks |
   |---|---|---|
   | Odometry | `nav_msgs/msg/Odometry` | covariance threshold zones, positive-semi-definiteness, growth-rate sanity, optional `cmd_vel` cross-check |
-  | Generic sensor | `sensor_msgs/msg/LaserScan`, `sensor_msgs/msg/Imu` | NaN/Inf, stuck/zero values, range/magnitude plausibility, `frame_id` consistency |
+  | Generic sensor | `sensor_msgs/msg/Imu` | NaN/Inf, stuck values, magnitude plausibility, `frame_id` consistency |
+  | Point stream | `sensor_msgs/msg/LaserScan` (2D, full tier), `sensor_msgs/msg/PointCloud2` (3D, presence-only by default) | NaN/Inf/out-of-range ratio, stuck reading, `frame_id` consistency, malformed/empty payload (3D only) |
+  | Image stream | `sensor_msgs/msg/Image`, `sensor_msgs/msg/CompressedImage` (both presence-only by default) | stuck/empty frame, malformed payload, size-drop, `frame_id` consistency, rolling bandwidth |
   | Nav2 goals | `action_msgs/msg/GoalStatusArray` | goal lifecycle, success rate, mean duration, invocation frequency — covers both navigation goals and recovery behaviors |
   | TF watch | `tf2_msgs/msg/TFMessage` | missing chains, multi-parent frames, stale-edge (extrapolation-risk) detection |
 
@@ -142,6 +155,14 @@ actions:
 
 tf:
   - {parent: map, child: base_link}
+
+# Glob patterns (fnmatch-style); matching topics are skipped entirely --
+# no subscription, no report row. Useful for topics whose interface
+# package isn't installed on the host running Testudo, or noisy topics
+# you have no interest in either tier for.
+exclude_topics:
+  - /velodyne_packets
+  - /front_camera/*/theora
 ```
 
 See [`config/example_config.yaml`](config/example_config.yaml) for a

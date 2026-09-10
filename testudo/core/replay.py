@@ -74,6 +74,10 @@ def _track_for_replay(manager: SubscriptionManager, topic_name: str, msg_type_st
         return
     manager._msg_type_by_topic[topic_name] = msg_type_str
 
+    if msg_type_str in manager._presence_only_msg_types and topic_name not in manager._topic_config_by_name:
+        manager._presence_only[topic_name] = msg_type_str
+        return
+
     plugin_class = manager._plugin_class_by_msg_type.get(msg_type_str)
     if plugin_class is None:
         manager._vitals[topic_name] = TopicVitals(topic=topic_name)
@@ -168,7 +172,6 @@ def replay_bag(
     clock_source = _ReplayClockSource()
     clock = TestudoClock(clock_source, sim_time_query=lambda: True)
     manager = SubscriptionManager(node, config, discovered_plugins, clock=clock)
-    excluded = manager.excluded_topics()
 
     _wire_tf_watch_for_replay(manager, topic_types)
 
@@ -177,7 +180,7 @@ def replay_bag(
 
     while reader.has_next():
         topic_name, data, timestamp_ns = reader.read_next()
-        if topic_name in excluded:
+        if manager.is_excluded(topic_name):
             continue
         msg_type_str = topic_types.get(topic_name)
         if msg_type_str is None:

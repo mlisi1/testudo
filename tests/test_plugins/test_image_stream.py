@@ -174,3 +174,9 @@ def test_compressed_size_drop_is_flagged() -> None:
 def test_default_thresholds_cover_both_metrics() -> None:
     thresholds = ImageStreamPlugin.default_thresholds()
     assert set(thresholds) == {"stuck_count", "size_drop_ratio"}
+
+
+def test_both_wire_formats_default_to_presence_only() -> None:
+    assert ImageStreamPlugin.presence_only_msg_types() == frozenset(
+        {"sensor_msgs/msg/Image", "sensor_msgs/msg/CompressedImage"}
+    )

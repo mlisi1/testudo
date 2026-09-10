@@ -12,6 +12,7 @@
   <depend>lifecycle_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>sensor_msgs_py</depend>
   <depend>geometry_msgs</depend>
   <depend>nav2_msgs</depend>
   <depend>action_msgs</depend>
