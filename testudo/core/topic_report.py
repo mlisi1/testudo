@@ -20,7 +20,7 @@ class TopicReport:
 
     topic: str
     msg_type: str
-    tier: str  # "vitals", "full", or "presence"
+    tier: str  # "vitals", "full", "presence", or "excluded"
     status: CheckStatus
     rate_hz: float | None = None
 
@@ -155,6 +155,25 @@ def presence_report(topic_name: str, msg_type: str) -> TopicReport:
         msg_type=msg_type,
         tier="presence",
         status=CheckStatus(severity=Severity.OK, label="presence", message=message),
+    )
+
+
+def excluded_report(topic_name: str, msg_type: str) -> TopicReport:
+    """Build a bare report for a topic dropped by a user `exclude_topics` rule.
+
+    Unlike `presence_report`, Testudo never resolves publisher info for an
+    excluded topic either -- knowing its name (from graph discovery) is
+    already more than the "no subscription of any kind" promise strictly
+    requires, but it's what lets the TUI group these into their own
+    category instead of the topic silently vanishing. The Topic Panel
+    shows only the name for this tier; there's deliberately nothing else
+    (status, rate) to show.
+    """
+    return TopicReport(
+        topic=topic_name,
+        msg_type=msg_type,
+        tier="excluded",
+        status=CheckStatus(severity=Severity.OK, label="excluded", message="excluded from monitoring"),
     )
 
 

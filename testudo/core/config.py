@@ -7,6 +7,7 @@ three modules deep with a KeyError.
 from __future__ import annotations
 
 import enum
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -20,12 +21,72 @@ class ConfigError(Exception):
     """Raised when a config file is missing, malformed, or fails validation."""
 
 
+class InvalidExcludePatternError(ValueError):
+    """Raised by `ExcludeRule` for a regex that fails to compile, or a literal that can never match."""
+
+
 class SeverityMode(enum.Enum):
     """How per-topic statuses roll up into the overall reported severity."""
 
     WORST = "worst"
     WEIGHTED = "weighted"
     BOTH = "both"
+
+
+class ExcludeMatchType(enum.Enum):
+    """How an `ExcludeRule.pattern` is matched against a topic name."""
+
+    LITERAL = "literal"
+    REGEX = "regex"
+
+
+#: Characters a real ROS 2 topic name can actually contain (tokens of
+#: alphanumerics/underscore separated by `/`, plus `~` for a private name
+#: and `{}` for a substitution). A `literal` pattern containing anything
+#: outside this set -- `$`, `^`, `*`, `.`, etc. -- can never match a real
+#: topic name, which is almost always someone who meant `type: regex` and
+#: forgot to say so (the plain string still parses fine as a rule, so
+#: without this check it fails silently: no error, no match, no row in
+#: the Excluded Topics category, nothing to explain why).
+_TOPIC_NAME_SAFE_CHARS_RE = re.compile(r"^[A-Za-z0-9_/~{}]+$")
+
+
+@dataclass(frozen=True)
+class ExcludeRule:
+    """One topic-exclusion rule: an exact topic name, or a regex searched against it.
+
+    Shared by config-file `exclude_topics:` entries and rules added live
+    from the TUI's Options screen -- both go through this same type, so
+    both get identical validation (a bad regex, or an unmatchable literal,
+    fails the same way whether it came from YAML at startup or a text
+    field at runtime).
+    """
+
+    pattern: str
+    match_type: ExcludeMatchType = ExcludeMatchType.LITERAL
+
+    def __post_init__(self) -> None:
+        if self.match_type is ExcludeMatchType.REGEX:
+            try:
+                re.compile(self.pattern)
+            except re.error as exc:
+                raise InvalidExcludePatternError(f"invalid regex {self.pattern!r}: {exc}") from None
+        elif not _TOPIC_NAME_SAFE_CHARS_RE.match(self.pattern):
+            raise InvalidExcludePatternError(
+                f"literal pattern {self.pattern!r} contains character(s) no ROS topic name can have "
+                "-- it can never match anything; did you mean type: regex?"
+            )
+
+    def matches(self, topic_name: str) -> bool:
+        """True if `topic_name` is excluded by this rule.
+
+        `literal` requires an exact match; `regex` is a `re.search` (not
+        `fullmatch`), so `^word` / `word$` anchor a starts-with / ends-with
+        check while an unanchored pattern matches anywhere in the name.
+        """
+        if self.match_type is ExcludeMatchType.REGEX:
+            return re.search(self.pattern, topic_name) is not None
+        return topic_name == self.pattern
 
 
 @dataclass(frozen=True)
@@ -76,7 +137,7 @@ class TestudoConfig:
     severity_mode: SeverityMode = SeverityMode.WORST
     publish: PublishConfig = field(default_factory=PublishConfig)
     plugins_dir: str | None = None
-    exclude_topics: list[str] = field(default_factory=list)
+    exclude_topics: list[ExcludeRule] = field(default_factory=list)
 
 
 def load_config(path: str | Path) -> TestudoConfig:
@@ -122,15 +183,107 @@ def _parse_config(raw: dict[str, Any], source: str) -> TestudoConfig:
     )
 
 
-def _parse_exclude_topics(raw: Any, source: str) -> list[str]:
+_EXCLUDE_RULE_KEYS = {"pattern", "type"}
+
+
+def _parse_exclude_topics(raw: Any, source: str) -> list[ExcludeRule]:
     if not isinstance(raw, list):
-        raise ConfigError(f"{source}: 'exclude_topics' must be a list of glob patterns")
-    result = []
-    for pattern in raw:
-        if not isinstance(pattern, str) or not pattern:
-            raise ConfigError(f"{source}: 'exclude_topics' entries must be non-empty strings")
-        result.append(pattern)
-    return result
+        raise ConfigError(f"{source}: 'exclude_topics' must be a list of patterns")
+    return [_parse_exclude_rule(entry, source) for entry in raw]
+
+
+def _parse_exclude_rule(entry: Any, source: str) -> ExcludeRule:
+    """A plain string is shorthand for a literal rule; a mapping can also opt into `type: regex`."""
+    if isinstance(entry, str):
+        pattern, match_type = entry, ExcludeMatchType.LITERAL
+    elif isinstance(entry, dict):
+        unknown = set(entry) - _EXCLUDE_RULE_KEYS
+        if unknown:
+            raise ConfigError(f"{source}: exclude_topics entry has unknown key(s): {', '.join(sorted(unknown))}")
+        pattern = entry.get("pattern")
+        match_type = _parse_exclude_match_type(entry.get("type", "literal"), source)
+    else:
+        raise ConfigError(f"{source}: exclude_topics entries must be a string or a {{pattern, type}} mapping")
+    if not isinstance(pattern, str) or not pattern:
+        raise ConfigError(f"{source}: exclude_topics entries must have a non-empty string 'pattern'")
+    try:
+        return ExcludeRule(pattern=pattern, match_type=match_type)
+    except InvalidExcludePatternError as exc:
+        raise ConfigError(f"{source}: exclude_topics: {exc}") from exc
+
+
+def _parse_exclude_match_type(raw: Any, source: str) -> ExcludeMatchType:
+    if not isinstance(raw, str):
+        raise ConfigError(f"{source}: exclude_topics entry 'type' must be a string")
+    try:
+        return ExcludeMatchType(raw)
+    except ValueError:
+        valid = ", ".join(t.value for t in ExcludeMatchType)
+        raise ConfigError(f"{source}: exclude_topics entry 'type' must be one of [{valid}], got {raw!r}") from None
+
+
+def _render_exclude_rule(rule: ExcludeRule) -> Any:
+    """The YAML-serializable form of `rule`: a plain string for `literal`, a mapping for `regex`."""
+    if rule.match_type is ExcludeMatchType.LITERAL:
+        return rule.pattern
+    return {"pattern": rule.pattern, "type": rule.match_type.value}
+
+
+def write_exclude_rules(path: str | Path, rules: list[ExcludeRule]) -> None:
+    """Rewrite `path`'s `exclude_topics:` block to exactly `rules`, leaving every other line untouched.
+
+    Backs the Options screen's "exclude rules are persistent" promise: a
+    rule added (or removed) live is written straight back to the config
+    file that was loaded at startup, so it survives a restart without the
+    user hand-editing YAML. Round-tripping the *whole* document through a
+    YAML dumper would silently drop every comment in it (PyYAML doesn't
+    preserve them) -- so only the `exclude_topics:` block itself is
+    replaced (or removed, if `rules` is empty, or appended fresh if the
+    file doesn't have one yet); comments anywhere else in the file survive.
+    """
+    path = Path(path)
+    text = path.read_text()
+    if rules:
+        block = yaml.safe_dump({"exclude_topics": [_render_exclude_rule(rule) for rule in rules]}, sort_keys=False)
+    else:
+        block = ""
+    path.write_text(_replace_top_level_block(text, "exclude_topics", block))
+
+
+def _replace_top_level_block(text: str, key: str, replacement_block: str) -> str:
+    """Swap the `key:`-headed block in `text` for `replacement_block` (empty string removes it).
+
+    A block runs from the `key:` line up to (not including) the next
+    unindented, non-blank, non-list-item line -- i.e. the next top-level
+    key -- or end of file. `key` must start the line at column 0 to
+    match, so a commented-out `# key:` line (as in example_config.yaml)
+    is correctly left alone. A line starting with `-` at column 0 is
+    still part of *this* block, not a new key: `yaml.safe_dump` (what
+    `write_exclude_rules` itself uses to build `replacement_block`)
+    renders a mapping's list value with its `-` items at the *same*
+    indentation as the key, not nested under it -- treating that as
+    "end of block" used to strip the `key:` header while leaving its own
+    list items behind, orphaned with no header above them.
+    """
+    lines = text.splitlines(keepends=True)
+    start = None
+    end = len(lines)
+    for i, line in enumerate(lines):
+        if start is None:
+            if line.startswith(f"{key}:"):
+                start = i
+            continue
+        if line.strip() and not line[0].isspace() and not line.startswith("-"):
+            end = i
+            break
+    if start is None:
+        if not replacement_block:
+            return text
+        prefix = text if text.endswith("\n") else text + "\n"
+        if prefix.strip() and not prefix.endswith("\n\n"):
+            prefix += "\n"
+        return prefix + replacement_block
+    return "".join(lines[:start]) + replacement_block + "".join(lines[end:])
 
 
 def _parse_topics(raw: Any, source: str) -> dict[str, list[TopicConfig]]:

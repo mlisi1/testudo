@@ -111,6 +111,60 @@ def test_enter_switches_focus_between_panes() -> None:
     run(body())
 
 
+def test_left_right_arrows_switch_focus_between_panes() -> None:
+    async def body():
+        app = _make_app()
+        async with app.run_test() as pilot:
+            categories = app.screen.query_one(CategorySummaryTable)
+            topics = app.screen.query_one(TopicDetailTable)
+            assert app.screen.focused is categories
+
+            await pilot.press("right")
+            assert app.screen.focused is topics
+
+            await pilot.press("left")
+            assert app.screen.focused is categories
+
+            # Already on the leftmost pane -- pressing left again is a no-op,
+            # not a crash or a wrap-around onto topics.
+            await pilot.press("left")
+            assert app.screen.focused is categories
+
+    run(body())
+
+
+def test_left_right_arrows_move_the_filter_input_cursor_instead_of_switching_panes() -> None:
+    """Regression check for the priority-binding tradeoff: Left/Right must preempt DataTable's
+    own (harmless no-op) Left/Right binding to reach the Screen, but must *not* also hijack
+    the filter Input's normal text-cursor movement while a filter search is in progress."""
+
+    async def body():
+        app = _make_app()
+        async with app.run_test() as pilot:
+            await pilot.press("slash")
+            for char in "imu":
+                await pilot.press(char)
+
+            from textual.widgets import Input
+
+            filter_input = app.screen.query_one("#filter-input", Input)
+            assert app.screen.focused is filter_input
+
+            await pilot.press("left")
+            await pilot.press("left")
+            # Still on the filter input -- Left didn't get intercepted as a
+            # pane switch -- and the text itself is untouched (only the
+            # cursor should have moved, nothing was deleted or typed).
+            assert app.screen.focused is filter_input
+            assert filter_input.value == "imu"
+
+            await pilot.press("right")
+            assert app.screen.focused is filter_input
+            assert filter_input.value == "imu"
+
+    run(body())
+
+
 def test_moving_topic_cursor_updates_detail_pane() -> None:
     async def body():
         app = _make_app()
@@ -284,6 +338,40 @@ def test_other_topics_category_always_sorts_last() -> None:
             await pilot.press("s")
             names_after_sort_toggle = [categories.get_row_at(i)[0] for i in range(categories.row_count)]
             assert names_after_sort_toggle[-1] == "Other Topics"
+
+    run(body())
+
+
+def test_excluded_topics_category_sorts_last_and_shows_name_only() -> None:
+    async def body():
+        reports = [
+            TopicReport("/battery", "sensor_msgs/msg/BatteryState", "vitals", CheckStatus(Severity.ERROR, "l", "dead")),
+            TopicReport("/odom", "nav_msgs/msg/Odometry", "full", CheckStatus(Severity.OK, "odometry", "nominal")),
+            TopicReport(
+                "/velodyne_pts",
+                "sensor_msgs/msg/PointCloud2",
+                "excluded",
+                CheckStatus(Severity.OK, "excluded", "excluded from monitoring"),
+            ),
+        ]
+        overall = CheckStatus(Severity.ERROR, "overall", "3 topic(s)")
+        app = TestudoApp(StaticDataSource(reports, overall), ros_distro="jazzy", sim_time_active=False)
+        async with app.run_test() as pilot:
+            categories = app.screen.query_one(CategorySummaryTable)
+            names = [categories.get_row_at(i)[0] for i in range(categories.row_count)]
+            # "Other Topics" (vitals grab-bag) before "Excluded Topics"
+            # (dropped on purpose) -- both after every real category.
+            assert names[-2:] == ["Other Topics", "Excluded Topics"]
+
+            await pilot.press("j")
+            await pilot.press("j")  # land on "Excluded Topics" (last row)
+            assert categories.selected_category == "Excluded Topics"
+
+            topics = app.screen.query_one(TopicDetailTable)
+            assert topics.row_count == 1
+            assert topics.get_row_at(0)[0] == "/velodyne_pts"
+            assert topics.get_row_at(0)[1] == ""  # no status shown -- name only
+            assert topics.get_row_at(0)[2] == ""  # no rate shown either
 
     run(body())
 

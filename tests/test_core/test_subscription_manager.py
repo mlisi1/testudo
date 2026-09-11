@@ -12,7 +12,16 @@ from typing import Any, Callable
 from rclpy.qos import QoSProfile
 
 from testudo.core.clock import TestudoClock
-from testudo.core.config import ActionConfig, PublishConfig, SeverityMode, TestudoConfig, TFPairConfig, TopicConfig
+from testudo.core.config import (
+    ActionConfig,
+    ExcludeMatchType,
+    ExcludeRule,
+    PublishConfig,
+    SeverityMode,
+    TestudoConfig,
+    TFPairConfig,
+    TopicConfig,
+)
 from testudo.core.subscription_manager import SubscriptionManager
 from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, ThresholdZone
 from testudo.plugins.registry import DiscoveredPlugin
@@ -394,7 +403,7 @@ def test_declared_image_topic_still_gets_full_tier() -> None:
     assert reports[0].tier == "full"
 
 
-def test_exclude_topics_glob_pattern_is_not_subscribed() -> None:
+def test_exclude_topics_regex_pattern_gets_an_excluded_report_not_a_subscription() -> None:
     node = _FakeNode(
         topics=[("/heavy/points", ["sensor_msgs/msg/PointCloud2"]), ("/odom", ["nav_msgs/msg/Odometry"])],
         publishers_by_topic={
@@ -402,13 +411,123 @@ def test_exclude_topics_glob_pattern_is_not_subscribed() -> None:
             "/odom": [_FakeEndpointInfo(qos_profile=_qos())],
         },
     )
-    config = TestudoConfig(exclude_topics=["/heavy/*"])
+    config = TestudoConfig(exclude_topics=[ExcludeRule("^/heavy/", ExcludeMatchType.REGEX)])
     manager = SubscriptionManager(node, config, [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
     manager.start()
 
     subscribed_topics = {sub.topic for sub in node.subscriptions}
     assert subscribed_topics == {"/odom"}
-    assert {report.topic for report in manager.reports()} == {"/odom"}
+    reports_by_topic = {report.topic: report for report in manager.reports()}
+    assert set(reports_by_topic) == {"/odom", "/heavy/points"}
+    excluded = reports_by_topic["/heavy/points"]
+    assert excluded.tier == "excluded"
+    assert excluded.status.severity == Severity.OK
+
+
+def test_default_excluded_topics_never_get_an_excluded_report() -> None:
+    """ROS graph bookkeeping (/parameter_events, /rosout, self) stays fully invisible, unlike a user rule."""
+    node = _FakeNode(
+        topics=[("/parameter_events", ["rcl_interfaces/msg/ParameterEvent"])],
+        publishers_by_topic={"/parameter_events": [_FakeEndpointInfo(qos_profile=_qos())]},
+    )
+    manager = SubscriptionManager(node, _config(), [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+
+    assert manager.reports() == []
+
+
+def test_add_exclude_rule_previews_the_affected_count_without_unsubscribing_yet() -> None:
+    """`add_exclude_rule` must be callable off the spin-loop thread (the TUI's own, from the
+    Options screen) -- so it only previews the count and defers any `destroy_subscription`
+    to `_sweep_excluded_topics` (see `maintain()`), never touching the subscription itself."""
+    node = _FakeNode(
+        topics=[("/odom", ["nav_msgs/msg/Odometry"])],
+        publishers_by_topic={"/odom": [_FakeEndpointInfo(qos_profile=_qos())]},
+    )
+    manager = SubscriptionManager(node, _config(), [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+    assert {sub.topic for sub in node.subscriptions} == {"/odom"}
+
+    affected = manager.add_exclude_rule(ExcludeRule("/odom"))
+
+    assert affected == 1
+    assert {sub.topic for sub in node.subscriptions} == {"/odom"}  # not torn down yet
+    assert manager.reports()[0].tier == "vitals"  # still reporting as vitals, not excluded yet
+
+
+def test_maintain_sweeps_a_newly_matched_topic_into_excluded() -> None:
+    """The actual move (and subscription teardown) happens on `maintain()` -- the spin-loop
+    thread -- one cycle after `add_exclude_rule` added the rule."""
+    node = _FakeNode(
+        topics=[("/odom", ["nav_msgs/msg/Odometry"])],
+        publishers_by_topic={"/odom": [_FakeEndpointInfo(qos_profile=_qos())]},
+    )
+    manager = SubscriptionManager(node, _config(), [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+    manager.add_exclude_rule(ExcludeRule("/odom"))
+
+    manager.maintain()
+
+    assert node.subscriptions == []  # the live subscription was torn down
+    reports = manager.reports()
+    assert len(reports) == 1
+    assert reports[0].topic == "/odom"
+    assert reports[0].tier == "excluded"
+
+
+def test_add_exclude_rule_is_a_no_op_for_an_already_effective_rule() -> None:
+    config = TestudoConfig(exclude_topics=[ExcludeRule("/odom")])
+    manager = SubscriptionManager(_FakeNode(topics=[], publishers_by_topic={}), config, [], clock=_fixed_clock(0.0))
+    assert manager.add_exclude_rule(ExcludeRule("/odom")) is None
+    assert manager.exclude_rules() == [ExcludeRule("/odom")]
+
+
+def test_remove_exclude_rule_lets_a_topic_get_rediscovered() -> None:
+    node = _FakeNode(
+        topics=[("/odom", ["nav_msgs/msg/Odometry"])],
+        publishers_by_topic={"/odom": [_FakeEndpointInfo(qos_profile=_qos())]},
+    )
+    config = TestudoConfig(exclude_topics=[ExcludeRule("/odom")])
+    manager = SubscriptionManager(node, config, [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+    assert manager.reports()[0].tier == "excluded"
+
+    removed = manager.remove_exclude_rule(ExcludeRule("/odom"))
+    assert removed is True
+    assert manager.remove_exclude_rule(ExcludeRule("/odom")) is False  # already gone
+
+    from testudo.core.maintenance import discover_and_subscribe
+
+    discover_and_subscribe(manager)
+    assert {sub.topic for sub in node.subscriptions} == {"/odom"}
+    assert manager.reports()[0].tier == "vitals"
+
+
+def test_remove_then_immediately_readd_the_same_rule_does_not_leave_the_topic_invisible() -> None:
+    """Regression: `remove_exclude_rule` evicts a topic's bookkeeping so periodic rediscovery
+    (throttled to `rediscovery_interval_seconds`, 5s by default) can pick it back up -- but a
+    remove immediately followed by re-adding the same rule (exactly what happens clicking
+    delete then re-typing the same pattern in the Options screen) used to leave the topic with
+    no report at all -- neither excluded nor vitals -- until that whole interval elapsed,
+    because `maintain()`'s rediscovery pass was still throttled and had nothing to rediscover."""
+    node = _FakeNode(
+        topics=[("/odom", ["nav_msgs/msg/Odometry"])],
+        publishers_by_topic={"/odom": [_FakeEndpointInfo(qos_profile=_qos())]},
+    )
+    manager = SubscriptionManager(node, _config(), [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+    manager.add_exclude_rule(ExcludeRule("/odom"))
+    manager.maintain()
+    assert manager.reports()[0].tier == "excluded"
+
+    manager.remove_exclude_rule(ExcludeRule("/odom"))
+    manager.add_exclude_rule(ExcludeRule("/odom"))
+    manager.maintain()  # no wall-clock time passes between these calls in this test
+
+    reports = manager.reports()
+    assert len(reports) == 1
+    assert reports[0].topic == "/odom"
+    assert reports[0].tier == "excluded"
 
 
 def test_full_tier_topic_with_no_messages_is_error_not_plugin_default() -> None:

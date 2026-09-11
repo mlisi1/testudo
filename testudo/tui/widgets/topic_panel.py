@@ -181,10 +181,20 @@ class TopicDetailTable(NavDataTable):
         self._needs_rebuild = False
 
     def _write_row(self, report: TopicReport) -> None:
-        label = SEVERITY_LABELS.get(report.status.severity, str(report.status.severity))
-        style = SEVERITY_COLORS.get(report.status.severity, "white")
         offset = self._marquee_offset.get(report.topic, 0)
         self.update_cell(report.topic, "topic", marquee_window(report.topic, TOPIC_COLUMN_WIDTH, offset))
+        if report.tier == "excluded":
+            # Excluded Topics shows only the name -- there's no status or
+            # rate behind it (no subscription of any kind, by design), so
+            # leaving these blank is more honest than an "OK"/"-" that
+            # implies something was actually checked.
+            self.update_cell(report.topic, "status", "")
+            self.update_cell(report.topic, "rate", "")
+            if self._extra_column_header is not None:
+                self.update_cell(report.topic, EXTRA_COLUMN_KEY, "")
+            return
+        label = SEVERITY_LABELS.get(report.status.severity, str(report.status.severity))
+        style = SEVERITY_COLORS.get(report.status.severity, "white")
         self.update_cell(report.topic, "status", f"[{style}]{label}[/{style}]")
         self.update_cell(report.topic, "rate", format_rate(report.rate_hz))
         if self._extra_column_header is not None:

@@ -29,7 +29,6 @@ subscriptions, so it must run on whichever thread owns the spin loop.
 """
 from __future__ import annotations
 
-import fnmatch
 import logging
 import time
 from dataclasses import dataclass, field
@@ -41,7 +40,7 @@ from rosidl_runtime_py.utilities import get_message
 
 from testudo.core.aggregator import DEFAULT_REQUIRED_CONSECUTIVE, HysteresisDebouncer, aggregate_reports
 from testudo.core.clock import TestudoClock
-from testudo.core.config import ActionConfig, SeverityMode, TestudoConfig, TopicConfig
+from testudo.core.config import ActionConfig, ExcludeRule, SeverityMode, TestudoConfig, TopicConfig
 from testudo.core.discovery import (
     NoPublishersError,
     TopicInfo,
@@ -59,7 +58,14 @@ from testudo.core.maintenance import (
 )
 from testudo.core.maintenance import discover_and_subscribe as _discover_and_subscribe
 from testudo.core.maintenance import maintain as _maintain
-from testudo.core.topic_report import TopicReport, full_tier_report, presence_report, suppress_if_inactive, vitals_report
+from testudo.core.topic_report import (
+    TopicReport,
+    excluded_report,
+    full_tier_report,
+    presence_report,
+    suppress_if_inactive,
+    vitals_report,
+)
 from testudo.core.vitals import DEFAULT_STALE_AFTER_SECONDS, TopicVitals
 from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, ThresholdZone, colorize
 from testudo.plugins.registry import DiscoveredPlugin
@@ -195,6 +201,14 @@ class SubscriptionManager:
         # presence-only-by-default type (see DEFAULT_PRESENCE_ONLY_MSG_TYPES)
         # that never get a subscription at all.
         self._presence_only: dict[str, str] = {}
+        # topic name -> msg type, for topics matching a user `exclude_topics`
+        # rule -- no subscription, no publisher-info resolution, just enough
+        # to render as a bare row in the TUI's own "Excluded Topics"
+        # category (see topic_report.excluded_report). Distinct from the
+        # DEFAULT_EXCLUDED_TOPICS/self-topic exclusion in `excluded_topics()`,
+        # which stays fully invisible -- that's ROS graph bookkeeping, not
+        # something a user chose to drop.
+        self._excluded: dict[str, str] = {}
         self._msg_type_by_topic: dict[str, str] = {}
         self._owning_node_by_topic: dict[str, str] = {}
         self._no_publishers: set[str] = set()
@@ -223,11 +237,123 @@ class SubscriptionManager:
         """Default excludes plus self-exclusion of Testudo's own published diagnostics topic."""
         return set(DEFAULT_EXCLUDED_TOPICS) | {self._config.publish.topic}
 
+    def is_default_excluded(self, topic_name: str) -> bool:
+        """True for ROS graph bookkeeping/self-exclusion -- stays fully invisible, never an Excluded-category row."""
+        return topic_name in self.excluded_topics()
+
+    def _matching_exclude_rule(self, topic_name: str) -> ExcludeRule | None:
+        return next((rule for rule in self._config.exclude_topics if rule.matches(topic_name)), None)
+
     def is_excluded(self, topic_name: str) -> bool:
-        """True if `topic_name` is a default/self-exclusion, or matches a configured `exclude_topics` glob."""
-        if topic_name in self.excluded_topics():
+        """True if `topic_name` gets no subscription of any kind -- default/self, or a user exclude rule."""
+        return self.is_default_excluded(topic_name) or self._matching_exclude_rule(topic_name) is not None
+
+    def exclude_rules(self) -> list[ExcludeRule]:
+        """Every currently effective user exclude rule (config-loaded, plus anything added this session)."""
+        return list(self._config.exclude_topics)
+
+    def add_exclude_rule(self, rule: ExcludeRule) -> int | None:
+        """Add `rule` to the effective rule set.
+
+        Returns how many already-tracked topics it matches (a preview
+        count for the caller's UI, e.g. the Options screen's "moved N
+        topic(s)" message), or `None` if an identical rule was already in
+        effect -- a no-op the caller uses to skip writing a duplicate
+        line to the config file.
+
+        Deliberately does *not* tear down any matched topic's live
+        subscription itself: this may be called from any thread (the
+        Options screen runs on the TUI's own thread, not the node's spin
+        loop), and `destroy_subscription` isn't safe to interleave with a
+        concurrent `spin_once` elsewhere. Appending to `_config.exclude_topics`
+        is a plain Python list mutation -- safe from any thread -- and the
+        actual move into the excluded tier happens on the next
+        `maintain()` call instead, via `_sweep_excluded_topics`, which
+        only ever runs on the thread that owns the spin loop. The delay
+        is at most one `maintain()` cycle (driven every ~0.1s by `watch`'s
+        spin thread), not user-perceptible.
+        """
+        if rule in self._config.exclude_topics:
+            return None
+        self._config.exclude_topics.append(rule)
+        return sum(1 for name in self._msg_type_by_topic if name not in self._excluded and rule.matches(name))
+
+    def remove_exclude_rule(self, rule: ExcludeRule) -> bool:
+        """Remove a previously added exclude rule. Returns True if one was removed.
+
+        A topic that was only excluded via this rule isn't resubscribed
+        directly here -- it's dropped from `_excluded` (and its bookkeeping
+        entry), so the next `discover_and_subscribe` pass picks it back up
+        exactly like any newly-appeared topic. A topic still matched by a
+        *different* remaining rule stays excluded.
+
+        That next pass is forced to happen on the very next `maintain()`
+        call (bypassing `rediscovery_interval_seconds`, same trick
+        `maintenance._clear_all_topics` uses) rather than left to fall due
+        on its own periodic schedule (5s by default): otherwise a topic
+        evicted here is invisible in *every* category -- no longer
+        excluded, not yet rediscovered as vitals/full -- for up to that
+        whole interval. That gap is exactly what made a quick
+        remove-then-re-add of the same rule from the Options screen look
+        like the topic just vanished.
+        """
+        try:
+            self._config.exclude_topics.remove(rule)
+        except ValueError:
+            return False
+        stale = [n for n in self._excluded if self._matching_exclude_rule(n) is None]
+        for name in stale:
+            del self._excluded[name]
+            del self._msg_type_by_topic[name]
+        if stale:
+            self._last_rediscovery_monotonic = None
+        return True
+
+    def _exclude_tracked_topic(self, topic_name: str) -> None:
+        """Move an already-tracked topic into the excluded tier, tearing down its live subscription if any."""
+        msg_type = self._msg_type_by_topic.get(topic_name)
+        subscription = self._subscriptions.pop(topic_name, None)
+        if subscription is not None:
+            self._node.destroy_subscription(subscription)
+        self._vitals.pop(topic_name, None)
+        self._full_tier.pop(topic_name, None)
+        self._presence_only.pop(topic_name, None)
+        self._owning_node_by_topic.pop(topic_name, None)
+        self._no_publishers.discard(topic_name)
+        self._related_topic_targets.pop(topic_name, None)
+        if msg_type is not None:
+            self._excluded[topic_name] = msg_type
+
+    def _sweep_excluded_topics(self) -> None:
+        """Move any tracked topic newly matching an exclude rule into the excluded tier.
+
+        Called from `maintain()` on every cycle (the node's spin-loop
+        thread) -- see `add_exclude_rule`'s docstring for why this can't
+        happen synchronously wherever a rule was added instead. A rule
+        added since the last sweep (e.g. from the Options screen) is
+        picked up here, cheaply: this is a no-op scan over already-known
+        topic names unless something actually needs excluding.
+        """
+        for name in [
+            n for n in list(self._msg_type_by_topic) if n not in self._excluded and self._matching_exclude_rule(n) is not None
+        ]:
+            self._exclude_tracked_topic(name)
+
+    def _maybe_record_excluded(self, topic_name: str, msg_type_str: str) -> bool:
+        """If `topic_name` matches a user exclude rule, record it (no subscription) and return True.
+
+        Shared by the live discovery loop (`_subscribe_topic`) and replay's
+        per-message loop, so an excluded topic costs the same next-to-
+        nothing either way: one dict entry, never a subscription, never a
+        publisher-info query, never a deserialized message.
+        """
+        if topic_name in self._excluded:
             return True
-        return any(fnmatch.fnmatch(topic_name, pattern) for pattern in self._config.exclude_topics)
+        if self._matching_exclude_rule(topic_name) is None:
+            return False
+        self._msg_type_by_topic[topic_name] = msg_type_str
+        self._excluded[topic_name] = msg_type_str
+        return True
 
     def start(self) -> None:
         """Subscribe to every currently-discovered, non-excluded topic, then arm live rediscovery.
@@ -263,6 +389,8 @@ class SubscriptionManager:
         time.sleep(self._graph_settle_seconds)
 
     def _subscribe_topic(self, topic_name: str, msg_type_str: str, topics_by_name: dict[str, TopicInfo]) -> None:
+        if self._maybe_record_excluded(topic_name, msg_type_str):
+            return
         self._msg_type_by_topic[topic_name] = msg_type_str
         try:
             publisher_info = resolve_publisher_info(self._node, topic_name)
@@ -441,6 +569,11 @@ class SubscriptionManager:
             )
         for topic_name, msg_type in self._presence_only.items():
             reports.append(self._suppress(topic_name, presence_report(topic_name, msg_type)))
+        for topic_name, msg_type in self._excluded.items():
+            # No `_suppress`: an excluded topic never resolves an owning
+            # node (no publisher-info query -- that's the whole point), so
+            # lifecycle-aware suppression would always be a no-op for it.
+            reports.append(excluded_report(topic_name, msg_type))
         for topic_name, vitals in self._vitals.items():
             topic_config = self._topic_config_by_name.get(topic_name)
             rate_threshold = topic_config.thresholds.get("rate_hz") if topic_config is not None else None

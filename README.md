@@ -30,8 +30,11 @@ covariance sanity, TF tree health) those tools don't cover out of the box.
   on the normal full tier. `theora_image_transport/msg/Packet` is
   presence-only too (no dedicated plugin) — subscribing to a lazy
   `image_transport` republisher can wake up an otherwise-idle encoder. An
-  `exclude_topics:` glob list in config drops topics from discovery
-  entirely.
+  `exclude_topics:` list in config (literal names or regex patterns) drops
+  matching topics from real monitoring entirely; they still show up, name
+  only, in their own **Excluded Topics** category rather than vanishing,
+  and can be managed live from the TUI's Options screen (`o`), which
+  persists a rule back to the config file so it survives a restart.
 - **Built-in content checks**, all through the same plugin interface
   external users build against:
 
@@ -84,10 +87,12 @@ panel** (one row per category with a per-severity icon+count breakdown),
 a **topic panel** (every topic in the highlighted category, with its
 status and publish rate in Hz), and a **detail panel** (the highlighted
 topic's full status). Moving the cursor — not pressing `Enter` — is what
-drives the other panes live; `Enter` switches focus between the plugin
-and topic panels, `Esc` refocuses the plugin panel (or clears an active
-filter), `/` to filter the focused panel, `s` to cycle its sort order,
-`p` to pause, `r` to reset accumulated stats, `?` for help.
+drives the other panes live; `Enter`, `Tab`/`Shift+Tab`, or `←`/`→`
+switch focus between the plugin and topic panels, `Esc` refocuses the
+plugin panel (or clears an active filter), `/` to filter the focused
+panel, `s` to cycle its sort order,
+`p` to pause, `r` to reset accumulated stats, `o` for the options menu
+(currently: manage `exclude_topics` rules live), `?` for help.
 
 ## Requirements
 
@@ -156,13 +161,26 @@ actions:
 tf:
   - {parent: map, child: base_link}
 
-# Glob patterns (fnmatch-style); matching topics are skipped entirely --
-# no subscription, no report row. Useful for topics whose interface
-# package isn't installed on the host running Testudo, or noisy topics
-# you have no interest in either tier for.
+# A plain string is a literal (exact-name) rule; a mapping opts into a
+# regex searched against the topic name (`^` / `$` anchor a starts-with /
+# ends-with check). A matching topic gets no subscription of any kind --
+# just a name-only row in the TUI's "Excluded Topics" category, distinct
+# from a topic Testudo never even attempts (its own /parameter_events,
+# /rosout self-exclusion, which stays fully invisible). Nothing needs to
+# be listed here out of the box -- ImageStream/PointStream already default
+# their own heavy message types to presence-only (see above); this is for
+# topics *you* want dropped, e.g. one whose interface package isn't
+# installed on this host. Rules added live from the TUI's Options screen
+# (`o`) are appended here automatically.
+#
+# A literal pattern containing a character no ROS topic name can have
+# (`$ ^ * . + ? ( ) [ ] { } |`, etc.) fails loudly at load time rather
+# than silently matching nothing -- that combination almost always means
+# a regex rule that forgot `type: regex`.
 exclude_topics:
   - /velodyne_packets
-  - /front_camera/*/theora
+  - pattern: "_debug$"
+    type: regex
 ```
 
 See [`config/example_config.yaml`](config/example_config.yaml) for a

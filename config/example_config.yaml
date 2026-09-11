@@ -7,14 +7,16 @@
 # thresholds merged over the plugin's own defaults, so you only need to
 # override the metrics you actually want to change.
 #
-# Exception: sensor_msgs/msg/Image, sensor_msgs/msg/CompressedImage, and
-# theora_image_transport/msg/Packet topics default to presence-only (a
-# publisher exists, but nothing subscribes) unless declared here -- even a
-# raw vitals subscription to camera data is heavy enough to compete with
-# the driver/pipeline actually producing it, and for a lazy
-# image_transport republisher, subscribing can wake up an otherwise-idle
-# encoder. Declare a camera topic under `topics:` (see below) to get real
-# liveness + ImageStreamPlugin's content checks for it.
+# Exception: sensor_msgs/msg/Image, sensor_msgs/msg/CompressedImage,
+# sensor_msgs/msg/PointCloud2, and theora_image_transport/msg/Packet
+# topics default to presence-only (a publisher exists, but nothing
+# subscribes) unless declared here -- even a raw vitals subscription to
+# camera/point-cloud data is heavy enough to compete with the driver/
+# pipeline actually producing it, and for a lazy image_transport
+# republisher, subscribing can wake up an otherwise-idle encoder. Declare
+# a topic of one of these types under `topics:` (see below) to get real
+# liveness + that plugin's content checks for it. Nothing needs to go
+# under `exclude_topics:` below just for this -- it's already the default.
 
 severity_mode: worst  # worst | weighted | both
 
@@ -135,11 +137,22 @@ tf:
   - parent: odom
     child: base_link
 
-# Glob patterns (fnmatch-style): matching topics are dropped from discovery
-# entirely -- no subscription, no report row at any tier. Useful for a
-# topic whose interface package isn't installed on the host running
-# Testudo (a `ModuleNotFoundError` at subscribe time otherwise), or one
-# you have no diagnostic interest in either way.
+# A plain string is a literal (exact-name) rule; a mapping opts into a
+# regex searched against the topic name instead (`type: regex` -- `^`/`$`
+# anchor a starts-with/ends-with check, unanchored matches anywhere).
+# A matching topic gets no subscription of any kind -- just a name-only
+# row in the TUI's "Excluded Topics" category. Useful for a topic whose
+# interface package isn't installed on this host (a `ModuleNotFoundError`
+# at subscribe time otherwise), or one you have no diagnostic interest in
+# either way. Empty by default -- nothing needs to be here out of the box;
+# rules added live from the TUI's Options screen (`o`) are appended here
+# automatically.
 # exclude_topics:
 #   - /velodyne_packets
+#   - pattern: "_debug$"
+#     type: regex
 #   - /rtabmap/**
+
+exclude_topics:
+- pattern: ^/filter
+  type: regex

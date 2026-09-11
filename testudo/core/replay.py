@@ -72,6 +72,8 @@ def _track_for_replay(manager: SubscriptionManager, topic_name: str, msg_type_st
     """
     if topic_name in manager._msg_type_by_topic:
         return
+    if manager._maybe_record_excluded(topic_name, msg_type_str):
+        return
     manager._msg_type_by_topic[topic_name] = msg_type_str
 
     if msg_type_str in manager._presence_only_msg_types and topic_name not in manager._topic_config_by_name:
@@ -180,10 +182,16 @@ def replay_bag(
 
     while reader.has_next():
         topic_name, data, timestamp_ns = reader.read_next()
-        if manager.is_excluded(topic_name):
+        if manager.is_default_excluded(topic_name):
             continue
         msg_type_str = topic_types.get(topic_name)
         if msg_type_str is None:
+            continue
+        # Recorded (once) and skipped here, before ever deserializing -- an
+        # excluded topic (e.g. a heavy PointCloud2 someone dropped via
+        # `exclude_topics`) shouldn't pay bag-replay's deserialization cost
+        # on every single one of its messages just to be thrown away.
+        if manager._maybe_record_excluded(topic_name, msg_type_str):
             continue
 
         msg_class = msg_classes.get(topic_name)

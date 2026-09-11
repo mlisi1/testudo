@@ -26,6 +26,12 @@ _FRIENDLY_NAMES = {
 #: Vitals-tier topics have no plugin identity to group by, so they all land here.
 OTHER_CATEGORY = "Other Topics"
 
+#: Topics dropped by a user `exclude_topics` rule -- heterogeneous by
+#: nature (any msg type can be excluded), so unlike OTHER_CATEGORY they
+#: don't even get grouped by type, just one shared bucket for "not being
+#: watched, on purpose".
+EXCLUDED_CATEGORY = "Excluded Topics"
+
 
 def category_for(report: TopicReport) -> str:
     """The display category `report` belongs to.
@@ -38,8 +44,13 @@ def category_for(report: TopicReport) -> str:
     plugin only defaulted them out of a live subscription, it didn't erase
     what they are -- so they get their own category row too, distinct from
     OTHER_CATEGORY's true grab-bag of vitals-tier topics with no plugin
-    identity at all.
+    identity at all. Excluded-tier topics get EXCLUDED_CATEGORY regardless
+    of message type -- a user chose to drop these, so grouping by type
+    would just scatter them across categories they've deliberately opted
+    out of monitoring.
     """
+    if report.tier == "excluded":
+        return EXCLUDED_CATEGORY
     if report.tier not in ("full", "presence"):
         return OTHER_CATEGORY
     if report.msg_type in _FRIENDLY_NAMES:

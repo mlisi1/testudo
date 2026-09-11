@@ -8,8 +8,14 @@ from __future__ import annotations
 
 from testudo.core.topic_report import TopicReport
 from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_ICONS, Severity
-from testudo.tui.categorize import OTHER_CATEGORY, category_for
+from testudo.tui.categorize import EXCLUDED_CATEGORY, OTHER_CATEGORY, category_for
 from testudo.tui.keybinds import NavDataTable
+
+#: Trailing categories that always sort last, in this order, regardless of
+#: sort mode -- neither is a check competing for the top slot: OTHER_CATEGORY
+#: is the vitals-tier grab-bag, EXCLUDED_CATEGORY is topics a user chose to
+#: stop watching entirely.
+_TRAILING_CATEGORIES = (OTHER_CATEGORY, EXCLUDED_CATEGORY)
 
 #: Worst-first, so a mixed row reads left-to-right in order of urgency.
 _SEVERITY_DISPLAY_ORDER = (Severity.STALE, Severity.ERROR, Severity.WARN, Severity.OK)
@@ -100,12 +106,13 @@ class CategorySummaryTable(NavDataTable):
             self._write_row(category, visible[category])
 
     def _sorted_categories(self, visible: dict[str, dict[int, int]]) -> list[str]:
-        regular = [c for c in visible if c != OTHER_CATEGORY]
+        regular = [c for c in visible if c not in _TRAILING_CATEGORIES]
         if self._sort_by_severity:
             regular.sort(key=lambda c: (-max(visible[c]), c))
         else:
             regular.sort()
-        return regular + [OTHER_CATEGORY] if OTHER_CATEGORY in visible else regular
+        trailing = [c for c in _TRAILING_CATEGORIES if c in visible]
+        return regular + trailing
 
     def _rebuild(self, visible: dict[str, dict[int, int]]) -> None:
         previous_selection = self.selected_category

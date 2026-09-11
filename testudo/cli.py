@@ -151,7 +151,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
             diagnostics_publisher.publish(array)
 
         app = TestudoApp(
-            data_source=LiveDataSource(manager, config.severity_mode),
+            data_source=LiveDataSource(manager, config.severity_mode, config_path=args.config),
             ros_distro=os.environ.get("ROS_DISTRO", "unknown"),
             ros_domain_id=os.environ.get("ROS_DOMAIN_ID", "0"),
             dds_implementation=_dds_implementation(),
@@ -259,7 +259,7 @@ def _topic_line(report: TopicReport) -> Text:
     line = Text()
     line.append(f"{label:5s} ", style=color)
     line.append(f"{report.topic:30s} ")
-    line.append(f"[{report.tier:6s}] ", style="dim")
+    line.append(f"[{report.tier:8s}] ", style="dim")
     line.append(f"{report.msg_type:35s} ")
     line.append(f"{report.status.message}{suffix}")
     return line
@@ -308,7 +308,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
             # (drill-down/filter/sort all work) -- not a frame-exact time
             # scrub, which is a reasonable follow-up rather than core here.
             app = TestudoApp(
-                data_source=StaticDataSource(reports, overall),
+                data_source=StaticDataSource(reports, overall, config.exclude_topics),
                 ros_distro=os.environ.get("ROS_DISTRO", "unknown"),
                 ros_domain_id=os.environ.get("ROS_DOMAIN_ID", "0"),
                 dds_implementation=_dds_implementation(),

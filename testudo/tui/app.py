@@ -14,6 +14,7 @@ from textual.app import App
 
 from testudo.tui.data_source import WatchDataSource, WatchSnapshot
 from testudo.tui.keybinds import APP_BINDINGS
+from testudo.tui.options_screen import OptionsMenuScreen
 from testudo.tui.screens import DashboardScreen, HelpScreen
 from testudo.tui.theme import TESTUDO_THEME
 
@@ -63,7 +64,20 @@ class TestudoApp(App):
        previous background, keeping the hint text's de-emphasized look. */
     #hint { dock: bottom; height: auto; background: $accent; color: $text-muted; padding: 0 1; }
     #filter-input { dock: bottom; }
+    /* Every modal screen (help, options menu, exclude topics) centers its
+       one panel in the middle of the screen it's dimming -- ModalScreen's
+       own default CSS only sets layout/overflow/background, not
+       alignment, so left alone a panel renders pinned to the top-left
+       corner of an otherwise-full-height, mostly-empty overlay. */
+    HelpScreen, OptionsMenuScreen, ExcludeTopicsScreen { align: center middle; }
     #help-text { padding: 1 2; border: round $primary; }
+    #options-menu-panel { padding: 1 2; border: round $primary; width: 40%; height: auto; }
+    #options-menu-list { height: auto; }
+    #options-menu-hint { height: 1; color: $text-muted; }
+    #options-panel { padding: 1 2; border: round $primary; width: 80%; height: auto; max-height: 80%; }
+    #exclude-table { height: 10; }
+    #options-preview { height: 1; color: $text-muted; }
+    #options-message { height: 1; color: $text-muted; }
     /* DataTable's own header row styling defaults to $panel/$foreground --
        overridden here (not per-table) so both the Plugin Panel's and Topic
        Panel's column headers pick up the neutral slate, distinguishing
@@ -143,3 +157,6 @@ class TestudoApp(App):
 
     def action_show_help(self) -> None:
         self.push_screen(HelpScreen())
+
+    def action_show_options(self) -> None:
+        self.push_screen(OptionsMenuScreen(self.data_source))

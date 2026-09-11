@@ -81,7 +81,7 @@ def discover_and_subscribe(manager: "SubscriptionManager") -> None:
 
     committed = set(manager._msg_type_by_topic) - manager._no_publishers
     for name, topic_info in topics_by_name.items():
-        if manager.is_excluded(name) or name in committed or name in reserved:
+        if manager.is_default_excluded(name) or name in committed or name in reserved:
             continue
         if not topic_info.msg_types:
             _logger.warning("topic '%s' has no known message type; skipping", name)
@@ -95,15 +95,16 @@ def maintain(manager: "SubscriptionManager") -> None:
     No-op unless `start()` was called (`check`/`replay` construct a manager
     and drive `tick()` directly without it, so this stays inert for them).
     Must be called from the same thread that owns `manager._node`'s spin
-    loop (`watch`'s background spin thread) -- both rediscovery and
-    stale-stack clearing create/destroy rclpy subscriptions, which isn't
-    safe to interleave with a concurrent `rclpy.spin_once` running on
-    another thread. `SubscriptionManager.tick()` stays callable from any
-    thread, since it only touches plugin-internal state, never the node's
-    subscriptions.
+    loop (`watch`'s background spin thread) -- rediscovery, stale-stack
+    clearing, and the excluded-topic sweep below all create/destroy rclpy
+    subscriptions, which isn't safe to interleave with a concurrent
+    `rclpy.spin_once` running on another thread. `SubscriptionManager.tick()`
+    stays callable from any thread, since it only touches plugin-internal
+    state, never the node's subscriptions.
     """
     if not manager._live:
         return
+    manager._sweep_excluded_topics()
     _maybe_clear_stale_stack(manager)
     _maybe_rediscover(manager)
 
@@ -198,6 +199,8 @@ def _clear_all_topics(manager: "SubscriptionManager") -> None:
     manager._subscriptions.clear()
     manager._vitals.clear()
     manager._full_tier.clear()
+    manager._presence_only.clear()
+    manager._excluded.clear()
     manager._msg_type_by_topic.clear()
     manager._owning_node_by_topic.clear()
     manager._no_publishers.clear()

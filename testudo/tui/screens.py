@@ -13,7 +13,7 @@ from textual.widgets import DataTable, Input, Static
 
 from testudo.tui.categorize import category_for
 from testudo.tui.data_source import WatchSnapshot
-from testudo.tui.keybinds import FILTER_BINDING, HELP_TEXT, SORT_BINDING
+from testudo.tui.keybinds import FILTER_BINDING, HELP_TEXT, PANE_LEFT_BINDING, PANE_RIGHT_BINDING, SORT_BINDING
 from testudo.tui.widgets.category_summary import CategorySummaryTable
 from testudo.tui.widgets.header import TestudoHeader
 from testudo.tui.widgets.topic_panel import TopicDetailTable
@@ -76,6 +76,8 @@ class DashboardScreen(Screen):
     BINDINGS = [
         FILTER_BINDING,
         SORT_BINDING,
+        PANE_LEFT_BINDING,
+        PANE_RIGHT_BINDING,
         ("escape", "handle_escape", "Categories"),
     ]
 
@@ -100,7 +102,10 @@ class DashboardScreen(Screen):
         self.query_one(CategorySummaryTable).focus()
 
     def _hint_text(self) -> str:
-        return "arrows/j/k: move   tab: switch pane   /: filter   s: sort   p: pause   r: reset   ?: help   q: quit"
+        return (
+            "arrows/j/k: move   tab/←→: switch pane   /: filter   s: sort   "
+            "p: pause   r: reset   ?: help   q: quit"
+        )
 
     def sync_header(self) -> None:
         header = self.query_one(TestudoHeader)
@@ -172,6 +177,28 @@ class DashboardScreen(Screen):
             self.query_one(TopicDetailTable).focus()
         elif isinstance(event.data_table, TopicDetailTable):
             self.query_one(CategorySummaryTable).focus()
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Decline the priority Left/Right pane-switch while the filter input is focused.
+
+        `PANE_LEFT_BINDING`/`PANE_RIGHT_BINDING` are priority bindings --
+        the only way to preempt DataTable's own Left/Right (a harmless
+        scroll no-op in row-cursor mode, but still first in line for the
+        key otherwise). Declining here (returning False) makes Textual
+        fall through to normal, focus-based dispatch instead of treating
+        the key as handled, so the filter `Input` still gets it -- moving
+        its text cursor left/right while typing a filter query, rather
+        than the keystroke silently switching panes out from under it.
+        """
+        if action in ("focus_previous_pane", "focus_next_pane") and self._filtering:
+            return False
+        return True
+
+    def action_focus_previous_pane(self) -> None:
+        self.query_one(CategorySummaryTable).focus()
+
+    def action_focus_next_pane(self) -> None:
+        self.query_one(TopicDetailTable).focus()
 
     def _focused_table(self) -> DataTable | None:
         focused = self.focused
