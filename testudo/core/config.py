@@ -7,6 +7,7 @@ three modules deep with a KeyError.
 from __future__ import annotations
 
 import enum
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,6 +16,20 @@ from typing import Any
 import yaml
 
 from testudo.plugins.base import ThresholdZone
+
+
+def default_config_path() -> Path:
+    """`$XDG_CONFIG_HOME/testudo/config.yaml`, or `~/.config/testudo/config.yaml` if unset.
+
+    Not a path inside the installed package or the cloned repo -- config
+    is per-user, per-machine state, and (via the TUI's Options screen)
+    something Testudo itself writes back to; keeping it alongside a
+    package's own code/documentation meant every exclude rule added live
+    silently dirtied a tracked file's git status.
+    """
+    xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
+    base = Path(xdg_config_home) if xdg_config_home else Path.home() / ".config"
+    return base / "testudo" / "config.yaml"
 
 
 class ConfigError(Exception):
@@ -240,13 +255,20 @@ def write_exclude_rules(path: str | Path, rules: list[ExcludeRule]) -> None:
     preserve them) -- so only the `exclude_topics:` block itself is
     replaced (or removed, if `rules` is empty, or appended fresh if the
     file doesn't have one yet); comments anywhere else in the file survive.
+
+    Creates `path` (and any missing parent directories) if it doesn't
+    exist yet -- the default config location is a per-user file Testudo
+    never requires to exist up front (an absent one just means "defaults,
+    nothing declared or excluded"), so the first exclude rule added live
+    from a fresh install needs somewhere to land.
     """
     path = Path(path)
-    text = path.read_text()
+    text = path.read_text() if path.exists() else ""
     if rules:
         block = yaml.safe_dump({"exclude_topics": [_render_exclude_rule(rule) for rule in rules]}, sort_keys=False)
     else:
         block = ""
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_replace_top_level_block(text, "exclude_topics", block))
 
 
@@ -279,6 +301,8 @@ def _replace_top_level_block(text: str, key: str, replacement_block: str) -> str
     if start is None:
         if not replacement_block:
             return text
+        if not text:
+            return replacement_block
         prefix = text if text.endswith("\n") else text + "\n"
         if prefix.strip() and not prefix.endswith("\n\n"):
             prefix += "\n"

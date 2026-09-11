@@ -13,6 +13,7 @@ from testudo.core.config import (
     ExcludeMatchType,
     ExcludeRule,
     SeverityMode,
+    default_config_path,
     load_config,
     write_exclude_rules,
 )
@@ -210,6 +211,29 @@ def test_write_exclude_rules_with_empty_list_removes_the_block(tmp_path: Path) -
     assert "exclude_topics" not in text
     assert "/old_topic" not in text
     assert "severity_mode: worst" in text
+
+
+def test_write_exclude_rules_creates_a_missing_file_and_its_parent_directory(tmp_path: Path) -> None:
+    """The default config location is a per-user file Testudo never requires to exist up
+    front -- the first exclude rule added live (e.g. from a fresh install) needs somewhere
+    to land rather than crashing on a `FileNotFoundError`."""
+    path = tmp_path / "nested" / "does" / "not" / "exist" / "config.yaml"
+    assert not path.parent.exists()
+
+    write_exclude_rules(path, [ExcludeRule("/velodyne_packets")])
+
+    assert load_config(path).exclude_topics == [ExcludeRule("/velodyne_packets")]
+    assert not path.read_text().startswith("\n")  # no artificial leading blank line either
+
+
+def test_default_config_path_uses_xdg_config_home_when_set(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    assert default_config_path() == tmp_path / "testudo" / "config.yaml"
+
+
+def test_default_config_path_falls_back_to_dot_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    assert default_config_path() == Path.home() / ".config" / "testudo" / "config.yaml"
 
 
 def test_full_valid_config_parses(tmp_path: Path) -> None:

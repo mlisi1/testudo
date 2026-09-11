@@ -92,7 +92,12 @@ switch focus between the plugin and topic panels, `Esc` refocuses the
 plugin panel (or clears an active filter), `/` to filter the focused
 panel, `s` to cycle its sort order,
 `p` to pause, `r` to reset accumulated stats, `o` for the options menu
-(currently: manage `exclude_topics` rules live), `?` for help.
+(currently: manage `exclude_topics` rules live), `?` for help. Any
+warning/error logged while the TUI has the terminal (most commonly a
+message type whose interface package isn't installed) is buffered rather
+than printed live — a stray write to the terminal while Textual is
+rendering corrupts the display — and summarized once the session ends
+(deduplicated, with a repeat count).
 
 ## Requirements
 
@@ -117,18 +122,32 @@ source install/setup.bash
 
 ## Quick start
 
+Every command reads `~/.config/testudo/config.yaml` (or
+`$XDG_CONFIG_HOME/testudo/config.yaml`) by default, or a path given via
+`-c`/`--config`. No file at either location isn't an error — every config
+section is optional, so it's the same as an empty one: vitals tier only,
+nothing declared or excluded. The Options screen's live exclude rules
+(`o` in `watch`) are written back to whichever config is in effect,
+creating that default file and its parent directory the first time you
+add one if neither exists yet.
+
 ```bash
 # One-shot report for CI / pre-flight checks. Exit codes: 0 OK, 1 WARN, 2 ERROR/STALE.
-testudo check -c config/example_config.yaml
+testudo check
 
 # Live TUI.
-testudo watch -c config/example_config.yaml
+testudo watch
 
 # Batch report over a recorded bag, or --watch to browse it in the TUI.
-testudo replay -c config/example_config.yaml --watch my_bag/
+testudo replay --watch my_bag/
 
 # What plugins are available, and what they cover.
 testudo plugins
+
+# Point at a specific config instead of the default -- e.g. this repo's
+# own reference example, to see a realistic set of declared topics/
+# actions/tf pairs and threshold overrides.
+testudo watch -c config/example_config.yaml
 ```
 
 Every command validates its config up front and fails loudly with a

@@ -19,7 +19,7 @@ from rich.console import Console
 from rich.text import Text
 
 from testudo.core.clock import TestudoClock
-from testudo.core.config import ConfigError, TestudoConfig, load_config
+from testudo.core.config import ConfigError, TestudoConfig, default_config_path, load_config
 from testudo.core.publisher import DiagnosticPublisher
 from testudo.core.subscription_manager import SubscriptionManager, TopicReport
 from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_LABELS, CheckStatus, Severity
@@ -27,7 +27,7 @@ from testudo.plugins.registry import discover_all_plugins
 
 _logger = logging.getLogger("testudo")
 
-DEFAULT_CONFIG_PATH = "config/example_config.yaml"
+DEFAULT_CONFIG_PATH = str(default_config_path())
 
 
 def _dds_implementation() -> str:
@@ -46,7 +46,13 @@ DEFAULT_CHECK_DURATION_SECONDS = 3.0
 
 
 def _add_config_arg(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("-c", "--config", default=DEFAULT_CONFIG_PATH, help="path to the Testudo YAML config file")
+    # default=None (not DEFAULT_CONFIG_PATH itself): `_load_config_or_exit`
+    # needs to tell "the user asked for this file" apart from "nothing was
+    # passed" -- a missing file is a hard error in the first case, but not
+    # in the second (see its docstring).
+    parser.add_argument(
+        "-c", "--config", default=None, help=f"path to the Testudo YAML config file (default: {DEFAULT_CONFIG_PATH})"
+    )
 
 
 def _add_no_hz_arg(parser: argparse.ArgumentParser, *, dest: str = "no_hz") -> None:
@@ -104,20 +110,35 @@ def _configure_logging(verbose: bool) -> None:
     )
 
 
-def _load_config_or_exit(path: str) -> TestudoConfig:
+def _load_config_or_exit(path: str | None) -> tuple[TestudoConfig, str]:
+    """Load `path`, or the default XDG location if `path` is None. Returns (config, resolved path).
+
+    A missing file at an *explicit* `-c/--config` path still fails
+    loudly, per the usual "malformed config fails at load time" rule --
+    the user asked for that specific file. A missing file at the
+    *default* location isn't an error: every config section is optional,
+    so no file at all just means "vitals tier only, nothing declared or
+    excluded" -- exactly what an empty file would mean too, and the
+    default shouldn't require a user to create one just to get that.
+    """
+    explicit = path is not None
+    resolved = path if explicit else DEFAULT_CONFIG_PATH
+    if not explicit and not os.path.isfile(resolved):
+        _logger.info("no config file found at %s -- using defaults (vitals tier only)", resolved)
+        return TestudoConfig(), resolved
     try:
-        return load_config(path)
+        return load_config(resolved), resolved
     except ConfigError as exc:
         _logger.error("%s", exc)
         sys.exit(2)
 
 
 def cmd_watch(args: argparse.Namespace) -> int:
-    config = _load_config_or_exit(args.config)
+    config, config_path = _load_config_or_exit(args.config)
     plugins = discover_all_plugins(config.plugins_dir)
     _logger.info(
         "loaded config from %s (%d declared topic type(s)); %d plugin(s) discovered",
-        args.config,
+        config_path,
         len(config.topics),
         len(plugins),
     )
@@ -126,6 +147,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
     from testudo.core.publisher import build_diagnostic_array
     from testudo.tui.app import TestudoApp
     from testudo.tui.data_source import LiveDataSource
+    from testudo.tui.log_summary import suppressed_terminal_logging
 
     rclpy.init()
     node = rclpy.create_node("testudo_watch")
@@ -133,33 +155,39 @@ def cmd_watch(args: argparse.Namespace) -> int:
     spin_thread: threading.Thread | None = None
     try:
         manager = SubscriptionManager(node, config, plugins, monitor_hz=not args.no_hz)
-        manager.start()
-        # Textual owns the main thread's event loop, so subscription
-        # callbacks need their own thread to actually get serviced -- the
-        # TUI's poll timer just reads state that thread has already
-        # updated. Periodic rediscovery/stale-stack clearing (`manager.
-        # maintain()`) rides along on this same thread rather than the
-        # TUI's, since both create/destroy rclpy subscriptions and that
-        # isn't safe to interleave with a concurrent `spin_once` elsewhere.
-        spin_thread = threading.Thread(target=_spin_until_stopped, args=(node, stop_spinning, manager), daemon=True)
-        spin_thread.start()
+        # Everything from here through app.run() returning can log from a
+        # background thread (a missing message-interface package is the
+        # common case) while Textual owns the terminal -- suppressed_
+        # terminal_logging buffers that instead of letting it corrupt the
+        # live display, and prints what it caught once the TUI is done.
+        with suppressed_terminal_logging():
+            manager.start()
+            # Textual owns the main thread's event loop, so subscription
+            # callbacks need their own thread to actually get serviced -- the
+            # TUI's poll timer just reads state that thread has already
+            # updated. Periodic rediscovery/stale-stack clearing (`manager.
+            # maintain()`) rides along on this same thread rather than the
+            # TUI's, since both create/destroy rclpy subscriptions and that
+            # isn't safe to interleave with a concurrent `spin_once` elsewhere.
+            spin_thread = threading.Thread(target=_spin_until_stopped, args=(node, stop_spinning, manager), daemon=True)
+            spin_thread.start()
 
-        diagnostics_publisher = node.create_publisher(DiagnosticArray, config.publish.topic, 10)
+            diagnostics_publisher = node.create_publisher(DiagnosticArray, config.publish.topic, 10)
 
-        def on_snapshot(snapshot) -> None:
-            array = build_diagnostic_array(node.get_clock().now().to_msg(), snapshot.reports, snapshot.overall)
-            diagnostics_publisher.publish(array)
+            def on_snapshot(snapshot) -> None:
+                array = build_diagnostic_array(node.get_clock().now().to_msg(), snapshot.reports, snapshot.overall)
+                diagnostics_publisher.publish(array)
 
-        app = TestudoApp(
-            data_source=LiveDataSource(manager, config.severity_mode, config_path=args.config),
-            ros_distro=os.environ.get("ROS_DISTRO", "unknown"),
-            ros_domain_id=os.environ.get("ROS_DOMAIN_ID", "0"),
-            dds_implementation=_dds_implementation(),
-            poll_rate_hz=config.publish.rate_hz,
-            sim_time_active=TestudoClock.from_node(node).is_sim_time_active(),
-            on_snapshot=on_snapshot,
-        )
-        app.run()
+            app = TestudoApp(
+                data_source=LiveDataSource(manager, config.severity_mode, config_path=config_path),
+                ros_distro=os.environ.get("ROS_DISTRO", "unknown"),
+                ros_domain_id=os.environ.get("ROS_DOMAIN_ID", "0"),
+                dds_implementation=_dds_implementation(),
+                poll_rate_hz=config.publish.rate_hz,
+                sim_time_active=TestudoClock.from_node(node).is_sim_time_active(),
+                on_snapshot=on_snapshot,
+            )
+            app.run()
     finally:
         stop_spinning.set()
         if spin_thread is not None:
@@ -177,11 +205,11 @@ def _spin_until_stopped(node: rclpy.node.Node, stop_event: threading.Event, mana
 
 
 def cmd_check(args: argparse.Namespace) -> int:
-    config = _load_config_or_exit(args.config)
+    config, config_path = _load_config_or_exit(args.config)
     plugins = discover_all_plugins(config.plugins_dir)
     _logger.info(
         "loaded config from %s (%d declared topic type(s)); %d plugin(s) discovered",
-        args.config,
+        config_path,
         len(config.topics),
         len(plugins),
     )
@@ -278,11 +306,11 @@ def _status_line(status: CheckStatus) -> Text:
 
 
 def cmd_replay(args: argparse.Namespace) -> int:
-    config = _load_config_or_exit(args.config)
+    config, config_path = _load_config_or_exit(args.config)
     plugins = discover_all_plugins(config.plugins_dir)
     _logger.info(
         "loaded config from %s (%d declared topic type(s)); %d plugin(s) discovered",
-        args.config,
+        config_path,
         len(config.topics),
         len(plugins),
     )
@@ -303,6 +331,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
         if args.watch:
             from testudo.tui.app import TestudoApp
             from testudo.tui.data_source import StaticDataSource
+            from testudo.tui.log_summary import suppressed_terminal_logging
 
             # A finished batch replay, browsable in the same TUI as `watch`
             # (drill-down/filter/sort all work) -- not a frame-exact time
@@ -314,7 +343,8 @@ def cmd_replay(args: argparse.Namespace) -> int:
                 dds_implementation=_dds_implementation(),
                 sim_time_active=True,
             )
-            app.run()
+            with suppressed_terminal_logging():
+                app.run()
             return 0
     finally:
         node.destroy_node()
@@ -324,7 +354,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
 
 
 def cmd_plugins(args: argparse.Namespace) -> int:
-    config = _load_config_or_exit(args.config)
+    config, _config_path = _load_config_or_exit(args.config)
     discovered = discover_all_plugins(config.plugins_dir)
     if not discovered:
         _logger.info("no plugins discovered")
