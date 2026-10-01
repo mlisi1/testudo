@@ -22,6 +22,11 @@
 
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-psutil</exec_depend>
+  <!-- GPU memory profiling (node_profiling.gpu_enabled) is best-effort and
+       NVIDIA-only via pynvml/nvidia-ml-py, which has no rosdep key and is
+       imported lazily -- pip-install it yourself if you want it; node
+       profiling degrades to no-GPU-data (not an error) without it. -->
   <!-- Only needed for `testudo replay`; imported lazily so other commands
        don't require it. -->
   <exec_depend>rosbag2_py</exec_depend>

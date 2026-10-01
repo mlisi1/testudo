@@ -20,6 +20,8 @@ from rich.text import Text
 
 from testudo.core.clock import TestudoClock
 from testudo.core.config import ConfigError, TestudoConfig, default_config_path, load_config
+from testudo.core.node_profiling.profiler import NodeProfiler
+from testudo.core.node_profiling.publisher import NodeDiagnosticPublisher
 from testudo.core.publisher import DiagnosticPublisher
 from testudo.core.subscription_manager import SubscriptionManager, TopicReport
 from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_LABELS, CheckStatus, Severity
@@ -144,6 +146,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
     )
 
     # Imported lazily: the TUI's dependency (textual) is only needed here.
+    from testudo.core.node_profiling.report import build_node_diagnostic_array
     from testudo.core.publisher import build_diagnostic_array
     from testudo.tui.app import TestudoApp
     from testudo.tui.data_source import LiveDataSource
@@ -153,6 +156,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
     node = rclpy.create_node("testudo_watch")
     stop_spinning = threading.Event()
     spin_thread: threading.Thread | None = None
+    node_profiler: NodeProfiler | None = None
     try:
         manager = SubscriptionManager(node, config, plugins, monitor_hz=not args.no_hz)
         # Everything from here through app.run() returning can log from a
@@ -174,12 +178,42 @@ def cmd_watch(args: argparse.Namespace) -> int:
 
             diagnostics_publisher = node.create_publisher(DiagnosticArray, config.publish.topic, 10)
 
+            node_diagnostics_publisher = None
+            if config.node_profiling.enabled:
+                node_profiler = NodeProfiler(node, config.node_profiling)
+                # NodeProfiler.start() creates its own rediscovery timer on
+                # `node`, so its graph calls land on this same spin thread
+                # without any further plumbing here -- see profiler.py.
+                node_profiler.start()
+                node_diagnostics_publisher = node.create_publisher(DiagnosticArray, config.node_profiling.publish_topic, 10)
+
             def on_snapshot(snapshot) -> None:
-                array = build_diagnostic_array(node.get_clock().now().to_msg(), snapshot.reports, snapshot.overall)
+                # `snapshot.reports` includes node-profiling rows merged in
+                # for the TUI's Plugin/Topic/Detail Panels (see
+                # LiveDataSource.poll()) -- filtered back out here so the
+                # main /diagnostics array stays topic-only, matching its
+                # existing scope; node rows publish separately below.
+                topic_reports = [r for r in snapshot.reports if r.tier != "node"]
+                array = build_diagnostic_array(node.get_clock().now().to_msg(), topic_reports, snapshot.overall)
                 diagnostics_publisher.publish(array)
+                # `node_profiler` was already ticked this same poll by
+                # LiveDataSource.poll() -- publishing here (not via a
+                # second, self-driving NodeDiagnosticPublisher timer) keeps
+                # node profiling's tick() single-threaded in `watch`, same
+                # as the main diagnostics array above, avoiding a second
+                # concurrent writer to NodeProfiler's internal state.
+                if node_diagnostics_publisher is not None and node_profiler is not None:
+                    node_array = build_node_diagnostic_array(
+                        node.get_clock().now().to_msg(),
+                        list(node_profiler.reports()),
+                        node_profiler.overall_status(config.severity_mode),
+                    )
+                    node_diagnostics_publisher.publish(node_array)
 
             app = TestudoApp(
-                data_source=LiveDataSource(manager, config.severity_mode, config_path=config_path),
+                data_source=LiveDataSource(
+                    manager, config.severity_mode, config_path=config_path, node_profiler=node_profiler
+                ),
                 ros_distro=os.environ.get("ROS_DISTRO", "unknown"),
                 ros_domain_id=os.environ.get("ROS_DOMAIN_ID", "0"),
                 dds_implementation=_dds_implementation(),
@@ -192,6 +226,8 @@ def cmd_watch(args: argparse.Namespace) -> int:
         stop_spinning.set()
         if spin_thread is not None:
             spin_thread.join(timeout=2.0)
+        if node_profiler is not None:
+            node_profiler.close()
         node.destroy_node()
         rclpy.shutdown()
 
@@ -224,10 +260,25 @@ def cmd_check(args: argparse.Namespace) -> int:
         # rate -- this is what makes `check`'s output bag-recordable, not
         # just printed at the end.
         publisher = DiagnosticPublisher(node, manager, config.severity_mode, config.publish.topic, config.publish.rate_hz)
+        node_profiler = None
+        node_publisher = None
+        if config.node_profiling.enabled:
+            node_profiler = NodeProfiler(node, config.node_profiling)
+            node_profiler.start()
+            # `check` has no per-poll merge point like `watch`'s on_snapshot
+            # closure, so node stats get their own self-driving timer here
+            # -- single-threaded (no separate spin thread in `check`), the
+            # same reason `DiagnosticPublisher` above is only used this way
+            # in `check`, never in `watch`.
+            node_publisher = NodeDiagnosticPublisher(node, node_profiler, config.severity_mode, config.node_profiling)
         try:
             _spin_for(node, args.duration)
         finally:
             publisher.destroy()
+            if node_publisher is not None:
+                node_publisher.destroy()
+            if node_profiler is not None:
+                node_profiler.close()
         manager.tick()
         reports = manager.reports()
         overall = manager.overall_status(config.severity_mode)
@@ -319,6 +370,12 @@ def cmd_replay(args: argparse.Namespace) -> int:
     # rosbag2_py to be installed.
     from testudo.core.replay import replay_bag
 
+    # Node profiling is deliberately never wired into replay, live or
+    # batch: a bag replay has no corresponding live OS process to sample
+    # -- profiling "the CPU/memory of a bag" is meaningless, not a gap to
+    # fill later. The "Nodes" category (see tui/categorize.py) simply
+    # never appears in a replay's Plugin Panel as a result, the same
+    # honest absence any other not-applicable category already gets.
     rclpy.init()
     node = rclpy.create_node("testudo_replay")
     try:

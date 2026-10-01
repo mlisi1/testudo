@@ -123,3 +123,76 @@ def test_frequency_threshold_flags_frequent_invocations() -> None:
 
 def test_default_thresholds_only_cover_success_rate() -> None:
     assert set(Nav2GoalPlugin.default_thresholds()) == {"success_rate"}
+
+
+def test_current_status_and_time_in_status_track_the_latest_transition() -> None:
+    plugin = Nav2GoalPlugin()
+    plugin.on_tick(10.0)
+    plugin.on_message("/x", _status_array(_goal_status(1, GoalStatus.STATUS_ACCEPTED)))
+    status = plugin.get_status()
+    assert status.values["current_status"] == "accepted"
+    assert status.values["time_in_status_s"] == "0"
+
+    plugin.on_tick(13.0)
+    plugin.on_message("/x", _status_array(_goal_status(1, GoalStatus.STATUS_EXECUTING)))
+    plugin.on_tick(17.0)
+    status = plugin.get_status()
+    assert status.values["current_status"] == "executing"
+    assert status.values["time_in_status_s"] == "4"
+
+
+def test_current_status_persists_after_goal_is_garbage_collected() -> None:
+    plugin = Nav2GoalPlugin()
+    plugin.on_tick(0.0)
+    plugin.on_message("/x", _status_array(_goal_status(1, GoalStatus.STATUS_SUCCEEDED)))
+    plugin.on_tick(1.0)
+    plugin.on_message("/x", _status_array())  # server stopped reporting it
+    status = plugin.get_status()
+    assert status.values["current_status"] == "succeeded"
+    assert status.values["time_in_status_s"] == "1"
+
+
+def test_no_feedback_yet_reports_remaining_distance_and_time_as_not_available() -> None:
+    plugin = Nav2GoalPlugin()
+    plugin.on_tick(0.0)
+    plugin.on_message("/x", _status_array(_goal_status(1, GoalStatus.STATUS_ACCEPTED)))
+    status = plugin.get_status()
+    assert status.values["distance_remaining_m"] == "n/a"
+    assert status.values["estimated_time_remaining_s"] == "n/a"
+
+
+def test_feedback_on_related_topic_populates_remaining_distance_and_time() -> None:
+    from builtin_interfaces.msg import Duration
+    from nav2_msgs.action._navigate_to_pose import NavigateToPose_Feedback, NavigateToPose_FeedbackMessage
+
+    plugin = Nav2GoalPlugin(related_topics={"feedback": "/navigate_to_pose/_action/feedback"})
+    plugin.on_tick(0.0)
+    plugin.on_message("/navigate_to_pose/_action/status", _status_array(_goal_status(1, GoalStatus.STATUS_EXECUTING)))
+
+    feedback_msg = NavigateToPose_FeedbackMessage()
+    feedback_msg.feedback = NavigateToPose_Feedback()
+    feedback_msg.feedback.distance_remaining = 4.5
+    feedback_msg.feedback.estimated_time_remaining = Duration(sec=12, nanosec=500_000_000)
+    plugin.on_message("/navigate_to_pose/_action/feedback", feedback_msg)
+
+    status = plugin.get_status()
+    assert status.values["distance_remaining_m"] == "4.5"
+    assert status.values["estimated_time_remaining_s"] == "12.5"
+    # Feedback doesn't count as a goal-status update.
+    assert status.values["active_count"] == "1"
+
+
+def test_feedback_without_expected_fields_is_ignored_without_error() -> None:
+    from nav2_msgs.action._spin import Spin_Feedback, Spin_FeedbackMessage
+
+    plugin = Nav2GoalPlugin(related_topics={"feedback": "/spin/_action/feedback"})
+    plugin.on_tick(0.0)
+    plugin.on_message("/spin/_action/status", _status_array(_goal_status(1, GoalStatus.STATUS_EXECUTING)))
+
+    feedback_msg = Spin_FeedbackMessage()
+    feedback_msg.feedback = Spin_Feedback()
+    plugin.on_message("/spin/_action/feedback", feedback_msg)
+
+    status = plugin.get_status()
+    assert status.values["distance_remaining_m"] == "n/a"
+    assert status.values["estimated_time_remaining_s"] == "n/a"

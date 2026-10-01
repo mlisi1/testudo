@@ -32,6 +32,14 @@ OTHER_CATEGORY = "Other Topics"
 #: watched, on purpose".
 EXCLUDED_CATEGORY = "Excluded Topics"
 
+#: Node-profiling rows (see `core/node_profiling/report.node_stat_to_topic_report`)
+#: -- process CPU/memory/GPU stats wearing a synthetic `TopicReport` shape
+#: so they flow through the same Plugin Panel -> Topic Panel -> Detail
+#: Panel machinery as every other category, rather than a separate screen.
+#: Sorts as a normal category (not alongside OTHER_CATEGORY/EXCLUDED_CATEGORY's
+#: trailing grab-bags) -- it's real diagnostic content, not a catch-all.
+NODES_CATEGORY = "Nodes"
+
 
 def category_for(report: TopicReport) -> str:
     """The display category `report` belongs to.
@@ -47,10 +55,14 @@ def category_for(report: TopicReport) -> str:
     identity at all. Excluded-tier topics get EXCLUDED_CATEGORY regardless
     of message type -- a user chose to drop these, so grouping by type
     would just scatter them across categories they've deliberately opted
-    out of monitoring.
+    out of monitoring. Node-profiling rows (tier == "node") always get
+    NODES_CATEGORY regardless of their synthetic `msg_type` -- there's only
+    ever one such category, unlike real message types.
     """
     if report.tier == "excluded":
         return EXCLUDED_CATEGORY
+    if report.tier == "node":
+        return NODES_CATEGORY
     if report.tier not in ("full", "presence"):
         return OTHER_CATEGORY
     if report.msg_type in _FRIENDLY_NAMES:

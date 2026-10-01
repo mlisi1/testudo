@@ -427,6 +427,7 @@ class SubscriptionManager:
             related_topics = topic_config.related_topics
         if action_config is not None:
             thresholds.update(action_config.thresholds)
+            related_topics = {**related_topics, **action_config.related_topics}
         self._subscribe_full_tier(
             topic_name, msg_class, publisher_info.qos_profile, plugin_class, thresholds, related_topics, topics_by_name
         )

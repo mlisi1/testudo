@@ -4,8 +4,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from testudo.core.config import ExcludeMatchType, ExcludeRule, SeverityMode, load_config
+from testudo.core.node_profiling.report import NodeStat
 from testudo.core.topic_report import TopicReport
 from testudo.plugins.base import CheckStatus, Severity
+from testudo.tui.categorize import NODES_CATEGORY, category_for
 from testudo.tui.data_source import LiveDataSource, StaticDataSource
 
 
@@ -62,6 +64,61 @@ def test_live_data_source_reset_stats_delegates_to_manager() -> None:
     source = LiveDataSource(manager, SeverityMode.WORST)
     source.reset_stats()
     assert manager.reset_calls == 1
+
+
+class _FakeNodeProfiler:
+    def __init__(self, stats: list[NodeStat]) -> None:
+        self.tick_calls = 0
+        self._stats = tuple(stats)
+
+    def tick(self) -> None:
+        self.tick_calls += 1
+
+    def reports(self):
+        return self._stats
+
+    def overall_status(self, mode):
+        return CheckStatus(Severity.OK, "overall", "node overall")
+
+
+def _node_stat(identity: str) -> NodeStat:
+    return NodeStat(
+        identity=identity,
+        pid=1,
+        process_name="p",
+        resolved=True,
+        cpu_percent=1.0,
+        cpu_affinity=None,
+        num_threads=1,
+        num_children=0,
+        memory_rss_mb=1.0,
+        gpu_memory_mb=None,
+        status=CheckStatus(Severity.OK, "node-profile", "m"),
+    )
+
+
+def test_live_data_source_merges_node_profiler_reports_into_reports() -> None:
+    manager = _FakeManager()
+    profiler = _FakeNodeProfiler([_node_stat("/controller_server")])
+    source = LiveDataSource(manager, SeverityMode.WORST, node_profiler=profiler)
+
+    snapshot = source.poll()
+
+    assert profiler.tick_calls == 1
+    topics = {r.topic for r in snapshot.reports}
+    assert topics == {"/a", "/controller_server"}
+    node_report = next(r for r in snapshot.reports if r.topic == "/controller_server")
+    assert node_report.tier == "node"
+    assert category_for(node_report) == NODES_CATEGORY
+    # Manager's own topic reports are untouched -- still exactly what the manager returns.
+    assert any(r.topic == "/a" and r.tier == "vitals" for r in snapshot.reports)
+
+
+def test_live_data_source_without_node_profiler_reports_unaffected() -> None:
+    manager = _FakeManager()
+    source = LiveDataSource(manager, SeverityMode.WORST)
+    snapshot = source.poll()
+    assert snapshot.reports == manager.reports()
 
 
 def test_static_data_source_returns_same_snapshot_every_poll() -> None:

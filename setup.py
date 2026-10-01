@@ -17,7 +17,11 @@ setup(
     # without --system-site-packages) won't pull it in unless it's also
     # listed here. It's a direct import (odometry.py) as well as a
     # transitive need of several rclpy message bindings.
-    install_requires=["setuptools", "PyYAML", "textual", "numpy"],
+    # psutil: node profiling's per-process CPU/memory/thread sampling
+    # (core/node_profiling/sampler.py) -- a hard dependency, unlike the
+    # optional pynvml (GPU memory only, lazily imported, deliberately
+    # never listed here or in package.xml -- see core/node_profiling/gpu.py).
+    install_requires=["setuptools", "PyYAML", "textual", "numpy", "psutil"],
     zip_safe=True,
     maintainer="mlisi1",
     maintainer_email="elechim2196@gmail.com",
@@ -39,6 +43,7 @@ setup(
             "image_stream = testudo.plugins.builtin.image_stream:ImageStreamPlugin",
             "point_stream = testudo.plugins.builtin.point_stream:PointStreamPlugin",
             "nav2_goals = testudo.plugins.builtin.nav2_goals:Nav2GoalPlugin",
+            "bt_log = testudo.plugins.builtin.bt_log:BehaviorTreeLogPlugin",
             "tf_watch = testudo.plugins.builtin.tf_watch:TFWatchPlugin",
         ],
     },

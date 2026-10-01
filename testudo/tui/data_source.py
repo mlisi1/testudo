@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from testudo.core.config import ExcludeRule, SeverityMode, write_exclude_rules
+from testudo.core.node_profiling.profiler import NodeProfiler
+from testudo.core.node_profiling.report import node_stat_to_topic_report
 from testudo.core.subscription_manager import SubscriptionManager, TopicReport
 from testudo.plugins.base import CheckStatus
 
@@ -40,7 +42,11 @@ class LiveDataSource:
     """Polls a live SubscriptionManager, advancing plugins' time-based state each poll."""
 
     def __init__(
-        self, manager: SubscriptionManager, severity_mode: SeverityMode, config_path: str | None = None
+        self,
+        manager: SubscriptionManager,
+        severity_mode: SeverityMode,
+        config_path: str | None = None,
+        node_profiler: NodeProfiler | None = None,
     ) -> None:
         self._manager = manager
         self._severity_mode = severity_mode
@@ -49,10 +55,23 @@ class LiveDataSource:
         # a test harness with no real config file) just skips that write,
         # the in-memory rule still takes effect for the rest of the session.
         self._config_path = config_path
+        # None when node_profiling.enabled is False -- poll() then just
+        # returns the manager's own reports, unaugmented, same as a replay.
+        self._node_profiler = node_profiler
 
     def poll(self) -> WatchSnapshot:
         self._manager.tick()
-        return WatchSnapshot(reports=self._manager.reports(), overall=self._manager.overall_status(self._severity_mode))
+        reports = self._manager.reports()
+        if self._node_profiler is not None:
+            self._node_profiler.tick()
+            # Node-profiling rows wear a synthetic TopicReport shape (see
+            # node_stat_to_topic_report) so they flow through the same
+            # Plugin Panel -> Topic Panel -> Detail Panel machinery as
+            # every other category, grouped under NODES_CATEGORY --
+            # `overall` below stays topic-only (unaffected), matching
+            # `/diagnostics`'s existing scope.
+            reports = reports + [node_stat_to_topic_report(stat) for stat in self._node_profiler.reports()]
+        return WatchSnapshot(reports=reports, overall=self._manager.overall_status(self._severity_mode))
 
     def reset_stats(self) -> None:
         self._manager.reset_stats()

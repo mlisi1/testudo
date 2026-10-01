@@ -3,14 +3,25 @@
 Tracks one action server's goal lifecycle via its status topic
 (action_msgs/msg/GoalStatusArray -- common to every ROS 2 action regardless
 of the specific action type): accepted/executing/canceling/succeeded/
-aborted/canceled counts, success rate, mean time-to-completion, and
-invocation frequency. The same mechanism serves both top-level navigation
-goals (e.g. navigate_to_pose) and Nav2's recovery behaviors (e.g. spin,
-backup, wait) -- whichever actions are declared or auto-discovered.
+aborted/canceled counts, success rate, mean time-to-completion, invocation
+frequency, and the current status + time spent in it. The same mechanism
+serves both top-level navigation goals (e.g. navigate_to_pose) and Nav2's
+recovery behaviors (e.g. spin, backup, wait) -- whichever actions are
+declared or auto-discovered.
 
 A goal's *request* (before the server accepts or rejects it) happens over a
 service call, not a topic, so it isn't observable here; tracking starts at
 acceptance, which is the first point a goal appears in the status array.
+
+Optionally, declaring this action's feedback topic under the action's
+`related_topics: {feedback: ...}` (config.py's ActionConfig, routed the
+same way a declared topic's related_topics are) feeds remaining-distance/
+time-to-completion into the status too, on a best-effort basis: the
+feedback message type is action-specific (unlike GoalStatusArray), so
+fields are read by duck-typing rather than importing every action's own
+Feedback type -- an action whose feedback doesn't carry
+`distance_remaining`/`estimated_time_remaining` (e.g. Spin, BackUp, Wait)
+simply never populates those two values.
 """
 from __future__ import annotations
 
@@ -23,6 +34,16 @@ from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, ThresholdZo
 
 _TERMINAL_STATUSES = frozenset({GoalStatus.STATUS_SUCCEEDED, GoalStatus.STATUS_CANCELED, GoalStatus.STATUS_ABORTED})
 _ACTIVE_STATUSES = frozenset({GoalStatus.STATUS_ACCEPTED, GoalStatus.STATUS_EXECUTING, GoalStatus.STATUS_CANCELING})
+
+_STATUS_NAMES: dict[int, str] = {
+    GoalStatus.STATUS_UNKNOWN: "unknown",
+    GoalStatus.STATUS_ACCEPTED: "accepted",
+    GoalStatus.STATUS_EXECUTING: "executing",
+    GoalStatus.STATUS_CANCELING: "canceling",
+    GoalStatus.STATUS_SUCCEEDED: "succeeded",
+    GoalStatus.STATUS_CANCELED: "canceled",
+    GoalStatus.STATUS_ABORTED: "aborted",
+}
 
 _DURATION_WINDOW_SIZE = 20
 _ACCEPTANCE_WINDOW_SIZE = 20
@@ -54,6 +75,10 @@ class Nav2GoalPlugin(CheckPlugin):
         self._active_count = 0
         self._durations: deque[float] = deque(maxlen=_DURATION_WINDOW_SIZE)
         self._acceptance_times: deque[float] = deque(maxlen=_ACCEPTANCE_WINDOW_SIZE)
+        self._current_status = GoalStatus.STATUS_UNKNOWN
+        self._status_since: float | None = None
+        self._distance_remaining_m: float | None = None
+        self._estimated_time_remaining_s: float | None = None
 
     @classmethod
     def msg_types(cls) -> tuple[str, ...]:
@@ -70,6 +95,10 @@ class Nav2GoalPlugin(CheckPlugin):
         self._now = now_seconds
 
     def on_message(self, topic: str, msg: Any) -> None:
+        if topic == self.related_topics.get("feedback"):
+            self._handle_feedback(msg)
+            return
+
         self._message_count += 1
         seen_ids = set()
 
@@ -83,6 +112,10 @@ class Nav2GoalPlugin(CheckPlugin):
                 record = _GoalRecord(accepted_stamp=accepted_stamp, last_status=GoalStatus.STATUS_UNKNOWN)
                 self._goals[goal_id] = record
                 self._acceptance_times.append(self._now)
+
+            if status.status != record.last_status:
+                self._current_status = status.status
+                self._status_since = self._now
 
             newly_terminal = status.status in _TERMINAL_STATUSES and record.last_status not in _TERMINAL_STATUSES
             record.last_status = status.status
@@ -102,6 +135,24 @@ class Nav2GoalPlugin(CheckPlugin):
                 del self._goals[goal_id]
 
         self._active_count = sum(1 for goal_id in seen_ids if self._goals[goal_id].last_status in _ACTIVE_STATUSES)
+
+    def _handle_feedback(self, msg: Any) -> None:
+        """Best-effort extraction of remaining distance/time from an action-specific Feedback message.
+
+        `msg` is the action's `<Action>_FeedbackMessage` wrapper
+        (goal_id + feedback); read by attribute name rather than importing
+        every action's Feedback type, since only some (NavigateToPose,
+        ComputePathToPose, ...) carry these fields at all.
+        """
+        feedback = getattr(msg, "feedback", None)
+        if feedback is None:
+            return
+        distance = getattr(feedback, "distance_remaining", None)
+        if distance is not None:
+            self._distance_remaining_m = float(distance)
+        duration = getattr(feedback, "estimated_time_remaining", None)
+        if duration is not None:
+            self._estimated_time_remaining_s = duration.sec + duration.nanosec * 1e-9
 
     def _terminal_count(self) -> int:
         return self._succeeded + self._aborted + self._canceled
@@ -151,7 +202,10 @@ class Nav2GoalPlugin(CheckPlugin):
             problems.append(f"invocation frequency {frequency:.1f}/min")
         message = "; ".join(problems) if problems else "nominal"
 
+        time_in_status = None if self._status_since is None else max(0.0, self._now - self._status_since)
         values = {
+            "current_status": _STATUS_NAMES.get(self._current_status, "unknown"),
+            "time_in_status_s": f"{time_in_status:.3g}" if time_in_status is not None else "n/a",
             "active_count": str(self._active_count),
             "succeeded": str(self._succeeded),
             "aborted": str(self._aborted),
@@ -159,5 +213,11 @@ class Nav2GoalPlugin(CheckPlugin):
             "success_rate": f"{success_rate:.3g}" if success_rate is not None else "n/a",
             "mean_duration_s": f"{mean_duration:.3g}" if mean_duration is not None else "n/a",
             "frequency_per_min": f"{frequency:.3g}" if frequency is not None else "n/a",
+            "distance_remaining_m": (
+                f"{self._distance_remaining_m:.3g}" if self._distance_remaining_m is not None else "n/a"
+            ),
+            "estimated_time_remaining_s": (
+                f"{self._estimated_time_remaining_s:.3g}" if self._estimated_time_remaining_s is not None else "n/a"
+            ),
         }
         return CheckStatus(severity=worst, label="nav2-action", message=message, values=values)

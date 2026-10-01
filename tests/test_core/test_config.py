@@ -12,6 +12,7 @@ from testudo.core.config import (
     ConfigError,
     ExcludeMatchType,
     ExcludeRule,
+    NodeProfilingConfig,
     SeverityMode,
     default_config_path,
     load_config,
@@ -387,6 +388,26 @@ def test_action_thresholds_default_to_empty(tmp_path: Path) -> None:
     assert config.actions[0].thresholds == {}
 
 
+def test_action_related_topics_parse(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        """
+        actions:
+          - name: navigate_to_pose
+            action_type: nav2_msgs/action/NavigateToPose
+            related_topics:
+              feedback: /navigate_to_pose/_action/feedback
+        """,
+    )
+    config = load_config(path)
+    assert config.actions[0].related_topics == {"feedback": "/navigate_to_pose/_action/feedback"}
+
+
+def test_action_related_topics_default_to_empty(tmp_path: Path) -> None:
+    path = _write(tmp_path, "actions:\n  - name: spin\n    action_type: nav2_msgs/action/Spin\n")
+    assert load_config(path).actions[0].related_topics == {}
+
+
 def test_action_entry_rejects_unknown_key(tmp_path: Path) -> None:
     path = _write(
         tmp_path,
@@ -464,4 +485,94 @@ def test_topic_entry_rejects_unknown_key(tmp_path: Path) -> None:
         "topics:\n  nav_msgs/msg/Odometry:\n    - name: /odom\n      bogus: true\n",
     )
     with pytest.raises(ConfigError, match="unknown key"):
+        load_config(path)
+
+
+def test_node_profiling_defaults(tmp_path: Path) -> None:
+    path = _write(tmp_path, "")
+    config = load_config(path)
+    assert config.node_profiling == NodeProfilingConfig()
+
+
+def test_node_profiling_full(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        """
+        node_profiling:
+          enabled: false
+          poll_interval_seconds: 1.5
+          rediscovery_interval_seconds: 10
+          gpu_enabled: false
+          publish_topic: /diagnostics/my_nodes
+          publish_rate_hz: 2.0
+          cpu_percent:
+            green: 50
+            orange: 90
+          memory_mb:
+            green: 200
+            orange: 800
+          exclude_nodes:
+            - /noisy_node
+            - pattern: "_debug$"
+              type: regex
+        """,
+    )
+    config = load_config(path)
+    np = config.node_profiling
+    assert np.enabled is False
+    assert np.poll_interval_seconds == 1.5
+    assert np.rediscovery_interval_seconds == 10.0
+    assert np.gpu_enabled is False
+    assert np.publish_topic == "/diagnostics/my_nodes"
+    assert np.publish_rate_hz == 2.0
+    assert np.cpu_percent.green == 50.0
+    assert np.cpu_percent.orange == 90.0
+    assert np.memory_mb.green == 200.0
+    assert np.memory_mb.orange == 800.0
+    assert np.exclude_nodes == [
+        ExcludeRule("/noisy_node"),
+        ExcludeRule("_debug$", ExcludeMatchType.REGEX),
+    ]
+
+
+def test_node_profiling_must_be_a_mapping(tmp_path: Path) -> None:
+    path = _write(tmp_path, "node_profiling: not_a_mapping")
+    with pytest.raises(ConfigError, match="'node_profiling' must be a mapping"):
+        load_config(path)
+
+
+def test_node_profiling_rejects_unknown_key(tmp_path: Path) -> None:
+    path = _write(tmp_path, "node_profiling:\n  bogus: 1\n")
+    with pytest.raises(ConfigError, match="node_profiling has unknown key"):
+        load_config(path)
+
+
+def test_node_profiling_enabled_must_be_boolean(tmp_path: Path) -> None:
+    path = _write(tmp_path, "node_profiling:\n  enabled: yes_please\n")
+    with pytest.raises(ConfigError, match="node_profiling.enabled must be a boolean"):
+        load_config(path)
+
+
+def test_node_profiling_rejects_non_positive_poll_interval(tmp_path: Path) -> None:
+    path = _write(tmp_path, "node_profiling:\n  poll_interval_seconds: 0\n")
+    with pytest.raises(ConfigError, match="poll_interval_seconds must be a positive number"):
+        load_config(path)
+
+
+def test_node_profiling_rejects_empty_publish_topic(tmp_path: Path) -> None:
+    path = _write(tmp_path, "node_profiling:\n  publish_topic: ''\n")
+    with pytest.raises(ConfigError, match="publish_topic must be a non-empty string"):
+        load_config(path)
+
+
+def test_exclude_nodes_error_mentions_its_own_key_not_exclude_topics(tmp_path: Path) -> None:
+    """Regression: _parse_exclude_rule used to hardcode 'exclude_topics' into every error."""
+    path = _write(tmp_path, "node_profiling:\n  exclude_nodes:\n    - pattern: '['\n      type: regex\n")
+    with pytest.raises(ConfigError, match="exclude_nodes: invalid regex"):
+        load_config(path)
+
+
+def test_exclude_topics_error_still_mentions_exclude_topics(tmp_path: Path) -> None:
+    path = _write(tmp_path, "exclude_topics:\n  - pattern: '['\n    type: regex\n")
+    with pytest.raises(ConfigError, match="exclude_topics: invalid regex"):
         load_config(path)
