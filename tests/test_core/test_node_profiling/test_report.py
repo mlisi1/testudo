@@ -15,7 +15,6 @@ def _sample(**overrides) -> ProcessSample:
         cpu_percent=10.0,
         cpu_affinity=(0, 1),
         num_threads=4,
-        num_children=0,
         memory_rss_mb=50.0,
         memory_percent=1.5,
         status="running",

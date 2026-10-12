@@ -67,7 +67,7 @@ class _FakeProcess:
         return self._threads
 
     def children(self, recursive=True):
-        return [object()] * self._children
+        raise AssertionError("children() rescans the whole process table -- must not be called per sample")
 
     def cpu_affinity(self):
         if self._raise_on == "cpu_affinity":

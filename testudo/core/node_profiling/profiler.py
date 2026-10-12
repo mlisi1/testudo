@@ -13,13 +13,14 @@ for itself.
 from __future__ import annotations
 
 import os
+import time
 from collections import Counter
 from typing import TYPE_CHECKING
 
 from testudo.core.aggregator import DEFAULT_REQUIRED_CONSECUTIVE, HysteresisDebouncer
 from testudo.core.config import NodeProfilingConfig, SeverityMode
 from testudo.core.node_profiling import maintenance as _maintenance
-from testudo.core.node_profiling.gpu import per_process_gpu_memory_mb
+from testudo.core.node_profiling.gpu import gpu_memory_mb_by_pid
 from testudo.core.node_profiling.process_match import ResolvedProcess
 from testudo.core.node_profiling.report import NodeStat, build_status
 from testudo.core.node_profiling.sampler import ProcessSampler
@@ -47,6 +48,7 @@ class NodeProfiler:
         self._debouncers: dict[str, HysteresisDebouncer] = {}
         self._hysteresis_required_consecutive = hysteresis_required_consecutive
         self._timer = None
+        self._last_tick_monotonic: float | None = None
 
     def start(self) -> None:
         """Run an initial rediscovery pass and arm the periodic one.
@@ -64,15 +66,36 @@ class NodeProfiler:
     def _on_rediscovery_timer(self) -> None:
         _maintenance.rediscover(self)
 
+    def tick_if_due(self) -> bool:
+        """`tick()`, but at most once per `poll_interval_seconds`. Returns whether it sampled.
+
+        For a caller driven at some other, faster cadence than process
+        sampling should run at -- `watch`'s TUI poll (`publish.rate_hz`,
+        5 Hz by default) -- so that cadence doesn't become the sampling
+        rate: a tick costs real CPU per tracked process, on the caller's
+        thread, and a resource reading doesn't change meaningfully in
+        200ms anyway. Same thread-safety as `tick()`.
+        """
+        now = time.monotonic()
+        if (
+            self._last_tick_monotonic is not None
+            and now - self._last_tick_monotonic < self._config.poll_interval_seconds
+        ):
+            return False
+        self._last_tick_monotonic = now
+        self.tick()
+        return True
+
     def tick(self) -> None:
         """Sample every currently-mapped process. Callable from any thread (no rclpy calls)."""
         mapping = self._mapping  # one reference read -- stable for the rest of this call
+        gpu_mb_by_pid = gpu_memory_mb_by_pid() if self._config.gpu_enabled else {}
         latest: list[NodeStat] = []
         for resolved in mapping.values():
             sample = self._sampler.sample(resolved.pid)
             if sample is None:
                 continue
-            gpu_mb = per_process_gpu_memory_mb(resolved.pid) if self._config.gpu_enabled else None
+            gpu_mb = gpu_mb_by_pid.get(resolved.pid)
             status = build_status(
                 sample,
                 resolved.pid,
@@ -81,6 +104,7 @@ class NodeProfiler:
                 self._config.memory_mb,
                 self._config.ctx_switches_per_sec,
                 gpu_mb,
+                resolved.num_children,
             )
             debouncer = self._debouncers.setdefault(
                 resolved.identity, HysteresisDebouncer(self._hysteresis_required_consecutive)
@@ -95,7 +119,7 @@ class NodeProfiler:
                     cpu_percent=sample.cpu_percent,
                     cpu_affinity=sample.cpu_affinity,
                     num_threads=sample.num_threads,
-                    num_children=sample.num_children,
+                    num_children=resolved.num_children,
                     memory_rss_mb=sample.memory_rss_mb,
                     gpu_memory_mb=gpu_mb,
                     status=status,

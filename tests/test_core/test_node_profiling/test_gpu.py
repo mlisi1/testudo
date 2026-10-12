@@ -28,7 +28,7 @@ def test_gpu_unavailable_when_pynvml_not_installed(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
     assert gpu.gpu_available() is False
-    assert gpu.per_process_gpu_memory_mb(123) is None
+    assert gpu.gpu_memory_mb_by_pid() == {}
 
 
 class _FakeProcInfo:
@@ -61,8 +61,7 @@ def _install_fake_pynvml(compute_procs=None, graphics_procs=None, raise_on_compu
 def test_gpu_available_and_per_process_memory_with_fake_pynvml() -> None:
     _install_fake_pynvml(compute_procs=[_FakeProcInfo(pid=42, used_bytes=256 * 1024 * 1024)])
     assert gpu.gpu_available() is True
-    assert gpu.per_process_gpu_memory_mb(42) == pytest.approx(256.0)
-    assert gpu.per_process_gpu_memory_mb(999) is None  # not among running processes
+    assert gpu.gpu_memory_mb_by_pid() == {42: pytest.approx(256.0)}  # only PIDs actually on a GPU
 
 
 def test_one_getter_raising_degrades_that_reading_not_the_whole_call() -> None:
@@ -72,7 +71,7 @@ def test_one_getter_raising_degrades_that_reading_not_the_whole_call() -> None:
         raise_on_compute=True,
     )
     # compute getter raises NVMLError (caught per-call), graphics getter still succeeds.
-    assert gpu.per_process_gpu_memory_mb(42) == pytest.approx(128.0)
+    assert gpu.gpu_memory_mb_by_pid() == {42: pytest.approx(128.0)}
 
 
 def test_availability_is_cached() -> None:
@@ -81,3 +80,11 @@ def test_availability_is_cached() -> None:
     # Swap out the module after the first call -- cached result should stick.
     del sys.modules["pynvml"]
     assert gpu.gpu_available() is True
+
+
+def test_memory_is_summed_across_compute_and_graphics_lists() -> None:
+    _install_fake_pynvml(
+        compute_procs=[_FakeProcInfo(pid=42, used_bytes=100 * 1024 * 1024), _FakeProcInfo(pid=7, used_bytes=1024 * 1024)],
+        graphics_procs=[_FakeProcInfo(pid=42, used_bytes=28 * 1024 * 1024)],
+    )
+    assert gpu.gpu_memory_mb_by_pid() == {42: pytest.approx(128.0), 7: pytest.approx(1.0)}

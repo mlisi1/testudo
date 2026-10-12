@@ -71,8 +71,9 @@ class _FakeNodeProfiler:
         self.tick_calls = 0
         self._stats = tuple(stats)
 
-    def tick(self) -> None:
+    def tick_if_due(self) -> bool:
         self.tick_calls += 1
+        return True
 
     def reports(self):
         return self._stats

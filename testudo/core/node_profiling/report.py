@@ -66,6 +66,7 @@ def build_status(
     memory_zone: ThresholdZone | None,
     ctx_switch_zone: ThresholdZone | None,
     gpu_memory_mb: float | None = None,
+    num_children: int = 0,
 ) -> CheckStatus:
     """Roll `sample`'s readings up into one CheckStatus, including starvation checks.
 
@@ -111,7 +112,7 @@ def build_status(
         "memory_mb": f"{sample.memory_rss_mb:.1f}",
         "memory_percent": f"{sample.memory_percent:.2f}",
         "threads": str(sample.num_threads),
-        "subprocesses": str(sample.num_children),
+        "subprocesses": str(num_children),
         "status": sample.status,
         "uptime": format_duration(sample.uptime_seconds),
     }

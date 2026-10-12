@@ -63,7 +63,9 @@ class LiveDataSource:
         self._manager.tick()
         reports = self._manager.reports()
         if self._node_profiler is not None:
-            self._node_profiler.tick()
+            # Not tick(): this poll runs at the TUI's redraw cadence, far
+            # faster than process sampling should (see tick_if_due()).
+            self._node_profiler.tick_if_due()
             # Node-profiling rows wear a synthetic TopicReport shape (see
             # node_stat_to_topic_report) so they flow through the same
             # Plugin Panel -> Topic Panel -> Detail Panel machinery as

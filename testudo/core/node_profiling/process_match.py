@@ -46,7 +46,7 @@ left as a documented future enhancement, not built here.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Iterable
 
 import psutil
@@ -62,6 +62,11 @@ class ResolvedProcess:
     identity: str  # fully-qualified ROS node name if resolved, else f"pid:{pid}"
     process_name: str
     resolved: bool
+    #: Every descendant (recursive), counted from this same rediscovery
+    #: pass's process snapshot rather than per sample -- a per-process
+    #: `psutil.Process.children(recursive=True)` rescans the whole process
+    #: table on every call, which dominated the cost of a sampling tick.
+    num_children: int = 0
 
 
 def resolve_processes(
@@ -86,7 +91,7 @@ def resolve_processes(
         process_iter = psutil.process_iter
     remaining = set(node_names)
     resolved: dict[int, ResolvedProcess] = {}
-    processes = _live_processes(process_iter)
+    processes, parent_pids = _live_processes(process_iter)
 
     for pid, cmdline, name in processes:
         fqn = parse_remapped_node_name(cmdline)
@@ -107,11 +112,28 @@ def resolve_processes(
         self_name = next((name or _first_basename(cmdline) for pid, cmdline, name in processes if pid == self_pid), "testudo")
         resolved[self_pid] = ResolvedProcess(pid=self_pid, identity=f"pid:{self_pid}", process_name=self_name, resolved=False)
 
-    return list(resolved.values())
+    children_by_parent: dict[int, list[int]] = {}
+    for pid, parent_pid in parent_pids.items():
+        children_by_parent.setdefault(parent_pid, []).append(pid)
+    return [replace(r, num_children=_descendant_count(r.pid, children_by_parent)) for r in resolved.values()]
 
 
-def _live_processes(process_iter: Callable[..., Iterable[object]]) -> list[tuple[int, list[str], str]]:
-    """(pid, cmdline, process name) for every process still alive as of this call.
+def _descendant_count(pid: int, children_by_parent: dict[int, list[int]]) -> int:
+    """How many processes descend from `pid`, at any depth, in one snapshot's parent map."""
+    seen = {pid}
+    pending = [pid]
+    while pending:
+        for child in children_by_parent.get(pending.pop(), ()):
+            if child not in seen:
+                seen.add(child)
+                pending.append(child)
+    return len(seen) - 1
+
+
+def _live_processes(
+    process_iter: Callable[..., Iterable[object]],
+) -> tuple[list[tuple[int, list[str], str]], dict[int, int]]:
+    """(pid, cmdline, process name) for every process still alive as of this call, plus pid -> parent pid.
 
     A process that exits between enumeration and info access is skipped,
     not retried -- the next rediscovery pass picks up whatever is running
@@ -119,13 +141,17 @@ def _live_processes(process_iter: Callable[..., Iterable[object]]) -> list[tuple
     `core/maintenance.py` already takes for topic discovery.
     """
     result = []
-    for proc in process_iter(["pid", "cmdline", "name"]):
+    parent_pids: dict[int, int] = {}
+    for proc in process_iter(["pid", "ppid", "cmdline", "name"]):
         try:
             info = proc.info
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
         result.append((info["pid"], info.get("cmdline") or [], info.get("name") or ""))
-    return result
+        parent_pid = info.get("ppid")
+        if parent_pid is not None:
+            parent_pids[info["pid"]] = parent_pid
+    return result, parent_pids
 
 
 def _first_basename(cmdline: list[str]) -> str:

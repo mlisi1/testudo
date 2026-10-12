@@ -167,7 +167,7 @@ tf:
 # to sample).
 # node_profiling:
 #   enabled: true
-#   poll_interval_seconds: 2.0
+#   poll_interval_seconds: 2.0   # how often `watch` samples each process
 #   gpu_enabled: true   # NVIDIA + pynvml only; silently unavailable otherwise
 #   publish_topic: /diagnostics/nodes
 #   publish_rate_hz: 1.0

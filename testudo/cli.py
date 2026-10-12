@@ -187,6 +187,9 @@ def cmd_watch(args: argparse.Namespace) -> int:
                 node_profiler.start()
                 node_diagnostics_publisher = node.create_publisher(DiagnosticArray, config.node_profiling.publish_topic, 10)
 
+            # The NodeProfiler.reports() tuple last published -- see on_snapshot.
+            last_published_node_stats: list[tuple | None] = [None]
+
             def on_snapshot(snapshot) -> None:
                 # `snapshot.reports` includes node-profiling rows merged in
                 # for the TUI's Plugin/Topic/Detail Panels (see
@@ -196,16 +199,23 @@ def cmd_watch(args: argparse.Namespace) -> int:
                 topic_reports = [r for r in snapshot.reports if r.tier != "node"]
                 array = build_diagnostic_array(node.get_clock().now().to_msg(), topic_reports, snapshot.overall)
                 diagnostics_publisher.publish(array)
-                # `node_profiler` was already ticked this same poll by
-                # LiveDataSource.poll() -- publishing here (not via a
+                # `node_profiler` was already ticked (if due) this same poll
+                # by LiveDataSource.poll() -- publishing here (not via a
                 # second, self-driving NodeDiagnosticPublisher timer) keeps
                 # node profiling's tick() single-threaded in `watch`, same
                 # as the main diagnostics array above, avoiding a second
-                # concurrent writer to NodeProfiler's internal state.
+                # concurrent writer to NodeProfiler's internal state. It
+                # samples every `poll_interval_seconds`, not every poll, and
+                # swaps in a new tuple each time it does -- so an unchanged
+                # tuple means nothing new to publish.
                 if node_diagnostics_publisher is not None and node_profiler is not None:
+                    node_stats = node_profiler.reports()
+                    if node_stats is last_published_node_stats[0]:
+                        return
+                    last_published_node_stats[0] = node_stats
                     node_array = build_node_diagnostic_array(
                         node.get_clock().now().to_msg(),
-                        list(node_profiler.reports()),
+                        list(node_stats),
                         node_profiler.overall_status(config.severity_mode),
                     )
                     node_diagnostics_publisher.publish(node_array)

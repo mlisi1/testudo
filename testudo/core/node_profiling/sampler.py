@@ -27,7 +27,6 @@ class ProcessSample:
     cpu_percent: float
     cpu_affinity: tuple[int, ...] | None
     num_threads: int
-    num_children: int
     memory_rss_mb: float
     memory_percent: float
     #: psutil's process state string: "running", "sleeping", "disk-sleep"
@@ -89,7 +88,6 @@ class ProcessSampler:
             memory_rss_mb = memory_info.rss / (1024 * 1024)
             memory_percent = handle.memory_percent()
             num_threads = handle.num_threads()
-            num_children = len(handle.children(recursive=True))
             cpu_affinity = self._cpu_affinity(handle)
             status = handle.status()
             uptime_seconds = max(0.0, time.time() - handle.create_time())
@@ -105,7 +103,6 @@ class ProcessSampler:
             cpu_percent=cpu_percent,
             cpu_affinity=cpu_affinity,
             num_threads=num_threads,
-            num_children=num_children,
             memory_rss_mb=memory_rss_mb,
             memory_percent=memory_percent,
             status=status,

@@ -42,32 +42,34 @@ def gpu_available() -> bool:
     return _available
 
 
-def per_process_gpu_memory_mb(pid: int) -> float | None:
-    """Total GPU memory `pid` currently holds across every visible device, or None if unavailable.
+def gpu_memory_mb_by_pid() -> dict[int, float]:
+    """GPU memory held per PID, summed across every visible device; empty if unavailable.
+
+    One sweep of every device's process lists answers for every tracked
+    process at once -- call this once per sampling tick and look PIDs up
+    in the result, rather than re-querying NVML per PID. A PID absent from
+    the result holds no GPU memory (or GPU stats are unavailable).
 
     Catches `NVMLError` per call (not just at import/init time) so a
     transient driver/permission hiccup on one query degrades that single
-    reading to None rather than disabling GPU stats for the rest of the run.
+    reading rather than disabling GPU stats for the rest of the run.
     """
     if not gpu_available():
-        return None
+        return {}
     pynvml = _pynvml
-    total_bytes = 0
-    found = False
+    bytes_by_pid: dict[int, int] = {}
     try:
         for index in range(pynvml.nvmlDeviceGetCount()):
             handle = pynvml.nvmlDeviceGetHandleByIndex(index)
             for getter in (pynvml.nvmlDeviceGetComputeRunningProcesses, pynvml.nvmlDeviceGetGraphicsRunningProcesses):
                 try:
                     for proc_info in getter(handle):
-                        if proc_info.pid == pid:
-                            total_bytes += proc_info.usedGpuMemory or 0
-                            found = True
+                        bytes_by_pid[proc_info.pid] = bytes_by_pid.get(proc_info.pid, 0) + (proc_info.usedGpuMemory or 0)
                 except pynvml.NVMLError:
                     continue
     except pynvml.NVMLError:
-        return None
-    return (total_bytes / (1024 * 1024)) if found else None
+        return {}
+    return {pid: total / (1024 * 1024) for pid, total in bytes_by_pid.items()}
 
 
 def reset_for_testing() -> None:

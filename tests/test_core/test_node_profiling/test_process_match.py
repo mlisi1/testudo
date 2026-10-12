@@ -146,3 +146,21 @@ def test_process_that_disappears_during_info_access_is_skipped() -> None:
 
     resolved = resolve_processes([], self_pid=999, process_iter=process_iter)
     assert [r.pid for r in resolved] == [999]
+
+
+def test_num_children_counts_every_descendant_from_the_same_snapshot() -> None:
+    """A launch wrapper's whole subtree counts, not just direct children -- and an
+    unrelated process tree doesn't leak in."""
+    procs = [
+        _FakeProc(100, ["amcl"], "amcl"),
+        _FakeProc(101, ["helper"], "helper"),
+        _FakeProc(102, ["grandchild"], "grandchild"),
+        _FakeProc(200, ["unrelated"], "unrelated"),
+        _FakeProc(201, ["unrelated-child"], "unrelated-child"),
+    ]
+    for proc, parent_pid in zip(procs, (1, 100, 101, 1, 200)):
+        proc.info["ppid"] = parent_pid
+    resolved = resolve_processes(["/amcl"], self_pid=999, process_iter=_fake_process_iter(procs))
+    by_pid = {r.pid: r for r in resolved}
+    assert by_pid[100].num_children == 2
+    assert by_pid[999].num_children == 0

@@ -65,7 +65,7 @@ class _FakeProcess:
         return self._values["threads"]
 
     def children(self, recursive=True):
-        return [object()] * self._values["children"]
+        raise AssertionError("children() rescans the whole process table -- must not be called per sample")
 
     def cpu_affinity(self):
         return [0, 1]
@@ -306,3 +306,45 @@ def test_disk_sleep_node_flagged_even_with_healthy_cpu_and_memory(monkeypatch: p
     status = profiler.reports()[0].status
     assert status.severity == Severity.WARN
     assert "NODE-002" in status.codes
+
+
+def test_tick_if_due_samples_at_most_once_per_poll_interval(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression: `watch` drives this at the TUI's poll rate (5 Hz by default), which
+    used to *be* the sampling rate -- `poll_interval_seconds` was parsed but never read."""
+    import testudo.core.node_profiling.profiler as profiler_module
+
+    monkeypatch.setattr("os.getpid", lambda: 555)
+    fake_time = {"now": 1000.0}
+    monkeypatch.setattr(profiler_module.time, "monotonic", lambda: fake_time["now"])
+    profiler = NodeProfiler(_FakeNode(node_names=[]), _config(poll_interval_seconds=2.0))
+    profiler.start()
+
+    assert profiler.tick_if_due() is True  # first call always samples
+    first = profiler.reports()
+    fake_time["now"] += 0.2
+    assert profiler.tick_if_due() is False
+    assert profiler.reports() is first  # untouched -- same tuple, not a re-sample
+    fake_time["now"] += 1.8
+    assert profiler.tick_if_due() is True
+    assert profiler.reports() is not first
+
+
+def test_subprocess_count_comes_from_rediscovery_not_sampling(monkeypatch: pytest.MonkeyPatch) -> None:
+    import testudo.core.node_profiling.process_match as process_match_module
+
+    class _FakeProc:
+        def __init__(self, pid, ppid):
+            self.pid = pid
+            self.info = {"pid": pid, "ppid": ppid, "cmdline": ["proc"], "name": "proc"}
+
+    monkeypatch.setattr("os.getpid", lambda: 555)
+    monkeypatch.setattr(
+        process_match_module.psutil, "process_iter", lambda _attrs: iter([_FakeProc(555, 1), _FakeProc(556, 555)])
+    )
+    profiler = NodeProfiler(_FakeNode(node_names=[]), _config())
+    profiler.start()
+    profiler.tick()
+
+    stat = profiler.reports()[0]
+    assert stat.num_children == 1
+    assert stat.status.values["subprocesses"] == "1"
