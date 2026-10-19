@@ -136,7 +136,7 @@ def test_rate_column_is_mem_for_nodes_and_state_for_actions() -> None:
 
     from testudo.tui.widgets.topic_panel import rate_cell, rate_column_header
 
-    node = TopicReport("/bt_navigator", "python3", "node", CheckStatus(Severity.OK, "n", "", {"memory_mb": "56.4"}))
+    node = TopicReport("/bt_navigator", "python3", "node", CheckStatus(Severity.OK, "n", "", {"memory": "56.4 MB (0.18 %)"}))
     assert rate_column_header(node) == "Mem"
     assert rate_cell(node, "Mem") == "56.4M"
 

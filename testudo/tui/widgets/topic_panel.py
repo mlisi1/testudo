@@ -185,7 +185,10 @@ def rate_column_header(report: TopicReport) -> str:
 def rate_cell(report: TopicReport, header: str) -> str:
     """The third column's cell for `report`, under `header` (see `rate_column_header`)."""
     if header == "Mem":
-        return format_memory(report.status.values.get("memory_mb"))
+        # Node rows carry the Detail Panel's regrouped values
+        # (`node_profiling.report.detail_panel_values`): "56.4 MB (0.18 %)".
+        memory = report.status.values.get("memory", "")
+        return format_memory(memory.split()[0] if memory else None)
     if header == "State":
         return _ACTION_STATE_CELLS.get(report.status.values.get("current_status", ""), _ACTION_IDLE_CELL)
     # A latched topic's "rate" is just its burst of initial messages --
