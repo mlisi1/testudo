@@ -63,10 +63,12 @@ def test_weighted_health_maps_score_to_fraction() -> None:
 def test_health_gauge_is_fixed_width() -> None:
     from testudo.tui.widgets.header import health_gauge
 
-    assert health_gauge(1.0) == "▕██████████▏"
-    assert health_gauge(0.0) == "▕          ▏"
-    assert health_gauge(0.81) == "▕████████▏ ▏"
-    assert len(health_gauge(0.37)) == 12
+    from rich.text import Text
+
+    assert health_gauge(1.0) == "██████████"
+    assert health_gauge(0.0) == "[dim]░░░░░░░░░░[/dim]"
+    assert health_gauge(0.81) == "████████▏[dim]░[/dim]"
+    assert len(Text.from_markup(health_gauge(0.37)).plain) == 10
 
 
 def test_verdict_markup_lists_non_ok_counts_and_gauge_only_when_weighted() -> None:
@@ -80,4 +82,4 @@ def test_verdict_markup_lists_non_ok_counts_and_gauge_only_when_weighted() -> No
     assert Text.from_markup(verdict_markup(worst, counts, wide=True)).plain == "✗ FAULT ✗6 ▲3"
     both = CheckStatus(Severity.ERROR, "overall", "", values={"weighted_score": "0.38"})
     assert Text.from_markup(verdict_markup(both, counts, wide=False)).plain == "✗ FAULT ✗6 ▲3  81%"
-    assert "weighted ▕" in Text.from_markup(verdict_markup(both, counts, wide=True)).plain
+    assert "weighted ████████▏░ 81%" in Text.from_markup(verdict_markup(both, counts, wide=True)).plain

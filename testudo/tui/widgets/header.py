@@ -33,6 +33,7 @@ WIDE_STATUS_BAR_WIDTH = 120
 
 _GAUGE_SEGMENTS = 10
 _GAUGE_PARTIALS = " ▏▎▍▌▋▊▉"
+_GAUGE_TRACK = "░"
 
 
 def weighted_health(overall: CheckStatus) -> float | None:
@@ -48,11 +49,16 @@ def weighted_health(overall: CheckStatus) -> float | None:
 
 
 def health_gauge(fraction: float, segments: int = _GAUGE_SEGMENTS) -> str:
-    """A `segments`-wide eighth-block bar for `fraction` (0..1), between `▕`/`▏` end caps."""
+    """A `segments`-wide eighth-block bar for `fraction` (0..1) over a dim `░` track.
+
+    The track is what makes it read as a gauge: an untracked bar on the
+    Status Bar's solid background is indistinguishable from a blank box.
+    """
     eighths = round(max(0.0, min(1.0, fraction)) * segments * 8)
     full, partial = divmod(eighths, 8)
     bar = "█" * full + (_GAUGE_PARTIALS[partial] if partial else "")
-    return f"▕{bar.ljust(segments)}▏"
+    track = _GAUGE_TRACK * (segments - len(bar))
+    return f"{bar}[dim]{track}[/dim]" if track else bar
 
 
 def verdict_markup(overall: CheckStatus, counts: dict[int, int], wide: bool) -> str:
