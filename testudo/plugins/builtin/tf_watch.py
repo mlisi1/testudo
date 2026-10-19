@@ -18,6 +18,7 @@ from collections import defaultdict
 from typing import Any
 
 from testudo.plugins.base import SEVERITY_COLORS, CheckPlugin, CheckStatus, Severity, ThresholdZone, colorize
+from testudo.plugins.builtin.tf_tree_layout import tree_lines
 
 #: tf2's default transform buffer duration; used here only as the
 #: staleness window for the extrapolation-risk approximation.
@@ -163,6 +164,14 @@ class TFWatchPlugin(CheckPlugin):
             trees.append((roots[0] if roots else min(component), len(component)))
         return sorted(trees, key=lambda tree: (-tree[1], tree[0]))
 
+    def _children(self) -> dict[str, list[str]]:
+        """Each frame's children, sorted -- the tree in the direction tf2 stores it."""
+        children: dict[str, list[str]] = defaultdict(list)
+        for child, parents in self._parents_by_child.items():
+            for parent in parents:
+                children[parent].append(child)
+        return {parent: sorted(kids) for parent, kids in children.items()}
+
     def _hop_arrow(self, a: str, b: str) -> str:
         """"→" if `a` is `b`'s parent, "←" if it's the other way round -- the direction tf2 stores it."""
         return " → " if (a, b) in self._last_seen_seconds else " ← "
@@ -219,6 +228,8 @@ class TFWatchPlugin(CheckPlugin):
         values = {
             "frames": f"{frame_count}  [dim]{dynamic_count} dynamic · {static_count} static edges[/dim]",
             "roots": _listed([f"{root} [dim]({size})[/dim]" for root, size in trees]),
+            # The largest tree drawn out, on a tall Detail Panel only.
+            "tree_more": "\n".join(tree_lines(trees[0][0], self._children())),
             "multi_parent": _listed(
                 [f"{child} ← {', '.join(sorted(parents))}" for child, parents in sorted(multi_parent.items())]
             ),
