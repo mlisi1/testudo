@@ -26,15 +26,7 @@ import math
 from rich.text import Text
 
 from testudo.core.topic_report import TopicReport
-from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_ICONS, SEVERITY_LABELS
-
-#: `CheckStatus.values` key suffix marking a value's narrow-terminal
-#: alternative -- e.g. a plugin emits both "gauge" (a wide multi-segment
-#: meter) and "gauge_compact" (a single colored square) for the same
-#: metric, and `resolve_values` below picks whichever fits the Detail
-#: Panel's current width. A plain naming convention, not a CheckStatus
-#: schema change (TUI_DATA_DESIGN.md's Track A) -- any plugin can opt in.
-COMPACT_VALUE_SUFFIX = "_compact"
+from testudo.plugins.base import COMPACT_VALUE_SUFFIX, SEVERITY_COLORS, SEVERITY_ICONS, SEVERITY_LABELS
 
 #: Detail Panel width (columns) below which `resolve_values` prefers a
 #: value's `_compact` variant over its full one, where both exist.

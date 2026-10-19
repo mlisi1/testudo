@@ -76,6 +76,16 @@ class ThresholdZone:
     red: float | None = None
 
 
+#: `CheckStatus.values` key suffix marking a value's narrow-terminal
+#: alternative -- e.g. a plugin emits both "gauge" (a wide multi-segment
+#: meter) and "gauge_compact" (a single colored square) for the same
+#: metric, and the TUI's Detail Panel picks whichever fits its current
+#: width. A plain naming convention, not a CheckStatus schema change --
+#: any plugin can opt in. Non-TUI outputs (published DiagnosticStatus,
+#: `check`/`replay` text) drop the compact variant.
+COMPACT_VALUE_SUFFIX = "_compact"
+
+
 @dataclass(frozen=True)
 class CheckStatus:
     """A plugin's current rolled-up status.

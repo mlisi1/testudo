@@ -22,6 +22,7 @@ from testudo.core.clock import TestudoClock
 from testudo.core.config import ConfigError, TestudoConfig, default_config_path, load_config
 from testudo.core.node_profiling.profiler import NodeProfiler
 from testudo.core.node_profiling.publisher import NodeDiagnosticPublisher
+from testudo.core.plain_values import plain_values, strip_markup
 from testudo.core.publisher import DiagnosticPublisher
 from testudo.core.subscription_manager import SubscriptionManager, TopicReport
 from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_LABELS, CheckStatus, Severity
@@ -342,28 +343,31 @@ def _print_report(reports: list[TopicReport], overall: CheckStatus) -> int:
 def _topic_line(report: TopicReport) -> Text:
     color = SEVERITY_COLORS.get(report.status.severity, "white")
     label = SEVERITY_LABELS.get(report.status.severity, str(report.status.severity))
-    detail = ", ".join(f"{key}={value}" for key, value in report.status.values.items())
-    suffix = f" ({detail})" if detail else ""
+    suffix = _values_suffix(report.status)
 
     line = Text()
     line.append(f"{label:5s} ", style=color)
     line.append(f"{report.topic:30s} ")
     line.append(f"[{report.tier:8s}] ", style="dim")
     line.append(f"{report.msg_type:35s} ")
-    line.append(f"{report.status.message}{suffix}")
+    line.append(f"{strip_markup(report.status.message)}{suffix}")
     return line
 
 
 def _status_line(status: CheckStatus) -> Text:
     color = SEVERITY_COLORS.get(status.severity, "white")
     label = SEVERITY_LABELS.get(status.severity, str(status.severity))
-    detail = ", ".join(f"{key}={value}" for key, value in status.values.items())
-    suffix = f" ({detail})" if detail else ""
+    suffix = _values_suffix(status)
 
     line = Text()
     line.append(f"[{label}]", style=color)
-    line.append(f" {status.message}{suffix}")
+    line.append(f" {strip_markup(status.message)}{suffix}")
     return line
+
+
+def _values_suffix(status: CheckStatus) -> str:
+    detail = ", ".join(f"{key}={value}" for key, value in plain_values(status.values, single_line=True).items())
+    return f" ({detail})" if detail else ""
 
 
 def cmd_replay(args: argparse.Namespace) -> int:

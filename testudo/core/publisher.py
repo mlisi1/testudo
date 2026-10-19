@@ -13,6 +13,7 @@ from __future__ import annotations
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 
 from testudo.core.config import SeverityMode
+from testudo.core.plain_values import plain_values, strip_markup
 from testudo.core.subscription_manager import SubscriptionManager
 from testudo.core.topic_report import TopicReport
 from testudo.plugins.base import CheckStatus
@@ -27,9 +28,9 @@ def to_diagnostic_status(name: str, status: CheckStatus) -> DiagnosticStatus:
     diagnostic = DiagnosticStatus()
     diagnostic.name = f"{NAME_PREFIX}: {name}"
     diagnostic.level = bytes([status.severity])
-    diagnostic.message = status.message
+    diagnostic.message = strip_markup(status.message)
     diagnostic.hardware_id = NAME_PREFIX
-    diagnostic.values = [KeyValue(key=key, value=value) for key, value in status.values.items()]
+    diagnostic.values = [KeyValue(key=key, value=value) for key, value in plain_values(status.values).items()]
     return diagnostic
 
 
