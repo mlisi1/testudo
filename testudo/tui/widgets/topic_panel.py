@@ -75,9 +75,28 @@ def next_marquee_offset(text_length: int, width: int, offset: int, direction: in
     return offset, direction
 
 
+#: (upper bound, divisor, format) for `format_rate`, first match wins.
+#: Three significant digits throughout, so no rate is ever wider than five
+#: characters -- a burst (two messages microseconds apart) can estimate a
+#: rate in the tens of thousands, which "{:.1f}" would print as "28926.2".
+_RATE_FORMATS = (
+    (10.0, 1.0, "{:.2f}"),
+    (100.0, 1.0, "{:.1f}"),
+    (1e3, 1.0, "{:.0f}"),
+    (1e4, 1e3, "{:.2f}k"),
+    (1e5, 1e3, "{:.1f}k"),
+    (1e6, 1e3, "{:.0f}k"),
+)
+
+
 def format_rate(rate_hz: float | None) -> str:
-    """"12.3" Hz, or "-" when no rate is available yet (e.g. topic just appeared)."""
-    return f"{rate_hz:.1f}" if rate_hz is not None else "-"
+    """A rate in at most five characters ("9.87", "12.3", "28.9k"), or "-" when none is available yet."""
+    if rate_hz is None:
+        return "-"
+    for bound, divisor, fmt in _RATE_FORMATS:
+        if rate_hz < bound:
+            return fmt.format(rate_hz / divisor)
+    return f"{rate_hz / 1e6:.2f}M"
 
 
 class TopicDetailTable(NavDataTable):
@@ -262,7 +281,10 @@ class TopicDetailTable(NavDataTable):
                 self.update_cell(report.topic, EXTRA_COLUMN_KEY, "")
             return
         self.update_cell(report.topic, "status", status_cell(report))
-        self.update_cell(report.topic, "rate", format_rate(report.rate_hz))
+        # A latched topic's "rate" is just its burst of initial messages --
+        # meaningless for something that publishes once.
+        rate = None if quiet_label(report.status) == LATCHED_LABEL else report.rate_hz
+        self.update_cell(report.topic, "rate", format_rate(rate))
         if self._extra_column_header is not None:
             self.update_cell(report.topic, EXTRA_COLUMN_KEY, report.status.topic_panel_value or "-")
 

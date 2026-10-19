@@ -14,6 +14,14 @@ def test_format_rate_formats_to_one_decimal() -> None:
     assert format_rate(12.345) == "12.3"
 
 
+def test_format_rate_keeps_three_significant_digits_within_five_chars() -> None:
+    assert format_rate(9.876) == "9.88"
+    assert format_rate(200.4) == "200"
+    assert format_rate(1234.0) == "1.23k"
+    assert format_rate(28926.23) == "28.9k"
+    assert format_rate(2.5e6) == "2.50M"
+
+
 def test_marquee_window_returns_text_unchanged_when_it_fits() -> None:
     assert marquee_window("/odom", width=16, offset=0) == "/odom"
 
