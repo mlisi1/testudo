@@ -39,6 +39,9 @@ class TFWatchPlugin(CheckPlugin):
         self._parents_by_child: dict[str, set[str]] = defaultdict(set)
         self._adjacency: dict[str, set[str]] = defaultdict(set)
         self._last_seen_seconds: dict[tuple[str, str], float] = {}
+        # Edges only ever seen on /tf_static: latched, published once, and
+        # valid forever by definition -- never aged by `_stale_edges`.
+        self._static_edges: set[tuple[str, str]] = set()
         self._now = 0.0
         self._edge_count = 0
 
@@ -63,6 +66,7 @@ class TFWatchPlugin(CheckPlugin):
         self._now = now_seconds
 
     def on_message(self, topic: str, msg: Any) -> None:
+        is_static = topic == self.related_topics.get("tf_static")
         for transform in msg.transforms:
             parent = transform.header.frame_id
             child = transform.child_frame_id
@@ -71,6 +75,10 @@ class TFWatchPlugin(CheckPlugin):
             self._adjacency[parent].add(child)
             self._adjacency[child].add(parent)
             self._last_seen_seconds[(parent, child)] = self._now
+            if is_static:
+                self._static_edges.add((parent, child))
+            else:
+                self._static_edges.discard((parent, child))
 
     def _multi_parent_children(self) -> dict[str, set[str]]:
         return {child: parents for child, parents in self._parents_by_child.items() if len(parents) > 1}
@@ -98,7 +106,7 @@ class TFWatchPlugin(CheckPlugin):
         return [
             edge
             for edge, last_seen in self._last_seen_seconds.items()
-            if (self._now - last_seen) > self._buffer_window_seconds
+            if edge not in self._static_edges and (self._now - last_seen) > self._buffer_window_seconds
         ]
 
     def get_status(self) -> CheckStatus:

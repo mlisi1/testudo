@@ -90,5 +90,15 @@ def test_tf_static_messages_merge_into_the_same_graph() -> None:
     assert status.values["missing_pair_count"] == "0"
 
 
+def test_tf_static_edges_are_never_stale() -> None:
+    plugin = TFWatchPlugin(related_topics={"tf_static": "/tf_static"}, buffer_window_seconds=10.0)
+    plugin.on_tick(0.0)
+    plugin.on_message("/tf_static", _tf_message(_transform("base_link", "laser")))
+    plugin.on_tick(60.0)  # latched: published once, never again
+    status = plugin.get_status()
+    assert status.severity == Severity.OK
+    assert status.values["stale_edge_count"] == "0"
+
+
 def test_default_thresholds_are_empty() -> None:
     assert TFWatchPlugin.default_thresholds() == {}
