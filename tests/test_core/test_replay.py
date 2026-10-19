@@ -4,6 +4,7 @@ same way `SubscriptionManager` always does) but no live ROS graph/publishers.
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -160,3 +161,62 @@ def test_replay_overall_status_uses_configured_severity_mode(tmp_path: Path, ros
     )
     assert overall.severity == Severity.ERROR
     assert overall.label == "overall"
+
+
+class _RecordingHandler(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
+def test_replay_unresolvable_message_type_is_logged_once(tmp_path: Path, ros_node) -> None:
+    bag_path = tmp_path / "bag_unresolvable"
+    entries = [("/status", "nonexistent_testudo_pkg/msg/Nope", String(data="x"), (i + 1) * 1_000_000) for i in range(5)]
+    _write_bag(bag_path, entries)
+
+    handler = _RecordingHandler()
+    replay_logger = logging.getLogger("testudo.core.replay")
+    replay_logger.addHandler(handler)
+    try:
+        replay_bag(str(bag_path), _config(), _plugins(), ros_node)
+    finally:
+        replay_logger.removeHandler(handler)
+
+    assert sum("could not resolve message class" in message for message in handler.messages) == 1
+
+
+def test_replay_transient_local_topic_reads_as_latched(tmp_path: Path, ros_node) -> None:
+    bag_path = tmp_path / "bag_latched"
+    writer = rosbag2_py.SequentialWriter()
+    writer.open(
+        rosbag2_py.StorageOptions(uri=str(bag_path), storage_id="mcap"),
+        rosbag2_py.ConverterOptions(input_serialization_format="cdr", output_serialization_format="cdr"),
+    )
+    latched_qos = rosbag2_py._storage.QoS(1).durability(
+        rosbag2_py._storage.rmw_qos_durability_policy_t.RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL
+    )
+    writer.create_topic(
+        rosbag2_py.TopicMetadata(
+            id=0,
+            name="/robot_description",
+            type="std_msgs/msg/String",
+            serialization_format="cdr",
+            offered_qos_profiles=[latched_qos],
+        )
+    )
+    writer.create_topic(
+        rosbag2_py.TopicMetadata(id=1, name="/chatter", type="std_msgs/msg/String", serialization_format="cdr")
+    )
+    writer.write("/robot_description", serialize_message(String(data="<robot/>")), 1_000_000_000)
+    writer.write("/chatter", serialize_message(String(data="hi")), 1_000_000_000)
+    writer.write("/chatter", serialize_message(String(data="hi")), 60_000_000_000)
+    del writer
+
+    reports, _overall = replay_bag(str(bag_path), _config(), _plugins(), ros_node)
+
+    by_topic = {r.topic: r for r in reports}
+    assert by_topic["/robot_description"].status.severity == Severity.OK
+    assert by_topic["/robot_description"].status.label == "latched"
