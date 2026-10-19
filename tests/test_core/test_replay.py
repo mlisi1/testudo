@@ -148,10 +148,10 @@ def test_replay_tf_static_routes_to_same_instance_as_tf(tmp_path: Path, ros_node
     assert [r.topic for r in reports] == ["/tf"]
     assert reports[0].status.severity == Severity.ERROR
     assert "multi-parent" in reports[0].status.message
-    # 3 unique edges (map->odom, odom->base_link, map->base_link) -- edge_count
-    # is unique edges, not messages processed -- includes the static one,
-    # proving it was actually merged into the same instance as /tf.
-    assert int(reports[0].status.values["edge_count"]) == 3
+    # 3 unique edges (map->odom, odom->base_link, map->base_link), one of
+    # them static -- proving /tf_static was actually merged into the same
+    # instance as /tf.
+    assert "2 dynamic · 1 static edges" in reports[0].status.values["frames"]
 
 
 def test_replay_stale_topic_relative_to_bag_end_time(tmp_path: Path, ros_node) -> None:
