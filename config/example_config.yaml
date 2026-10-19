@@ -143,6 +143,7 @@ actions:
     related_topics:
       feedback: /navigate_to_pose/_action/feedback
     thresholds:
+      # succeeded / (succeeded + aborted); a canceled goal counts toward neither.
       success_rate:
         green: 0.9
         orange: 0.7

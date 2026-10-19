@@ -189,12 +189,11 @@ class Nav2GoalPlugin(CheckPlugin):
         if duration is not None:
             self._estimated_time_remaining_s = duration.sec + duration.nanosec * 1e-9
 
-    def _terminal_count(self) -> int:
-        return self._succeeded + self._aborted + self._canceled
-
     def _success_rate(self) -> float | None:
-        terminal = self._terminal_count()
-        return None if terminal == 0 else self._succeeded / terminal
+        """Succeeded out of succeeded + aborted. A cancel is someone's decision (often a
+        new goal preempting the old one), not a failure, so it counts toward neither."""
+        decided = self._succeeded + self._aborted
+        return None if decided == 0 else self._succeeded / decided
 
     def _mean_duration(self) -> float | None:
         return None if not self._durations else sum(self._durations) / len(self._durations)

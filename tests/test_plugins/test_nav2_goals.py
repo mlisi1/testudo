@@ -213,5 +213,7 @@ def test_canceled_goal_is_neutral_and_durations_sparkline_is_secondary() -> None
         plugin.on_tick(end)
         plugin.on_message("/x", _status_array(_goal_status(goal, outcome, accepted_sec=int(start))))
     status = plugin.get_status()
+    assert status.severity == Severity.OK  # a cancel isn't a failure
+    assert _plain(status.values["success"]).startswith("100% ")
     assert _plain(status.values["history"]) == "✓⊘  1✓ 0✗ 1⊘"
     assert _plain(status.values["durations_more"]) == "█▁ (last 2)"
