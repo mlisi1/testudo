@@ -576,3 +576,25 @@ def test_exclude_topics_error_still_mentions_exclude_topics(tmp_path: Path) -> N
     path = _write(tmp_path, "exclude_topics:\n  - pattern: '['\n    type: regex\n")
     with pytest.raises(ConfigError, match="exclude_topics: invalid regex"):
         load_config(path)
+
+
+def test_event_driven_defaults_to_false_and_parses(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        """
+        topics:
+          geometry_msgs/msg/Twist:
+            - name: /cmd_vel_nav
+              event_driven: true
+            - name: /cmd_vel
+        """,
+    )
+    nav, plain = load_config(path).topics["geometry_msgs/msg/Twist"]
+    assert nav.event_driven is True
+    assert plain.event_driven is False
+
+
+def test_event_driven_must_be_a_bool(tmp_path: Path) -> None:
+    path = _write(tmp_path, "topics:\n  geometry_msgs/msg/Twist:\n    - name: /cmd_vel\n      event_driven: yes please\n")
+    with pytest.raises(ConfigError, match="event_driven"):
+        load_config(path)

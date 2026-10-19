@@ -123,6 +123,16 @@ topics:
           green: 2.0
           orange: 6.0
 
+  # A topic that only publishes while something is happening -- here the
+  # controller's velocity output, silent whenever the robot isn't driving
+  # -- is reported "idle" when quiet, never STALE. Behavior tree logs and
+  # action goal statuses are treated this way already, and a latched
+  # (transient_local) publisher like /robot_description is detected from
+  # its QoS, so neither needs this flag.
+  geometry_msgs/msg/Twist:
+    - name: /cmd_vel_nav
+      event_driven: true
+
 actions:
   - name: navigate_to_pose
     action_type: nav2_msgs/action/NavigateToPose

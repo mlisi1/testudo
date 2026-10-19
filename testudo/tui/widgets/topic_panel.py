@@ -1,8 +1,8 @@
 """Topic Panel: every topic within one selected category."""
 from __future__ import annotations
 
-from testudo.core.topic_report import TopicReport
-from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_ICONS, SEVERITY_LABELS
+from testudo.core.topic_report import IDLE_LABEL, LATCHED_LABEL, TopicReport, quiet_label
+from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_ICONS, SEVERITY_LABELS, Severity
 from testudo.tui.keybinds import NavDataTable
 
 #: Smallest text capacity of the "Topic" column. The column takes whatever
@@ -14,7 +14,16 @@ from testudo.tui.keybinds import NavDataTable
 #: Status/Hz without a horizontal scrollbar.
 TOPIC_COLUMN_WIDTH = 16
 
-STATUS_COLUMN_WIDTH = 8
+STATUS_COLUMN_WIDTH = 9
+
+#: Status cells for an OK topic that is quiet by design, or never
+#: subscribed to: a hollow glyph says "nothing to judge right now"
+#: rather than a green "OK" implying content was actually checked.
+_QUIET_STATUS_CELLS = {
+    IDLE_LABEL: "[dim]◌ idle[/dim]",
+    LATCHED_LABEL: "[green]● latched[/green]",
+}
+_PRESENCE_STATUS_CELL = "[dim]◌ present[/dim]"
 RATE_COLUMN_WIDTH = 6
 
 #: Columns reserved for the vertical scrollbar whether or not it's showing,
@@ -33,6 +42,19 @@ EXTRA_COLUMN_KEY = "extra"
 
 #: How often the marquee shifts by one character.
 MARQUEE_INTERVAL_SECONDS = 0.4
+
+
+def status_cell(report: TopicReport) -> str:
+    """The Status column's markup for `report`: severity icon + label, or a quiet/presence glyph."""
+    if report.tier == "presence" and report.status.severity == Severity.OK:
+        return _PRESENCE_STATUS_CELL
+    quiet = quiet_label(report.status)
+    if quiet is not None:
+        return _QUIET_STATUS_CELLS[quiet]
+    label = SEVERITY_LABELS.get(report.status.severity, str(report.status.severity))
+    style = SEVERITY_COLORS.get(report.status.severity, "white")
+    icon = SEVERITY_ICONS.get(report.status.severity, "?")
+    return f"[{style}]{icon} {label}[/{style}]"
 
 
 def marquee_window(text: str, width: int, offset: int) -> str:
@@ -239,10 +261,7 @@ class TopicDetailTable(NavDataTable):
             if self._extra_column_header is not None:
                 self.update_cell(report.topic, EXTRA_COLUMN_KEY, "")
             return
-        label = SEVERITY_LABELS.get(report.status.severity, str(report.status.severity))
-        style = SEVERITY_COLORS.get(report.status.severity, "white")
-        icon = SEVERITY_ICONS.get(report.status.severity, "?")
-        self.update_cell(report.topic, "status", f"[{style}]{icon} {label}[/{style}]")
+        self.update_cell(report.topic, "status", status_cell(report))
         self.update_cell(report.topic, "rate", format_rate(report.rate_hz))
         if self._extra_column_header is not None:
             self.update_cell(report.topic, EXTRA_COLUMN_KEY, report.status.topic_panel_value or "-")

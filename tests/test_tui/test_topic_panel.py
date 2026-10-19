@@ -1,7 +1,9 @@
 """Unit tests for TopicDetailTable's pure marquee-window and rate-formatting logic."""
 from __future__ import annotations
 
-from testudo.tui.widgets.topic_panel import format_rate, marquee_window, next_marquee_offset
+from testudo.core.topic_report import TopicReport
+from testudo.plugins.base import CheckStatus, Severity
+from testudo.tui.widgets.topic_panel import format_rate, marquee_window, next_marquee_offset, status_cell
 
 
 def test_format_rate_none_is_a_dash() -> None:
@@ -52,3 +54,26 @@ def test_next_marquee_offset_ping_pongs_a_full_cycle() -> None:
     assert min(seen) == 0
     assert max(seen) == 4
     assert all(0 <= o <= 4 for o in seen)
+
+
+def _report(tier: str, severity: Severity, label: str = "plugin", values: dict | None = None) -> TopicReport:
+    status = CheckStatus(severity=severity, label=label, message="", values=values or {})
+    return TopicReport(topic="/x", msg_type="t", tier=tier, status=status)
+
+
+def test_status_cell_shows_severity_by_default() -> None:
+    assert "WARN" in status_cell(_report("full", Severity.WARN))
+
+
+def test_status_cell_quiet_topics_get_their_own_glyph() -> None:
+    assert "◌ idle" in status_cell(_report("vitals", Severity.OK, label="idle"))
+    assert "● latched" in status_cell(_report("vitals", Severity.OK, label="latched"))
+    assert "◌ idle" in status_cell(_report("full", Severity.OK, values={"idle_for_s": "3.0"}))
+
+
+def test_status_cell_presence_reads_as_present_not_ok() -> None:
+    assert "◌ present" in status_cell(_report("presence", Severity.OK, label="presence"))
+
+
+def test_status_cell_a_problem_outranks_quiet() -> None:
+    assert "ERROR" in status_cell(_report("full", Severity.ERROR, values={"idle_for_s": "3.0"}))

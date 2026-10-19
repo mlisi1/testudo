@@ -2,7 +2,15 @@
 from __future__ import annotations
 
 from testudo.core.lifecycle import LifecycleTracker
-from testudo.core.topic_report import TopicReport, full_tier_report, suppress_if_inactive, vitals_report
+from testudo.core.topic_report import (
+    IDLE_LABEL,
+    LATCHED_LABEL,
+    TopicReport,
+    full_tier_report,
+    quiet_label,
+    suppress_if_inactive,
+    vitals_report,
+)
 from testudo.core.vitals import TopicVitals
 from testudo.plugins.base import CheckStatus, Severity, ThresholdZone
 
@@ -165,3 +173,68 @@ def test_suppress_if_inactive_replaces_status_for_inactive_node() -> None:
     assert result.status.label == "suppressed"
     assert "inactive" in result.status.message
     assert result.topic == "/x"
+
+
+def test_vitals_report_latched_topic_is_ok_not_stale() -> None:
+    vitals = _vitals_with_messages(1, [0.0])
+    report = vitals_report("/x", "std_msgs/msg/String", vitals, now=10.0, stale_after_seconds=2.0, latched=True)
+    assert report.status.severity == Severity.OK
+    assert report.status.label == LATCHED_LABEL
+    assert not report.status.codes
+
+
+def test_vitals_report_latched_topic_without_messages_is_still_an_error() -> None:
+    """Latching only explains silence *after* a message -- a latched topic that never sent one is still broken."""
+    report = vitals_report("/x", "t", TopicVitals(topic="/x"), now=10.0, stale_after_seconds=2.0, latched=True)
+    assert report.status.severity == Severity.ERROR
+
+
+def test_vitals_report_event_driven_topic_is_idle_before_and_after_messages() -> None:
+    never = vitals_report("/x", "t", TopicVitals(topic="/x"), now=10.0, stale_after_seconds=2.0, event_driven=True)
+    quiet = vitals_report(
+        "/x", "t", _vitals_with_messages(1, [0.0]), now=10.0, stale_after_seconds=2.0, event_driven=True
+    )
+    assert never.status.severity == quiet.status.severity == Severity.OK
+    assert never.status.label == quiet.status.label == IDLE_LABEL
+
+
+def test_full_tier_report_idle_keeps_content_status_and_adds_idle_time() -> None:
+    vitals = _vitals_with_messages(1, [0.0])
+    content = CheckStatus(severity=Severity.WARN, label="plugin", message="low success rate", values={"rate": "50"})
+    report = full_tier_report(
+        "/x", "t", vitals, debounced_status=content, fallback_status=content, now=10.0, stale_after_seconds=2.0,
+        event_driven=True,
+    )
+    assert report.status.severity == Severity.WARN
+    assert report.status.values == {"rate": "50", "idle_for_s": "10.0"}
+    assert quiet_label(report.status) is None  # a WARN is never shown as merely idle
+
+
+def test_full_tier_report_idle_ok_content_reads_as_idle() -> None:
+    vitals = _vitals_with_messages(1, [0.0])
+    content = CheckStatus(severity=Severity.OK, label="plugin", message="fine")
+    report = full_tier_report(
+        "/x", "t", vitals, debounced_status=None, fallback_status=content, now=10.0, stale_after_seconds=2.0,
+        event_driven=True,
+    )
+    assert quiet_label(report.status) == IDLE_LABEL
+
+
+def test_full_tier_report_stale_keeps_last_known_content_values_and_column() -> None:
+    vitals = _vitals_with_messages(1, [0.0])
+    content = CheckStatus(
+        severity=Severity.OK,
+        label="plugin",
+        message="fine",
+        values={"trace": "0.01"},
+        topic_panel_column="Cov",
+        topic_panel_value="0.01",
+    )
+    report = full_tier_report(
+        "/x", "t", vitals, debounced_status=content, fallback_status=content, now=10.0, stale_after_seconds=2.0
+    )
+    assert report.status.severity == Severity.STALE
+    assert "LIVE-003" in report.status.codes
+    assert report.status.values["trace"] == "0.01"
+    assert report.status.topic_panel_column == "Cov"
+    assert report.status.topic_panel_value == "0.01"

@@ -36,6 +36,7 @@ from typing import Any, Callable
 
 import rclpy
 import rclpy.node
+from rclpy.qos import DurabilityPolicy
 from rosidl_runtime_py.utilities import get_message
 
 from testudo.core.aggregator import DEFAULT_REQUIRED_CONSECUTIVE, HysteresisDebouncer, aggregate_reports
@@ -59,6 +60,7 @@ from testudo.core.maintenance import (
 from testudo.core.maintenance import discover_and_subscribe as _discover_and_subscribe
 from testudo.core.maintenance import maintain as _maintain
 from testudo.core.topic_report import (
+    EVENT_DRIVEN_MSG_TYPES,
     TopicReport,
     excluded_report,
     full_tier_report,
@@ -212,6 +214,10 @@ class SubscriptionManager:
         self._msg_type_by_topic: dict[str, str] = {}
         self._owning_node_by_topic: dict[str, str] = {}
         self._no_publishers: set[str] = set()
+        # Topics whose publisher offers transient_local durability -- usually
+        # publish-once (robot_description, extrinsics), so their silence is
+        # reported as "latched", not STALE (see topic_report.liveness_status).
+        self._latched: set[str] = set()
         # topic name -> live Subscription handle, for every subscription this
         # manager holds (vitals, full-tier, related-topic, and lifecycle
         # transition_event alike -- the latter populated by
@@ -320,6 +326,7 @@ class SubscriptionManager:
         self._presence_only.pop(topic_name, None)
         self._owning_node_by_topic.pop(topic_name, None)
         self._no_publishers.discard(topic_name)
+        self._latched.discard(topic_name)
         self._related_topic_targets.pop(topic_name, None)
         if msg_type is not None:
             self._excluded[topic_name] = msg_type
@@ -402,6 +409,10 @@ class SubscriptionManager:
         self._owning_node_by_topic[topic_name] = fully_qualified_node_name(
             publisher_info.node_namespace, publisher_info.node_name
         )
+        if publisher_info.qos_profile.durability == DurabilityPolicy.TRANSIENT_LOCAL:
+            self._latched.add(topic_name)
+        else:
+            self._latched.discard(topic_name)
 
         if msg_type_str in self._presence_only_msg_types and topic_name not in self._topic_config_by_name:
             self._presence_only[topic_name] = msg_type_str
@@ -586,6 +597,7 @@ class SubscriptionManager:
                 self._stale_after_seconds,
                 rate_threshold,
                 self._monitor_hz,
+                **self._quiet_flags(topic_name),
             )
             reports.append(self._suppress(topic_name, report))
         for topic_name, state in self._full_tier.items():
@@ -598,10 +610,19 @@ class SubscriptionManager:
                 now,
                 self._stale_after_seconds,
                 self._monitor_hz,
+                **self._quiet_flags(topic_name),
             )
             reports.append(self._suppress(topic_name, report))
 
         return sorted(reports, key=lambda report: report.topic)
+
+    def _quiet_flags(self, topic_name: str) -> dict[str, bool]:
+        """`latched`/`event_driven` kwargs for a topic's liveness verdict (see `liveness_status`)."""
+        topic_config = self._topic_config_by_name.get(topic_name)
+        event_driven = self._msg_type_by_topic.get(topic_name) in EVENT_DRIVEN_MSG_TYPES or (
+            topic_config is not None and topic_config.event_driven
+        )
+        return {"latched": topic_name in self._latched, "event_driven": event_driven}
 
     def _suppress(self, topic_name: str, report: TopicReport) -> TopicReport:
         return suppress_if_inactive(report, self._owning_node_by_topic.get(topic_name), self._lifecycle_tracker)

@@ -21,9 +21,11 @@ status here rather than a suppressed one.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import rclpy.node
 import rosbag2_py
+import yaml
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
 
@@ -61,6 +63,31 @@ def _open_reader(bag_path: str) -> rosbag2_py.SequentialReader:
     )
     reader.open(storage_options, converter_options)
     return reader
+
+
+def _latched_topics(bag_path: str) -> set[str]:
+    """Topics recorded from a transient_local publisher, per the bag's `metadata.yaml`.
+
+    rosbag2_py's `QoS` binding exposes durability only as a setter, so the
+    offered profiles are read from the metadata file instead. Best-effort:
+    a missing/unreadable file (or an unfamiliar layout) just means no topic
+    is treated as latched -- the same STALE verdict replay gave before.
+    """
+    try:
+        with open(Path(bag_path) / "metadata.yaml", encoding="utf-8") as metadata_file:
+            info = yaml.safe_load(metadata_file)["rosbag2_bagfile_information"]
+        latched: set[str] = set()
+        for entry in info.get("topics_with_message_count", []):
+            metadata = entry["topic_metadata"]
+            profiles = metadata.get("offered_qos_profiles") or []
+            if isinstance(profiles, str):  # pre-v9 bags store the list as an embedded YAML string
+                profiles = yaml.safe_load(profiles) or []
+            if any(profile.get("durability") in ("transient_local", 1) for profile in profiles):
+                latched.add(metadata["name"])
+        return latched
+    except Exception:
+        _logger.debug("could not read offered QoS from '%s' metadata", bag_path, exc_info=True)
+        return set()
 
 
 def _track_for_replay(manager: SubscriptionManager, topic_name: str, msg_type_str: str) -> None:
@@ -174,6 +201,7 @@ def replay_bag(
     clock_source = _ReplayClockSource()
     clock = TestudoClock(clock_source, sim_time_query=lambda: True)
     manager = SubscriptionManager(node, config, discovered_plugins, clock=clock)
+    manager._latched = _latched_topics(bag_path)
 
     _wire_tf_watch_for_replay(manager, topic_types)
 

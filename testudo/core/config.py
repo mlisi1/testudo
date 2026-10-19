@@ -113,6 +113,9 @@ class TopicConfig:
     weight: float = 1.0
     thresholds: dict[str, ThresholdZone] = field(default_factory=dict)
     related_topics: dict[str, str] = field(default_factory=dict)
+    # Publishes only when something happens (e.g. a controller's cmd_vel):
+    # silence reads as "idle", never STALE.
+    event_driven: bool = False
 
 
 @dataclass(frozen=True)
@@ -386,7 +389,7 @@ def _parse_topics(raw: Any, source: str) -> dict[str, list[TopicConfig]]:
     return result
 
 
-_TOPIC_ENTRY_KEYS = {"name", "weight", "thresholds", "related_topics"}
+_TOPIC_ENTRY_KEYS = {"name", "weight", "thresholds", "related_topics", "event_driven"}
 
 
 def _parse_topic_entry(entry: Any, msg_type: str, source: str) -> TopicConfig:
@@ -401,8 +404,16 @@ def _parse_topic_entry(entry: Any, msg_type: str, source: str) -> TopicConfig:
     weight = _parse_weight(entry.get("weight", 1.0), f"topics.{msg_type}[{name}]", source)
     thresholds = _parse_thresholds(entry.get("thresholds", {}), f"topics.{msg_type}[{name}]", source)
     related_topics = _parse_related_topics(entry.get("related_topics", {}), f"topics.{msg_type}[{name}]", source)
+    event_driven = entry.get("event_driven", False)
+    if not isinstance(event_driven, bool):
+        raise ConfigError(f"{source}: topics.{msg_type}[{name}].event_driven must be true or false")
     return TopicConfig(
-        name=name, msg_type=msg_type, weight=weight, thresholds=thresholds, related_topics=related_topics
+        name=name,
+        msg_type=msg_type,
+        weight=weight,
+        thresholds=thresholds,
+        related_topics=related_topics,
+        event_driven=event_driven,
     )
 
 

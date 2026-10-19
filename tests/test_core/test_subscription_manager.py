@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from rclpy.qos import QoSProfile
+from rclpy.qos import DurabilityPolicy, QoSProfile
 
 from testudo.core.clock import TestudoClock
 from testudo.core.config import (
@@ -769,6 +769,61 @@ def test_vitals_topic_stale_after_threshold_elapses() -> None:
     reports = manager.reports()
     assert reports[0].status.severity == Severity.STALE
 
+
+
+def _manager_with_mutable_clock(node: "_FakeNode", config: TestudoConfig, clock_seconds: list[float]) -> SubscriptionManager:
+    class _MutableClock:
+        def now(self):
+            class _T:
+                nanoseconds = int(clock_seconds[0] * 1e9)
+
+            return _T()
+
+    testudo_clock = TestudoClock(_MutableClock(), sim_time_query=lambda: False)
+    return SubscriptionManager(node, config, [], clock=testudo_clock, stale_after_seconds=2.0, **_FAST_SETTLE)
+
+
+def test_transient_local_topic_reads_as_latched_not_stale() -> None:
+    latched_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+    node = _FakeNode(
+        topics=[("/robot_description", ["std_msgs/msg/String"])],
+        publishers_by_topic={"/robot_description": [_FakeEndpointInfo(qos_profile=latched_qos)]},
+    )
+    clock_seconds = [0.0]
+    manager = _manager_with_mutable_clock(node, _config(), clock_seconds)
+    manager.start()
+
+    node.subscriptions[0].callback(b"")
+    clock_seconds[0] = 60.0
+
+    status = manager.reports()[0].status
+    assert status.severity == Severity.OK
+    assert status.label == "latched"
+
+
+def test_topic_declared_event_driven_reads_as_idle_not_stale() -> None:
+    node = _FakeNode(
+        topics=[("/cmd_vel_nav", ["geometry_msgs/msg/Twist"])],
+        publishers_by_topic={"/cmd_vel_nav": [_FakeEndpointInfo(qos_profile=_qos())]},
+    )
+    config = TestudoConfig(
+        publish=PublishConfig(topic="/diagnostics"),
+        topics={
+            "geometry_msgs/msg/Twist": [
+                TopicConfig(name="/cmd_vel_nav", msg_type="geometry_msgs/msg/Twist", event_driven=True)
+            ]
+        },
+    )
+    clock_seconds = [0.0]
+    manager = _manager_with_mutable_clock(node, config, clock_seconds)
+    manager.start()
+
+    node.subscriptions[0].callback(b"")
+    clock_seconds[0] = 60.0
+
+    status = manager.reports()[0].status
+    assert status.severity == Severity.OK
+    assert status.label == "idle"
 
 def test_excluded_topics_includes_default_set_and_configured_publish_topic() -> None:
     manager = SubscriptionManager(
