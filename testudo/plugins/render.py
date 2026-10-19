@@ -63,11 +63,32 @@ def meter(value: float, zone: ThresholdZone | None, segments: int) -> str:
     return f"[{color}]{FILLED_SQUARE * filled}[/{color}]{EMPTY_SQUARE * (segments - filled)}"
 
 
-def sparkline(samples: Iterable[float], severity: int = Severity.OK, width: int | None = None) -> str:
+def downsample(samples: Iterable[float], width: int) -> list[float]:
+    """`samples` averaged into at most `width` consecutive chunks (non-finite ones skipped; all-NaN chunk -> NaN).
+
+    Lets a long history (60 one-second samples) fit a short sparkline while
+    still spanning all of it, rather than keeping only its last `width`.
+    """
+    values = list(samples)
+    if len(values) <= width or width <= 0:
+        return values
+    chunks = [values[len(values) * i // width : len(values) * (i + 1) // width] for i in range(width)]
+    averaged = []
+    for chunk in chunks:
+        finite = [v for v in chunk if math.isfinite(v)]
+        averaged.append(sum(finite) / len(finite) if finite else math.nan)
+    return averaged
+
+
+def sparkline(
+    samples: Iterable[float], severity: int = Severity.OK, width: int | None = None, floor: float | None = None
+) -> str:
     """The last `width` (default: all) of `samples` as `▁..█` bars, colored by `severity`.
 
     Scaled between the window's own min and max, so it shows shape (a dip,
     a spike, a ramp), not absolute level -- pair it with the current value.
+    `floor` (e.g. 0 for a σ or a rate) pins the bottom of the scale instead,
+    so small noise on a large steady value reads as steady, not as spikes.
     A flat window renders as a flat mid-height line rather than all-bottom,
     so "steady" doesn't read as "zero". Non-finite samples render as a
     space (a gap). Empty string for no samples.
@@ -79,6 +100,8 @@ def sparkline(samples: Iterable[float], severity: int = Severity.OK, width: int 
         return ""
     finite = [v for v in values if math.isfinite(v)]
     low, high = (min(finite), max(finite)) if finite else (0.0, 0.0)
+    if floor is not None and finite:
+        low = min(low, floor)
     top = len(SPARK_LEVELS) - 1
     chars = []
     for value in values:
@@ -113,11 +136,14 @@ def strip(outcomes: Iterable[int | None], width: int | None = None) -> str:
 
 
 def fmt_sigma(variance: float, unit: str = "m") -> str:
-    """A variance as its standard deviation, e.g. `0.0676` -> `±0.26m`; `n/a` if negative/non-finite."""
+    """A variance as its standard deviation, e.g. `0.0676` -> `±0.26m`; `n/a` if negative/non-finite.
+
+    Two decimals below 10 (so a column of them lines up), whole units above.
+    """
     if not math.isfinite(variance) or variance < 0:
         return "n/a"
     sigma = math.sqrt(variance)
-    return f"±{sigma:.2g}{unit}" if sigma < 10 else f"±{sigma:.0f}{unit}"
+    return f"±{sigma:.2f}{unit}" if sigma < 10 else f"±{sigma:.0f}{unit}"
 
 
 def fmt_size(num_bytes: float) -> str:

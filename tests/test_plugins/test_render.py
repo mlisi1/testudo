@@ -4,7 +4,7 @@ from __future__ import annotations
 from rich.text import Text
 
 from testudo.plugins.base import Severity, ThresholdZone
-from testudo.plugins.render import fmt_sigma, fmt_size, meter, sparkline, strip
+from testudo.plugins.render import downsample, fmt_sigma, fmt_size, meter, sparkline, strip
 
 
 def _plain(markup: str) -> str:
@@ -50,8 +50,22 @@ def test_strip_glyphs_newest_right_and_width() -> None:
 def test_fmt_sigma_and_size() -> None:
     assert fmt_sigma(0.0676) == "±0.26m"
     assert fmt_sigma(400.0) == "±20m"
-    assert fmt_sigma(0.01, "°") == "±0.1°"
+    assert fmt_sigma(0.01, "°") == "±0.10°"
+    assert fmt_sigma(0.0) == "±0.00m"
     assert fmt_sigma(-1.0) == "n/a"
     assert fmt_sigma(float("nan")) == "n/a"
     assert fmt_size(512) == "0.5KB"
     assert fmt_size(3 * 1024 * 1024) == "3.00MB"
+
+
+def test_sparkline_floor_keeps_noise_on_a_steady_value_flat() -> None:
+    assert _plain(sparkline([10.0, 10.2, 9.9], floor=0.0)) == "███"
+    assert _plain(sparkline([10.0, 10.2, 9.9])) != "███"
+
+
+def test_downsample_averages_consecutive_chunks() -> None:
+    assert downsample([1.0, 3.0, 5.0, 7.0], 2) == [2.0, 6.0]
+    assert downsample([1.0, 2.0], 5) == [1.0, 2.0]
+    assert downsample(range(60), 20)[0] == 1.0
+    nan_chunk = downsample([float("nan"), float("nan"), 1.0, 1.0], 2)
+    assert nan_chunk[1] == 1.0 and nan_chunk[0] != nan_chunk[0]
