@@ -88,6 +88,31 @@ def test_replay_full_tier_topic_detects_content_problem(tmp_path: Path, ros_node
     assert "positive semi-definite" in reports[0].status.message
 
 
+def test_replay_never_ages_a_tf_static_edge(tmp_path: Path, ros_node) -> None:
+    """/tf_static is published once at startup; a bag minutes long must not call it stale."""
+    from geometry_msgs.msg import TransformStamped
+    from tf2_msgs.msg import TFMessage
+
+    bag_path = tmp_path / "tf_static_bag"
+    static_transform = TransformStamped()
+    static_transform.header.frame_id = "base_link"
+    static_transform.child_frame_id = "laser"
+    dynamic_transform = TransformStamped()
+    dynamic_transform.header.frame_id = "odom"
+    dynamic_transform.child_frame_id = "base_link"
+    entries = [("/tf_static", "tf2_msgs/msg/TFMessage", TFMessage(transforms=[static_transform]), 1_000_000_000)]
+    entries += [
+        ("/tf", "tf2_msgs/msg/TFMessage", TFMessage(transforms=[dynamic_transform]), seconds * 1_000_000_000)
+        for seconds in range(1, 61)
+    ]
+    _write_bag(bag_path, entries)
+
+    reports, _overall = replay_bag(str(bag_path), _config(), _plugins(), ros_node)
+
+    assert reports[0].status.severity == Severity.OK
+    assert "extrapolation risk" not in reports[0].status.message
+
+
 def test_replay_tf_static_routes_to_same_instance_as_tf(tmp_path: Path, ros_node) -> None:
     bag_path = tmp_path / "bag3"
 

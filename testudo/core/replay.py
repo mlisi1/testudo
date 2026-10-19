@@ -175,6 +175,9 @@ def _wire_tf_watch_for_replay(manager: SubscriptionManager, topic_types: dict[st
 
     if TF_STATIC_TOPIC in topic_types:
         manager._related_topic_targets[TF_STATIC_TOPIC] = (state.plugin, TF_TOPIC)
+        # What the live path passes to the plugin's constructor: how it
+        # tells a static edge (never aged) from a dynamic one.
+        state.plugin.related_topics = {**state.plugin.related_topics, "tf_static": TF_STATIC_TOPIC}
 
     if hasattr(state.plugin, "set_watched_pairs"):
         state.plugin.set_watched_pairs([(pair.parent, pair.child) for pair in manager._config.tf])
