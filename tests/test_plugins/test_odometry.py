@@ -230,22 +230,6 @@ def test_position_orientation_compact_variant_has_fewer_meter_squares() -> None:
     assert square_count(compact) < square_count(wide)
 
 
-def test_meter_is_full_and_green_when_nominal() -> None:
-    from testudo.plugins.base import ThresholdZone
-    from testudo.plugins.builtin.odometry import _METER_SEGMENTS, _meter
-
-    bar = _meter(0.0, ThresholdZone(green=0.01, orange=0.1), _METER_SEGMENTS)
-    assert bar == f"[green]{'▮' * _METER_SEGMENTS}[/green]"
-
-
-def test_meter_is_almost_empty_and_red_when_far_past_orange() -> None:
-    from testudo.plugins.base import ThresholdZone
-    from testudo.plugins.builtin.odometry import _METER_SEGMENTS, _meter
-
-    bar = _meter(10.0, ThresholdZone(green=0.01, orange=0.1), _METER_SEGMENTS)
-    assert bar == f"[bold red]▮[/bold red]{'▯' * (_METER_SEGMENTS - 1)}"
-
-
 def test_position_orientation_block_reflects_actual_pose_position() -> None:
     plugin = OdometryPlugin()
     msg = _odometry()

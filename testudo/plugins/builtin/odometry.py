@@ -30,6 +30,7 @@ from testudo.plugins.base import (
     colorize,
     evaluate_zone,
 )
+from testudo.plugins.render import meter
 
 #: Position (x, y, z) and orientation (roll, pitch, yaw -- rotation about
 #: X/Y/Z, per REP 103) variances live at these diagonal indices in the
@@ -54,21 +55,13 @@ _CMD_MOVING_THRESHOLD_RADPS = 0.05
 _ODOM_STUCK_THRESHOLD_MPS = 0.02
 _ODOM_STUCK_THRESHOLD_RADPS = 0.02
 
-#: When a metric's threshold zone doesn't configure `red` (none of the
-#: built-in defaults do), a meter's "empty" reference is `orange` scaled by
-#: this factor instead.
-_METER_FALLBACK_SCALE = 2.0
-
 #: Per-axis meter width (filled/empty squares) on a wide enough Detail
-#: Panel; collapses to one square (see `_meter`) on a narrow one. Kept
+#: Panel; collapses to one square (see `render.meter`) on a narrow one. Kept
 #: short (not e.g. 10+) since position and orientation sit side by side
 #: (see `_pose_block_wide`), each getting roughly half the Detail Panel's
 #: width, not all of it.
 _METER_SEGMENTS = 6
 _COMPACT_METER_SEGMENTS = 1
-
-_EMPTY_SQUARE = "▯"
-_FILLED_SQUARE = "▮"
 
 _AXIS_LABEL_WIDTH = 6
 _AXIS_VALUE_WIDTH = 7
@@ -110,37 +103,14 @@ def _split_zone(zone: ThresholdZone | None, parts: int) -> ThresholdZone | None:
     )
 
 
-def _meter(value: float, zone: ThresholdZone | None, segments: int) -> str:
-    """A `segments`-wide health-bar-style meter for `value` against `zone`.
-
-    Full and green means good; as `value` gets worse the bar drains and
-    turns orange, then red -- the fill level *and* its one color both track
-    the same thing (how much margin is left), rather than a per-segment
-    gradient. Never drains to fully empty (`value` far past `zone.orange`/
-    `zone.red` still leaves one square filled) so a bad reading is legible
-    as "almost empty and red", not indistinguishable from no data.
-    `segments=1` collapses this to that one square, colored the same way:
-    the narrow-Detail-Panel fallback per TUI_DATA_DESIGN.md's meter proposal.
-    """
-    if zone is None or zone.orange is None:
-        return ""
-    color = SEVERITY_COLORS.get(evaluate_zone(value, zone), "white")
-    if segments <= 1:
-        return f"[{color}]{_FILLED_SQUARE}[/{color}]"
-    span = zone.red if zone.red is not None else zone.orange * _METER_FALLBACK_SCALE
-    remaining = 1.0 - value / span if span > 0 else 0.0
-    filled = max(1, min(segments, round(remaining * segments)))
-    return f"[{color}]{_FILLED_SQUARE * filled}[/{color}]{_EMPTY_SQUARE * (segments - filled)}"
-
-
 def _axis_line(label: str, value: float, variance: float, zone: ThresholdZone | None, segments: int) -> str:
     """One line: an axis's value and its covariance, with a meter for the latter.
 
     Column widths match `_axis_group_header` so a header row lines up with
     every axis row under it.
     """
-    meter = _meter(variance, zone, segments)
-    meter_part = f" {meter}" if meter else ""
+    bar = meter(variance, zone, segments)
+    meter_part = f" {bar}" if bar else ""
     return (
         f"{label:<{_AXIS_LABEL_WIDTH}}{value:>{_AXIS_VALUE_WIDTH}.3f} "
         f"{variance:>{_AXIS_VARIANCE_WIDTH}.3f}{meter_part}"
@@ -375,8 +345,8 @@ class OdometryPlugin(CheckPlugin):
 
         pose_psd = f"pose{'✓' if self._pose_psd_ok else '✗'}"
         twist_psd = f"twist{'✓' if self._twist_psd_ok else '✗'}"
-        growth_meter = _meter(abs(self._growth_rate), self.thresholds.get("covariance_growth_rate"), _METER_SEGMENTS)
-        growth_meter_compact = _meter(
+        growth_meter = meter(abs(self._growth_rate), self.thresholds.get("covariance_growth_rate"), _METER_SEGMENTS)
+        growth_meter_compact = meter(
             abs(self._growth_rate), self.thresholds.get("covariance_growth_rate"), _COMPACT_METER_SEGMENTS
         )
 

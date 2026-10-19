@@ -34,6 +34,7 @@ from testudo.plugins.base import (
     ThresholdZone,
     evaluate_zone,
 )
+from testudo.plugins.render import meter
 
 _NAVSATFIX_TYPE = "sensor_msgs/msg/NavSatFix"
 
@@ -45,17 +46,9 @@ _POSITION_AXES = ("x", "y", "z")
 _EARTH_RADIUS_M = 6371000.0
 
 #: Per-axis meter width on a wide-enough Detail Panel; collapses to one
-#: square (see `_meter`) on a narrow one -- same scheme as OdometryPlugin's
-#: Detail Panel meters, duplicated here rather than shared (per the
-#: project's "build concrete before abstract": this is only the second
-#: plugin using it, not the third that would justify extracting it).
+#: square (see `render.meter`) on a narrow one.
 _METER_SEGMENTS = 6
 _COMPACT_METER_SEGMENTS = 1
-_EMPTY_SQUARE = "▯"
-_FILLED_SQUARE = "▮"
-#: When the configured zone doesn't set `red`, a meter's "empty" reference
-#: is `orange` scaled by this factor instead.
-_METER_FALLBACK_SCALE = 2.0
 #: Gap between the x/y/z chunks when they sit side by side on one row.
 _AXIS_GAP = "   "
 _AXIS_VALUE_WIDTH = 9
@@ -91,28 +84,10 @@ def _haversine_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) ->
     return _EARTH_RADIUS_M * c
 
 
-def _meter(value: float, zone: ThresholdZone | None, segments: int) -> str:
-    """A `segments`-wide health-bar-style meter for `value` against `zone` (see OdometryPlugin's `_meter`).
-
-    Full and green means good; the bar drains and reddens as `value` gets
-    worse, never fully to empty, so a bad reading stays legible as "almost
-    empty and red" rather than indistinguishable from no data.
-    """
-    if zone is None or zone.orange is None:
-        return ""
-    color = SEVERITY_COLORS.get(evaluate_zone(value, zone), "white")
-    if segments <= 1:
-        return f"[{color}]{_FILLED_SQUARE}[/{color}]"
-    span = zone.red if zone.red is not None else zone.orange * _METER_FALLBACK_SCALE
-    remaining = 1.0 - value / span if span > 0 else 0.0
-    filled = max(1, min(segments, round(remaining * segments)))
-    return f"[{color}]{_FILLED_SQUARE * filled}[/{color}]{_EMPTY_SQUARE * (segments - filled)}"
-
-
 def _axis_chunk(axis: str, value: float, zone: ThresholdZone | None, segments: int) -> str:
     """One axis's short label, its covariance value, and its meter -- e.g. "cov_x:   0.0001 ▮▮▮▮▮▮"."""
-    meter = _meter(value, zone, segments)
-    meter_part = f" {meter}" if meter else ""
+    bar = meter(value, zone, segments)
+    meter_part = f" {bar}" if bar else ""
     return f"cov_{axis}:{value:>{_AXIS_VALUE_WIDTH}.4g}{meter_part}"
 
 

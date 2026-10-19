@@ -39,6 +39,7 @@ from testudo.plugins.base import (
     ThresholdZone,
     evaluate_zone,
 )
+from testudo.plugins.render import fmt_size
 
 _IMAGE_TYPE = "sensor_msgs/msg/Image"
 _COMPRESSED_IMAGE_TYPE = "sensor_msgs/msg/CompressedImage"
@@ -94,11 +95,6 @@ def _check_compressed_format(fmt: str, data: bytes) -> tuple[bool, str]:
     if "png" in fmt_lower and not data.startswith(_PNG_MAGIC):
         return True, f"format '{fmt}' but payload isn't a PNG (bad magic bytes)"
     return False, ""
-
-
-def _format_size(num_bytes: float) -> str:
-    kb = num_bytes / 1024.0
-    return f"{kb:.1f}KB" if kb < 1024 else f"{kb / 1024.0:.2f}MB"
 
 
 class ImageStreamPlugin(CheckPlugin):
@@ -220,11 +216,11 @@ class ImageStreamPlugin(CheckPlugin):
             problems.append(f"payload size dropped to {self._size_drop_ratio:.0%} of recent average")
         if frame_id_severity != Severity.OK:
             problems.append(f"frame_id changed (now '{self._last_frame_id}')")
-        message = "; ".join(problems) if problems else _format_size(self._last_size)
+        message = "; ".join(problems) if problems else fmt_size(self._last_size)
 
         values = {
-            "size": _format_size(self._last_size),
-            "bandwidth": f"{_format_size(self._bandwidth_bytes_per_second())}/s",
+            "size": fmt_size(self._last_size),
+            "bandwidth": f"{fmt_size(self._bandwidth_bytes_per_second())}/s",
             "stuck_count": str(self._stuck_count),
             "frame_id": self._last_frame_id or "",
         }
@@ -234,7 +230,7 @@ class ImageStreamPlugin(CheckPlugin):
         # bitrate shows up here immediately), colored by the topic's overall
         # status rather than any one component check.
         color = SEVERITY_COLORS.get(worst, "white")
-        topic_panel_value = f"[{color}]{_format_size(self._last_size)}[/{color}]"
+        topic_panel_value = f"[{color}]{fmt_size(self._last_size)}[/{color}]"
 
         return CheckStatus(
             severity=worst,
