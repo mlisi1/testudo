@@ -63,6 +63,12 @@ def test_sparkline_floor_keeps_noise_on_a_steady_value_flat() -> None:
     assert _plain(sparkline([10.0, 10.2, 9.9])) != "███"
 
 
+def test_sparkline_min_range_keeps_small_swings_low() -> None:
+    assert _plain(sparkline([0.0, 0.1, 0.0], floor=0.0)) == "▁█▁"
+    assert _plain(sparkline([0.0, 0.1, 0.0], floor=0.0, min_range=100.0)) == "▁▁▁"
+    assert _plain(sparkline([0.0, 100.0], floor=0.0, min_range=10.0)) == "▁█"
+
+
 def test_sparkline_flat_at_floor_is_all_bottom() -> None:
     assert _plain(sparkline([0.0, 0.0, 0.0], floor=0.0)) == "▁▁▁"
 

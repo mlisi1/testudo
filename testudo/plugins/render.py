@@ -81,7 +81,11 @@ def downsample(samples: Iterable[float], width: int) -> list[float]:
 
 
 def sparkline(
-    samples: Iterable[float], severity: int = Severity.OK, width: int | None = None, floor: float | None = None
+    samples: Iterable[float],
+    severity: int = Severity.OK,
+    width: int | None = None,
+    floor: float | None = None,
+    min_range: float | None = None,
 ) -> str:
     """The last `width` (default: all) of `samples` as `▁..█` bars, colored by `severity`.
 
@@ -89,6 +93,9 @@ def sparkline(
     a spike, a ramp), not absolute level -- pair it with the current value.
     `floor` (e.g. 0 for a σ or a rate) pins the bottom of the scale instead,
     so small noise on a large steady value reads as steady, not as spikes.
+    `min_range` keeps the scale at least that tall (extending it upward),
+    so a swing that small in absolute terms -- 0.0↔0.1 % CPU, a 1 MB
+    wobble in RSS -- stays near the bottom instead of filling the height.
     A flat window renders as a flat mid-height line rather than all-bottom,
     so "steady" doesn't read as "zero" -- unless it sits right at `floor`,
     where all-bottom is exactly what it means. Non-finite samples render as a
@@ -103,6 +110,8 @@ def sparkline(
     low, high = (min(finite), max(finite)) if finite else (0.0, 0.0)
     if floor is not None and finite:
         low = min(low, floor)
+    if min_range is not None and finite:
+        high = max(high, low + min_range)
     top = len(SPARK_LEVELS) - 1
     chars = []
     for value in values:
