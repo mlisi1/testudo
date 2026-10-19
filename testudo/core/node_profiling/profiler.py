@@ -21,6 +21,7 @@ from testudo.core.aggregator import DEFAULT_REQUIRED_CONSECUTIVE, HysteresisDebo
 from testudo.core.config import NodeProfilingConfig, SeverityMode
 from testudo.core.node_profiling import maintenance as _maintenance
 from testudo.core.node_profiling.gpu import gpu_memory_mb_by_pid
+from testudo.core.node_profiling.history import ProcessHistory
 from testudo.core.node_profiling.process_match import ResolvedProcess
 from testudo.core.node_profiling.report import NodeStat, build_status
 from testudo.core.node_profiling.sampler import ProcessSampler
@@ -46,6 +47,7 @@ class NodeProfiler:
         self._mapping: dict[int, ResolvedProcess] = {}
         self._latest: tuple[NodeStat, ...] = ()
         self._debouncers: dict[str, HysteresisDebouncer] = {}
+        self._histories: dict[str, ProcessHistory] = {}
         self._hysteresis_required_consecutive = hysteresis_required_consecutive
         self._timer = None
         self._last_tick_monotonic: float | None = None
@@ -90,12 +92,15 @@ class NodeProfiler:
         """Sample every currently-mapped process. Callable from any thread (no rclpy calls)."""
         mapping = self._mapping  # one reference read -- stable for the rest of this call
         gpu_mb_by_pid = gpu_memory_mb_by_pid() if self._config.gpu_enabled else {}
+        now = time.monotonic()
         latest: list[NodeStat] = []
         for resolved in mapping.values():
             sample = self._sampler.sample(resolved.pid)
             if sample is None:
                 continue
             gpu_mb = gpu_mb_by_pid.get(resolved.pid)
+            history = self._histories.setdefault(resolved.identity, ProcessHistory())
+            history.add(now, None if sample.warming_up else sample.cpu_percent, sample.memory_rss_mb)
             status = build_status(
                 sample,
                 resolved.pid,
@@ -105,6 +110,8 @@ class NodeProfiler:
                 self._config.ctx_switches_per_sec,
                 gpu_mb,
                 resolved.num_children,
+                history.memory_slope_mb_per_min(),
+                self._config.memory_slope_mb_per_min,
             )
             debouncer = self._debouncers.setdefault(
                 resolved.identity, HysteresisDebouncer(self._hysteresis_required_consecutive)
@@ -123,10 +130,13 @@ class NodeProfiler:
                     memory_rss_mb=sample.memory_rss_mb,
                     gpu_memory_mb=gpu_mb,
                     status=status,
+                    cpu_history=history.cpu(),
+                    memory_history=history.memory(),
                 )
             )
         live_identities = {resolved.identity for resolved in mapping.values()}
         self._debouncers = {identity: d for identity, d in self._debouncers.items() if identity in live_identities}
+        self._histories = {identity: h for identity, h in self._histories.items() if identity in live_identities}
         # One atomic swap for reports() to read, same pattern _mapping uses above.
         self._latest = tuple(sorted(latest, key=lambda stat: stat.identity))
 
@@ -139,7 +149,7 @@ class NodeProfiler:
         return _aggregate(self._latest, mode)
 
     def reset_stats(self) -> None:
-        """Clear accumulated rolling-window state (cached process handles, debounce history).
+        """Clear accumulated rolling-window state (cached process handles, debounce and CPU/memory history).
 
         Backs the same 'r' keybind as `SubscriptionManager.reset_stats()`;
         deliberately doesn't touch `_mapping` -- rediscovery still runs on
@@ -147,6 +157,7 @@ class NodeProfiler:
         """
         self._sampler = ProcessSampler()
         self._debouncers.clear()
+        self._histories.clear()
 
     def close(self) -> None:
         """Stop the rediscovery timer. Call before destroying the owning node."""

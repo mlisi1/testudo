@@ -199,6 +199,12 @@ tf:
 #     # node's switches) isn't counted, so these can stay conservative.
 #     green: 50
 #     orange: 200
+#   memory_slope_mb_per_min:
+#     # Leak detection: RSS growth over the last ~2 minutes of samples,
+#     # judged once the window spans a minute and the process has been up
+#     # 5 minutes (startup allocation isn't a leak).
+#     green: 10
+#     orange: 50
 #   exclude_nodes:
 #     - /some_noisy_diagnostic_only_node
 

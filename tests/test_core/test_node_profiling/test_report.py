@@ -193,24 +193,48 @@ def test_format_core_ranges_collapses_consecutive_cores() -> None:
 def test_detail_panel_values_pairs_related_readings_under_short_labels() -> None:
     shown = detail_panel_values(_build(_sample(), gpu_memory_mb=312.0, num_children=2).values)
     assert shown == {
-        "user": "robot",
-        "state": "running",
-        "uptime": "2m5s",
-        "cpu_percent": "10.0",
+        "process": "running · up 2m5s · nice 0 · user robot",
+        "cpu": "10.0 %",
         "cpu_affinity": "0-1",
-        "nice": "0",
+        "preempted_per_sec": "1.0",
         "memory": "50.0 MB (1.50 %)",
         "gpu_memory_mb": "312.0",
-        "threads": "4 (+2 subproc)",
-        "open_fds": "12",
+        "threads": "4 · subproc 2 · FDs 12",
         "ctx_switches": "1000 vol / 5 invol",
-        "preempted_per_sec": "1.0",
     }
 
 
 def test_detail_panel_values_omits_what_the_platform_did_not_report() -> None:
     shown = detail_panel_values(_build(_sample(cpu_affinity=None, nice=None, username=None, num_fds=None)).values)
-    assert not {"cpu_affinity", "nice", "user", "open_fds", "gpu_memory_mb"} & set(shown)
+    assert not {"cpu_affinity", "gpu_memory_mb"} & set(shown)
+    assert shown["process"] == "running · up 2m5s"
+    assert shown["threads"] == "4 · subproc 0"
+
+
+def test_detail_panel_values_add_trends_and_memory_slope() -> None:
+    values = _build(_sample(), memory_slope_mb_per_min=2.5).values
+    shown = detail_panel_values(values, cpu_history=(0.0, 100.0, 50.0), memory_history=(48.0, 49.0, 50.0))
+    assert shown["cpu"].startswith("10.0 %  ") and "█" in shown["cpu"]
+    assert shown["memory"].startswith("50.0 MB (1.50 %)  ")
+    assert shown["memory"].endswith("+2.5 MB/min")
+
+
+def test_memory_slope_above_zone_flags_a_possible_leak() -> None:
+    zone = ThresholdZone(green=10.0, orange=50.0)
+    assert "NODE-003" not in _build(_sample(), memory_slope_mb_per_min=5.0, memory_slope_zone=zone).codes
+    status = _build(_sample(uptime_seconds=600.0), memory_slope_mb_per_min=30.0, memory_slope_zone=zone)
+    assert status.severity == Severity.WARN
+    assert "NODE-003" in status.codes
+    assert status.values["memory_slope_mb_per_min"] == "+30.0"
+    assert "memory_slope_mb_per_min" not in _build(_sample()).values
+
+
+def test_memory_slope_not_judged_during_startup_grace() -> None:
+    zone = ThresholdZone(green=10.0, orange=50.0)
+    status = _build(_sample(uptime_seconds=120.0), memory_slope_mb_per_min=30.0, memory_slope_zone=zone)
+    assert status.severity == Severity.OK
+    assert "NODE-003" not in status.codes
+    assert status.values["memory_slope_mb_per_min"] == "+30.0"
 
 
 def test_published_values_keep_one_plain_number_per_key() -> None:

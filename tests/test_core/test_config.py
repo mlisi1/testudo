@@ -511,6 +511,9 @@ def test_node_profiling_full(tmp_path: Path) -> None:
           memory_mb:
             green: 200
             orange: 800
+          memory_slope_mb_per_min:
+            green: 5
+            orange: 20
           exclude_nodes:
             - /noisy_node
             - pattern: "_debug$"
@@ -529,6 +532,8 @@ def test_node_profiling_full(tmp_path: Path) -> None:
     assert np.cpu_percent.orange == 90.0
     assert np.memory_mb.green == 200.0
     assert np.memory_mb.orange == 800.0
+    assert np.memory_slope_mb_per_min.green == 5.0
+    assert np.memory_slope_mb_per_min.orange == 20.0
     assert np.exclude_nodes == [
         ExcludeRule("/noisy_node"),
         ExcludeRule("_debug$", ExcludeMatchType.REGEX),

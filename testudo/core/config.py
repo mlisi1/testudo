@@ -170,6 +170,10 @@ class NodeProfilingConfig:
     deliberately conservative -- a *voluntary* switch (blocking on IPC,
     the vast majority of a healthy ROS node's switches) isn't counted at
     all, so even a chatty node shouldn't approach these under normal load.
+    `memory_slope_mb_per_min` zones RSS growth over the last ~2 minutes of
+    samples (a least-squares slope, judged only once the window spans a
+    minute and the process has been up 5 minutes, past its startup
+    allocation) -- leak detection, which a single memory reading can't do.
     """
 
     enabled: bool = True
@@ -180,6 +184,7 @@ class NodeProfilingConfig:
     cpu_percent: ThresholdZone = field(default_factory=lambda: ThresholdZone(green=150.0, orange=300.0))
     memory_mb: ThresholdZone = field(default_factory=lambda: ThresholdZone(green=500.0, orange=1500.0))
     ctx_switches_per_sec: ThresholdZone = field(default_factory=lambda: ThresholdZone(green=50.0, orange=200.0))
+    memory_slope_mb_per_min: ThresholdZone = field(default_factory=lambda: ThresholdZone(green=10.0, orange=50.0))
     publish_topic: str = "/diagnostics/nodes"
     publish_rate_hz: float = 1.0
 
@@ -540,6 +545,7 @@ _NODE_PROFILING_KEYS = {
     "cpu_percent",
     "memory_mb",
     "ctx_switches_per_sec",
+    "memory_slope_mb_per_min",
     "publish_topic",
     "publish_rate_hz",
 }
@@ -581,6 +587,11 @@ def _parse_node_profiling(raw: Any, source: str) -> NodeProfilingConfig:
         ctx_switches_per_sec=_parse_zone(raw["ctx_switches_per_sec"], "node_profiling.ctx_switches_per_sec", source)
         if "ctx_switches_per_sec" in raw
         else default.ctx_switches_per_sec,
+        memory_slope_mb_per_min=_parse_zone(
+            raw["memory_slope_mb_per_min"], "node_profiling.memory_slope_mb_per_min", source
+        )
+        if "memory_slope_mb_per_min" in raw
+        else default.memory_slope_mb_per_min,
         publish_topic=_parse_non_empty_string(
             raw.get("publish_topic", default.publish_topic), "node_profiling.publish_topic", source
         ),
