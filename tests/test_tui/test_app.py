@@ -470,7 +470,7 @@ def test_moving_cursor_up_on_an_empty_topic_table_does_not_crash() -> None:
 
 def test_topic_column_fills_the_pane_and_shows_status_icons() -> None:
     """A wide terminal shows a long topic name in full rather than a 16-character window."""
-    long_topic = "/navigate_to_pose/_action/status"
+    long_topic = "/localization/odometry/filtered1"
     reports = [TopicReport(long_topic, "nav_msgs/msg/Odometry", "full", CheckStatus(Severity.WARN, "l", "m"))]
 
     async def body():

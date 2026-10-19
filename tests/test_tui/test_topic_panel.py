@@ -119,3 +119,45 @@ def test_topic_header_shows_prefix_or_its_tail() -> None:
     assert topic_header("", 30) == "Topic"
     assert topic_header("/front_camera/camera/", 40) == "Topic  /front_camera/camera/"
     assert topic_header("/front_camera/camera/", 20) == "Topic  …mera/camera/"
+
+
+def test_format_memory_fits_five_chars() -> None:
+    from testudo.tui.widgets.topic_panel import format_memory
+
+    assert format_memory("56.43") == "56.4M"
+    assert format_memory("640.2") == "640M"
+    assert format_memory("1260") == "1.23G"
+    assert format_memory(None) == "-"
+    assert format_memory("n/a") == "-"
+
+
+def test_rate_column_is_mem_for_nodes_and_state_for_actions() -> None:
+    from rich.text import Text
+
+    from testudo.tui.widgets.topic_panel import rate_cell, rate_column_header
+
+    node = TopicReport("/bt_navigator", "python3", "node", CheckStatus(Severity.OK, "n", "", {"memory_mb": "56.4"}))
+    assert rate_column_header(node) == "Mem"
+    assert rate_cell(node, "Mem") == "56.4M"
+
+    def action(state: str) -> TopicReport:
+        values = {"current_status": state}
+        return TopicReport("/spin/_action/status", "action_msgs/msg/GoalStatusArray", "full", CheckStatus(Severity.OK, "a", "", values))
+
+    assert rate_column_header(action("executing")) == "State"
+    assert Text.from_markup(rate_cell(action("executing"), "State")).plain == "▶ run"
+    assert Text.from_markup(rate_cell(action("canceling"), "State")).plain == "⊘ stop"
+    assert Text.from_markup(rate_cell(action("succeeded"), "State")).plain == "◌ idle"
+
+    scan = TopicReport("/scan", "sensor_msgs/msg/LaserScan", "full", CheckStatus(Severity.OK, "s", ""), rate_hz=9.876)
+    assert rate_column_header(scan) == "Hz"
+    assert rate_cell(scan, "Hz") == "9.88"
+
+
+def test_display_name_strips_prefix_and_action_status_suffix() -> None:
+    from testudo.tui.widgets.topic_panel import display_name
+
+    assert display_name("/navigate_to_pose/_action/status", "") == "/navigate_to_pose"
+    assert display_name("/robot/spin/_action/status", "/robot/") == "spin"
+    assert display_name("/robot/scan", "/robot/") == "scan"
+    assert display_name("/_action/status", "") == "/_action/status"

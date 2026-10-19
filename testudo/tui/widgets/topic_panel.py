@@ -1,6 +1,7 @@
 """Topic Panel: every topic within one selected category."""
 from __future__ import annotations
 
+from testudo.core.discovery import ACTION_STATUS_SUFFIX
 from testudo.core.topic_report import IDLE_LABEL, LATCHED_LABEL, TopicReport, quiet_label
 from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_ICONS, SEVERITY_LABELS, Severity
 from testudo.tui.keybinds import NavDataTable
@@ -140,6 +141,66 @@ _RATE_FORMATS = (
 )
 
 
+#: Goal states (nav2_goals' `current_status` value) -> the Nav2 Actions
+#: "State" cell: a chip glyph for what the action server is doing now.
+_ACTION_STATE_CELLS = {
+    "accepted": "[green]▶ run[/green]",
+    "executing": "[green]▶ run[/green]",
+    "canceling": "[yellow]⊘ stop[/yellow]",
+}
+_ACTION_IDLE_CELL = "[dim]◌ idle[/dim]"
+
+_ACTION_MSG_TYPE = "action_msgs/msg/GoalStatusArray"
+
+
+def format_memory(memory_mb: str | None) -> str:
+    """A node's RSS in at most five characters ("56.4M", "640M", "1.23G"), or "-" if unknown."""
+    try:
+        megabytes = float(memory_mb) if memory_mb is not None else None
+    except ValueError:
+        megabytes = None
+    if megabytes is None:
+        return "-"
+    if megabytes < 100:
+        return f"{megabytes:.1f}M"
+    if megabytes < 1000:
+        return f"{megabytes:.0f}M"
+    return f"{megabytes / 1024:.2f}G"
+
+
+def rate_column_header(report: TopicReport) -> str:
+    """The third column's header for `report`'s category: "Hz" unless a rate means nothing there.
+
+    A node has no publish rate, so its column shows memory ("Mem"); an
+    action's status topic only publishes on transitions, so its column
+    shows what the server is doing now ("State").
+    """
+    if report.tier == "node":
+        return "Mem"
+    if report.msg_type == _ACTION_MSG_TYPE and report.tier == "full":
+        return "State"
+    return "Hz"
+
+
+def rate_cell(report: TopicReport, header: str) -> str:
+    """The third column's cell for `report`, under `header` (see `rate_column_header`)."""
+    if header == "Mem":
+        return format_memory(report.status.values.get("memory_mb"))
+    if header == "State":
+        return _ACTION_STATE_CELLS.get(report.status.values.get("current_status", ""), _ACTION_IDLE_CELL)
+    # A latched topic's "rate" is just its burst of initial messages --
+    # meaningless for something that publishes once.
+    return format_rate(None if quiet_label(report.status) == LATCHED_LABEL else report.rate_hz)
+
+
+def display_name(topic: str, prefix: str) -> str:
+    """`topic` as a Topic Panel row shows it: `prefix` stripped, and an action's status topic as the action."""
+    name = topic[len(prefix) :]
+    if name.endswith(ACTION_STATUS_SUFFIX) and len(name) > len(ACTION_STATUS_SUFFIX):
+        return name[: -len(ACTION_STATUS_SUFFIX)]
+    return name
+
+
 def format_rate(rate_hz: float | None) -> str:
     """A rate in at most five characters ("9.87", "12.3", "28.9k"), or "-" when none is available yet."""
     if rate_hz is None:
@@ -167,7 +228,10 @@ class TopicDetailTable(NavDataTable):
     Hz comes straight from `TopicVitals.rate_hz()`, which is already
     updated on every message arrival for every subscribed topic regardless
     of tier or content-check decimation -- displaying it here is free, not
-    an extra measurement.
+    an extra measurement. Two categories swap it for something that means
+    more there (see `rate_column_header`): Nodes shows memory, Nav2
+    Actions the server's current state. Nav2 Actions rows are also named
+    for the action, not its `/_action/status` topic (`display_name`).
 
     A 4th column appears when the visible category's reports carry a
     `CheckStatus.topic_panel_column` (e.g. odometry's "Cov"), and disappears
@@ -194,6 +258,8 @@ class TopicDetailTable(NavDataTable):
         self._marquee_offset: dict[str, int] = {}
         self._marquee_direction: dict[str, int] = {}
         self._extra_column_header: str | None = None
+        # "Hz" for most categories; see `rate_column_header`.
+        self._rate_column_header = "Hz"
         self._topic_width = TOPIC_COLUMN_WIDTH
         # Namespace shared by every visible topic, stripped from each row
         # and shown once in the column header instead (see `common_topic_prefix`).
@@ -211,7 +277,7 @@ class TopicDetailTable(NavDataTable):
         # untruncated message is always available in the detail pane below.
         self.add_column(topic_header(self._topic_prefix, self._topic_width), key="topic", width=self._topic_width)
         self.add_column("Status", key="status", width=STATUS_COLUMN_WIDTH)
-        self.add_column("Hz", key="rate", width=RATE_COLUMN_WIDTH)
+        self.add_column(self._rate_column_header, key="rate", width=RATE_COLUMN_WIDTH)
         if self._extra_column_header is not None:
             self.add_column(self._extra_column_header, key=EXTRA_COLUMN_KEY, width=EXTRA_COLUMN_WIDTH)
 
@@ -267,9 +333,11 @@ class TopicDetailTable(NavDataTable):
         }
 
         extra_header = self._extra_column_header_for(visible.values())
+        rate_header = next((rate_column_header(report) for report in visible.values()), "Hz")
         prefix = common_topic_prefix(sorted(visible))
-        if extra_header != self._extra_column_header or prefix != self._topic_prefix:
+        if (extra_header, rate_header, prefix) != (self._extra_column_header, self._rate_column_header, self._topic_prefix):
             self._extra_column_header = extra_header
+            self._rate_column_header = rate_header
             self._topic_prefix = prefix
             self._reports_by_topic = visible
             self._fit_topic_column(columns_changed=True)
@@ -324,7 +392,7 @@ class TopicDetailTable(NavDataTable):
         self._needs_rebuild = False
 
     def _display_name(self, topic: str) -> str:
-        return topic[len(self._topic_prefix) :]
+        return display_name(topic, self._topic_prefix)
 
     def _topic_cell(self, topic: str) -> str:
         """The Topic cell: the name (prefix stripped), tail-first if too long, scrolling only if even that fails."""
@@ -347,10 +415,7 @@ class TopicDetailTable(NavDataTable):
                 self.update_cell(report.topic, EXTRA_COLUMN_KEY, "")
             return
         self.update_cell(report.topic, "status", status_cell(report))
-        # A latched topic's "rate" is just its burst of initial messages --
-        # meaningless for something that publishes once.
-        rate = None if quiet_label(report.status) == LATCHED_LABEL else report.rate_hz
-        self.update_cell(report.topic, "rate", format_rate(rate))
+        self.update_cell(report.topic, "rate", rate_cell(report, self._rate_column_header))
         if self._extra_column_header is not None:
             self.update_cell(report.topic, EXTRA_COLUMN_KEY, report.status.topic_panel_value or "-")
 
