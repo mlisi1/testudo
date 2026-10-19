@@ -35,6 +35,11 @@ covariance sanity, TF tree health) those tools don't cover out of the box.
   only, in their own **Excluded Topics** category rather than vanishing,
   and can be managed live from the TUI's Options screen (`o`), which
   persists a rule back to the config file so it survives a restart.
+- **Quiet is not dead.** A latched (transient_local) topic like
+  `/robot_description` reads `● latched`, not STALE. A topic that only
+  publishes when something happens (behavior tree logs, action goal
+  statuses, or anything you declare with `event_driven: true`) reads
+  `◌ idle`.
 - **Built-in content checks**, all through the same plugin interface
   external users build against:
 
@@ -82,7 +87,8 @@ $ testudo check
 ```
 
 `testudo watch` shows the same data live, in four panes visible at once:
-a **status bar** (hostname, ROS distro, uptime, pause state), a **plugin
+a **status bar** (ROS distro, domain, uptime, pause state, and the overall
+verdict with per-severity counts), a **plugin
 panel** (one row per category with a per-severity icon+count breakdown),
 a **topic panel** (every topic in the highlighted category, with its
 status and publish rate in Hz), and a **detail panel** (the highlighted
