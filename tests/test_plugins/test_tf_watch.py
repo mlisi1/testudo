@@ -135,3 +135,18 @@ def test_tf_static_edges_are_never_stale() -> None:
 
 def test_default_thresholds_are_empty() -> None:
     assert TFWatchPlugin.default_thresholds() == {}
+
+
+def test_reset_clears_the_tree_but_keeps_watched_pairs_and_window() -> None:
+    plugin = TFWatchPlugin(related_topics={"tf_static": "/tf_static"}, buffer_window_seconds=3.0)
+    plugin.set_watched_pairs([("map", "odom")])
+    plugin.on_tick(0.0)
+    plugin.on_message("/tf", _tf_message(_transform("map", "odom")))
+    plugin.reset()
+    assert plugin.get_status().message == "no transforms received yet"
+    plugin.on_message("/tf", _tf_message(_transform("map", "base_link")))
+    status = plugin.get_status()
+    assert "TF-002" in status.codes  # still watching map -> odom
+    assert plugin.related_topics == {"tf_static": "/tf_static"}
+    plugin.on_tick(5.0)
+    assert "TF-003" in plugin.get_status().codes  # 3 s window kept

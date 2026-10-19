@@ -75,6 +75,17 @@ class TFWatchPlugin(CheckPlugin):
         """
         self._watched_pairs = list(pairs)
 
+    def reset(self) -> None:
+        """Clear the observed tree, keeping the watched pairs and buffer window.
+
+        Both are configuration (set after construction, from `tf:`), not
+        accumulated state -- the base class's re-run of `__init__` would
+        silently drop the watched pairs, and every chain check with them.
+        """
+        watched_pairs = self._watched_pairs
+        self.__init__(self.thresholds, self.related_topics, self._buffer_window_seconds)
+        self._watched_pairs = watched_pairs
+
     def on_tick(self, now_seconds: float) -> None:
         self._now = now_seconds
 
