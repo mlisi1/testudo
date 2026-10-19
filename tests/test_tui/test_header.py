@@ -48,3 +48,36 @@ def test_uptime_advances_on_its_own_without_any_external_poll() -> None:
             assert header.uptime_seconds > first_reading
 
     asyncio.run(body())
+
+
+def test_weighted_health_maps_score_to_fraction() -> None:
+    from testudo.plugins.base import CheckStatus, Severity
+    from testudo.tui.widgets.header import weighted_health
+
+    assert weighted_health(CheckStatus(Severity.OK, "overall", "", values={"weighted_score": "0"})) == 1.0
+    assert weighted_health(CheckStatus(Severity.OK, "overall", "", values={"weighted_score": "0.5"})) == 0.75
+    assert weighted_health(CheckStatus(Severity.STALE, "overall", "", values={"weighted_score": "3"})) == 0.0
+    assert weighted_health(CheckStatus(Severity.OK, "overall", "")) is None
+
+
+def test_health_gauge_is_fixed_width() -> None:
+    from testudo.tui.widgets.header import health_gauge
+
+    assert health_gauge(1.0) == "▕██████████▏"
+    assert health_gauge(0.0) == "▕          ▏"
+    assert health_gauge(0.81) == "▕████████▏ ▏"
+    assert len(health_gauge(0.37)) == 12
+
+
+def test_verdict_markup_lists_non_ok_counts_and_gauge_only_when_weighted() -> None:
+    from rich.text import Text
+
+    from testudo.plugins.base import CheckStatus, Severity
+    from testudo.tui.widgets.header import verdict_markup
+
+    counts = {Severity.OK: 30, Severity.ERROR: 6, Severity.WARN: 3}
+    worst = CheckStatus(Severity.ERROR, "overall", "")
+    assert Text.from_markup(verdict_markup(worst, counts, wide=True)).plain == "✗ FAULT ✗6 ▲3"
+    both = CheckStatus(Severity.ERROR, "overall", "", values={"weighted_score": "0.38"})
+    assert Text.from_markup(verdict_markup(both, counts, wide=False)).plain == "✗ FAULT ✗6 ▲3  81%"
+    assert "weighted ▕" in Text.from_markup(verdict_markup(both, counts, wide=True)).plain

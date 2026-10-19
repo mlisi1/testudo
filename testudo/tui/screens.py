@@ -6,6 +6,8 @@ have to select into one entry at a time. Plus a help overlay.
 """
 from __future__ import annotations
 
+from collections import Counter
+
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.screen import ModalScreen, Screen
@@ -74,6 +76,10 @@ class DashboardScreen(Screen):
         header = self.query_one(TestudoHeader)
         header.sim_time_active = self.app.sim_time_active
         header.paused = self.app.paused
+        snapshot = self.app.latest_snapshot
+        # Same scope as `overall` itself: topics only, not node-profiling rows.
+        counts = Counter(report.status.severity for report in snapshot.reports if report.tier != "node")
+        header.verdict = (snapshot.overall, dict(counts))
 
     def on_snapshot(self, snapshot: WatchSnapshot) -> None:
         self.sync_header()
