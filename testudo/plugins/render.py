@@ -90,7 +90,8 @@ def sparkline(
     `floor` (e.g. 0 for a σ or a rate) pins the bottom of the scale instead,
     so small noise on a large steady value reads as steady, not as spikes.
     A flat window renders as a flat mid-height line rather than all-bottom,
-    so "steady" doesn't read as "zero". Non-finite samples render as a
+    so "steady" doesn't read as "zero" -- unless it sits right at `floor`,
+    where all-bottom is exactly what it means. Non-finite samples render as a
     space (a gap). Empty string for no samples.
     """
     values = list(samples)
@@ -108,7 +109,7 @@ def sparkline(
         if not math.isfinite(value):
             chars.append(" ")
         elif high - low <= 0:
-            chars.append(SPARK_LEVELS[top // 2])
+            chars.append(SPARK_LEVELS[0] if floor is not None and value <= floor else SPARK_LEVELS[top // 2])
         else:
             chars.append(SPARK_LEVELS[round((value - low) / (high - low) * top)])
     color = SEVERITY_COLORS.get(severity, "white")

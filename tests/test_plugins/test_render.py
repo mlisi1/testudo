@@ -63,6 +63,10 @@ def test_sparkline_floor_keeps_noise_on_a_steady_value_flat() -> None:
     assert _plain(sparkline([10.0, 10.2, 9.9])) != "███"
 
 
+def test_sparkline_flat_at_floor_is_all_bottom() -> None:
+    assert _plain(sparkline([0.0, 0.0, 0.0], floor=0.0)) == "▁▁▁"
+
+
 def test_downsample_averages_consecutive_chunks() -> None:
     assert downsample([1.0, 3.0, 5.0, 7.0], 2) == [2.0, 6.0]
     assert downsample([1.0, 2.0], 5) == [1.0, 2.0]
