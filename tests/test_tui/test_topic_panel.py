@@ -85,3 +85,37 @@ def test_status_cell_presence_reads_as_present_not_ok() -> None:
 
 def test_status_cell_a_problem_outranks_quiet() -> None:
     assert "ERROR" in status_cell(_report("full", Severity.ERROR, values={"idle_for_s": "3.0"}))
+
+
+def test_common_topic_prefix_is_a_whole_shared_namespace() -> None:
+    from testudo.tui.widgets.topic_panel import common_topic_prefix
+
+    topics = ["/front_camera/camera/color/image_raw", "/front_camera/camera/depth/image_raw"]
+    assert common_topic_prefix(topics) == "/front_camera/camera/"
+    assert common_topic_prefix(["/front_camera/color", "/front_camera/compressed"]) == "/front_camera/"
+    assert common_topic_prefix(["/odom", "/odometry/gps"]) == ""
+    assert common_topic_prefix(["/a/b"]) == ""
+
+
+def test_common_topic_prefix_never_swallows_a_whole_topic() -> None:
+    from testudo.tui.widgets.topic_panel import common_topic_prefix
+
+    assert common_topic_prefix(["/cam/", "/cam/info"]) == ""
+
+
+def test_tail_first_keeps_the_trailing_segments() -> None:
+    from testudo.tui.widgets.topic_panel import tail_first
+
+    name = "front_camera/camera/aligned_depth_to_color/image_raw/zstd"
+    assert tail_first("short", 10) == "short"
+    assert tail_first(name, 40) == "…/aligned_depth_to_color/image_raw/zstd"
+    assert tail_first(name, 16) == "…/image_raw/zstd"
+    assert tail_first("a/very_long_last_segment_name", 10) is None
+
+
+def test_topic_header_shows_prefix_or_its_tail() -> None:
+    from testudo.tui.widgets.topic_panel import topic_header
+
+    assert topic_header("", 30) == "Topic"
+    assert topic_header("/front_camera/camera/", 40) == "Topic  /front_camera/camera/"
+    assert topic_header("/front_camera/camera/", 20) == "Topic  …mera/camera/"

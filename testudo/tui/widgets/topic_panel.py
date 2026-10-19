@@ -7,11 +7,13 @@ from testudo.tui.keybinds import NavDataTable
 
 #: Smallest text capacity of the "Topic" column. The column takes whatever
 #: width the pane has left after the other columns (see
-#: `TopicDetailTable._fit_topic_column`), never less than this. A name
-#: longer than the column scrolls back and forth (see `_advance_marquee`)
-#: rather than being hard-clipped or growing the column to fit -- sizing
-#: it from the pane, not from its content, is what leaves room for
-#: Status/Hz without a horizontal scrollbar.
+#: `TopicDetailTable._fit_topic_column`), never less than this. Names are
+#: shown with the category's shared namespace stripped (it's in the column
+#: header instead), and a name still too long keeps its *tail* (see
+#: `tail_first`); only one whose last segment alone doesn't fit scrolls
+#: back and forth (see `_advance_marquee`). Sizing the column from the
+#: pane, not from its content, is what leaves room for Status/Hz without
+#: a horizontal scrollbar.
 TOPIC_COLUMN_WIDTH = 16
 
 STATUS_COLUMN_WIDTH = 9
@@ -55,6 +57,55 @@ def status_cell(report: TopicReport) -> str:
     style = SEVERITY_COLORS.get(report.status.severity, "white")
     icon = SEVERITY_ICONS.get(report.status.severity, "?")
     return f"[{style}]{icon} {label}[/{style}]"
+
+
+def common_topic_prefix(topics: list[str]) -> str:
+    """The namespace every one of `topics` shares, ending in "/" -- or "" if there's none worth stripping.
+
+    Only a whole-namespace prefix counts (`/front_camera/camera/` for
+    `/front_camera/camera/color/image_raw` and `.../depth/image_raw`, never
+    a partial segment like `/front_camera/camera/co`), it needs at least
+    two topics to be "common", and it never swallows a topic whole.
+    """
+    if len(topics) < 2:
+        return ""
+    shared = topics[0]
+    for topic in topics[1:]:
+        while not topic.startswith(shared):
+            shared = shared[:-1]
+    prefix = shared[: shared.rfind("/") + 1]
+    if len(prefix) <= 1 or any(len(topic) == len(prefix) for topic in topics):
+        return ""
+    return prefix
+
+
+def tail_first(name: str, width: int) -> str | None:
+    """`name` if it fits in `width`, else "…/" plus as many trailing path segments as fit.
+
+    The end of a topic name is the part that tells topics apart
+    (`.../image_raw` vs. `.../image_raw/zstd`), so it's what gets kept.
+    None if not even the last segment fits -- the caller scrolls the full
+    name instead.
+    """
+    if len(name) <= width:
+        return name
+    segments = name.split("/")
+    for start in range(1, len(segments)):
+        tail = "…/" + "/".join(segments[start:])
+        if len(tail) <= width:
+            return tail
+    return None
+
+
+def topic_header(prefix: str, width: int) -> str:
+    """The Topic column's header: "Topic", plus the stripped common prefix (its tail, if it must be cut)."""
+    if not prefix:
+        return "Topic"
+    label = f"Topic  {prefix}"
+    if len(label) <= width:
+        return label
+    room = width - len("Topic  …")
+    return f"Topic  …{prefix[-room:]}" if room > 0 else "Topic"
 
 
 def marquee_window(text: str, width: int, offset: int) -> str:
@@ -144,6 +195,9 @@ class TopicDetailTable(NavDataTable):
         self._marquee_direction: dict[str, int] = {}
         self._extra_column_header: str | None = None
         self._topic_width = TOPIC_COLUMN_WIDTH
+        # Namespace shared by every visible topic, stripped from each row
+        # and shown once in the column header instead (see `common_topic_prefix`).
+        self._topic_prefix = ""
 
     def on_mount(self) -> None:
         self._add_columns()
@@ -155,7 +209,7 @@ class TopicDetailTable(NavDataTable):
         # free to dominate the row and push the other columns off-screen
         # (needing a horizontal scroll to see them at all). The full,
         # untruncated message is always available in the detail pane below.
-        self.add_column("Topic", key="topic", width=self._topic_width)
+        self.add_column(topic_header(self._topic_prefix, self._topic_width), key="topic", width=self._topic_width)
         self.add_column("Status", key="status", width=STATUS_COLUMN_WIDTH)
         self.add_column("Hz", key="rate", width=RATE_COLUMN_WIDTH)
         if self._extra_column_header is not None:
@@ -213,8 +267,10 @@ class TopicDetailTable(NavDataTable):
         }
 
         extra_header = self._extra_column_header_for(visible.values())
-        if extra_header != self._extra_column_header:
+        prefix = common_topic_prefix(sorted(visible))
+        if extra_header != self._extra_column_header or prefix != self._topic_prefix:
             self._extra_column_header = extra_header
+            self._topic_prefix = prefix
             self._reports_by_topic = visible
             self._fit_topic_column(columns_changed=True)
             return
@@ -267,9 +323,19 @@ class TopicDetailTable(NavDataTable):
             self.move_cursor(row=self._topic_order.index(previous_selection))
         self._needs_rebuild = False
 
+    def _display_name(self, topic: str) -> str:
+        return topic[len(self._topic_prefix) :]
+
+    def _topic_cell(self, topic: str) -> str:
+        """The Topic cell: the name (prefix stripped), tail-first if too long, scrolling only if even that fails."""
+        name = self._display_name(topic)
+        fitted = tail_first(name, self._topic_width)
+        if fitted is not None:
+            return fitted
+        return marquee_window(name, self._topic_width, self._marquee_offset.get(topic, 0))
+
     def _write_row(self, report: TopicReport) -> None:
-        offset = self._marquee_offset.get(report.topic, 0)
-        self.update_cell(report.topic, "topic", marquee_window(report.topic, self._topic_width, offset))
+        self.update_cell(report.topic, "topic", self._topic_cell(report.topic))
         if report.tier == "excluded":
             # Excluded Topics shows only the name -- there's no status or
             # rate behind it (no subscription of any kind, by design), so
@@ -290,17 +356,18 @@ class TopicDetailTable(NavDataTable):
 
     def _advance_marquee(self) -> None:
         for topic in self._topic_order:
-            if len(topic) <= self._topic_width:
+            name = self._display_name(topic)
+            if tail_first(name, self._topic_width) is not None:
                 continue
             offset, direction = next_marquee_offset(
-                len(topic),
+                len(name),
                 self._topic_width,
                 self._marquee_offset.get(topic, 0),
                 self._marquee_direction.get(topic, 1),
             )
             self._marquee_offset[topic] = offset
             self._marquee_direction[topic] = direction
-            self.update_cell(topic, "topic", marquee_window(topic, self._topic_width, offset))
+            self.update_cell(topic, "topic", marquee_window(name, self._topic_width, offset))
 
     @property
     def selected_topic(self) -> str | None:
