@@ -71,7 +71,7 @@ class CategorySummaryTable(NavDataTable):
         # its single widest cell ever seen, so one long category name would
         # otherwise be free to push the others -- or the whole table --
         # wider than the pane, forcing a horizontal scroll to see the rest.
-        self.add_column("Category", key="category", width=14)
+        self.add_column("Category", key="category", width=15)
         self.add_column("Status", key="status", width=12)
 
     @property

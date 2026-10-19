@@ -2,14 +2,24 @@
 from __future__ import annotations
 
 from testudo.core.topic_report import TopicReport
-from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_LABELS
+from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_ICONS, SEVERITY_LABELS
 from testudo.tui.keybinds import NavDataTable
 
-#: Text capacity of the "Topic" column. A name longer than this scrolls
-#: back and forth (see `_advance_marquee`) rather than being hard-clipped
-#: or growing the column to fit -- keeping this narrow is what leaves room
-#: for Status/Hz without a horizontal scrollbar.
+#: Smallest text capacity of the "Topic" column. The column takes whatever
+#: width the pane has left after the other columns (see
+#: `TopicDetailTable._fit_topic_column`), never less than this. A name
+#: longer than the column scrolls back and forth (see `_advance_marquee`)
+#: rather than being hard-clipped or growing the column to fit -- sizing
+#: it from the pane, not from its content, is what leaves room for
+#: Status/Hz without a horizontal scrollbar.
 TOPIC_COLUMN_WIDTH = 16
+
+STATUS_COLUMN_WIDTH = 8
+RATE_COLUMN_WIDTH = 6
+
+#: Columns reserved for the vertical scrollbar whether or not it's showing,
+#: so the Topic column doesn't change width as rows come and go.
+_SCROLLBAR_WIDTH = 2
 
 #: Width of the optional plugin-defined extra column (`CheckStatus.
 #: topic_panel_column`/`topic_panel_value`) -- short by design, same budget
@@ -57,6 +67,11 @@ class TopicDetailTable(NavDataTable):
     Topic/Status/Hz, the fields that matter for scanning a list. The full
     status message is only shown in the detail pane below, not here.
 
+    Status/Hz (and the extra column) are fixed-width; Topic takes all the
+    width the pane has left over, re-fitted on resize, so a wide terminal
+    shows full topic names instead of a 16-character window beside a
+    mostly empty pane.
+
     Hz comes straight from `TopicVitals.rate_hz()`, which is already
     updated on every message arrival for every subscribed topic regardless
     of tier or content-check decimation -- displaying it here is free, not
@@ -65,7 +80,7 @@ class TopicDetailTable(NavDataTable):
     A 4th column appears when the visible category's reports carry a
     `CheckStatus.topic_panel_column` (e.g. odometry's "Cov"), and disappears
     again for a category that doesn't (e.g. "Other Topics") -- see
-    `_extra_column_header_for`/`_set_extra_column`. A topic currently
+    `_extra_column_header_for`/`_fit_topic_column`. A topic currently
     liveness-overridden (stale/no-messages) has no `topic_panel_column` of
     its own even within such a category; its cell just reads "-".
 
@@ -87,17 +102,54 @@ class TopicDetailTable(NavDataTable):
         self._marquee_offset: dict[str, int] = {}
         self._marquee_direction: dict[str, int] = {}
         self._extra_column_header: str | None = None
+        self._topic_width = TOPIC_COLUMN_WIDTH
 
     def on_mount(self) -> None:
+        self._add_columns()
+        self.set_interval(MARQUEE_INTERVAL_SECONDS, self._advance_marquee)
+
+    def _add_columns(self) -> None:
         # Fixed widths, not auto (content-fit): an auto "Topic" column grows
         # to fit the single longest topic name it's ever shown, which was
         # free to dominate the row and push the other columns off-screen
         # (needing a horizontal scroll to see them at all). The full,
         # untruncated message is always available in the detail pane below.
-        self.add_column("Topic", key="topic", width=TOPIC_COLUMN_WIDTH)
-        self.add_column("Status", key="status", width=8)
-        self.add_column("Hz", key="rate", width=6)
-        self.set_interval(MARQUEE_INTERVAL_SECONDS, self._advance_marquee)
+        self.add_column("Topic", key="topic", width=self._topic_width)
+        self.add_column("Status", key="status", width=STATUS_COLUMN_WIDTH)
+        self.add_column("Hz", key="rate", width=RATE_COLUMN_WIDTH)
+        if self._extra_column_header is not None:
+            self.add_column(self._extra_column_header, key=EXTRA_COLUMN_KEY, width=EXTRA_COLUMN_WIDTH)
+
+    def _topic_width_for(self, pane_width: int) -> int:
+        """The Topic column's text capacity in a `pane_width`-wide table: all the width the others don't use."""
+        other_widths = [STATUS_COLUMN_WIDTH, RATE_COLUMN_WIDTH]
+        if self._extra_column_header is not None:
+            other_widths.append(EXTRA_COLUMN_WIDTH)
+        padding = 2 * self.cell_padding * (len(other_widths) + 1)
+        return max(TOPIC_COLUMN_WIDTH, pane_width - sum(other_widths) - padding - _SCROLLBAR_WIDTH)
+
+    def _fit_topic_column(self, *, columns_changed: bool = False) -> None:
+        """Re-create the columns if the Topic column's width no longer matches the pane.
+
+        A column's width is fixed when it's added, so a different width
+        means clearing and re-adding every column -- only done when the
+        pane was resized or (`columns_changed`) the extra column came,
+        went, or changed label, all rare, and `_rebuild` restores the
+        selection afterward.
+        """
+        topic_width = self._topic_width_for(self.size.width)
+        if topic_width == self._topic_width and not columns_changed:
+            return
+        self._topic_width = topic_width
+        self._marquee_offset.clear()
+        self._marquee_direction.clear()
+        previous_selection = self.selected_topic
+        self.clear(columns=True)
+        self._add_columns()
+        self._rebuild(self._reports_by_topic, previous_selection)
+
+    def on_resize(self, event) -> None:
+        self._fit_topic_column()
 
     @property
     def sort_by_severity(self) -> bool:
@@ -121,8 +173,10 @@ class TopicDetailTable(NavDataTable):
 
         extra_header = self._extra_column_header_for(visible.values())
         if extra_header != self._extra_column_header:
-            self._set_extra_column(extra_header)
-            self._needs_rebuild = True
+            self._extra_column_header = extra_header
+            self._reports_by_topic = visible
+            self._fit_topic_column(columns_changed=True)
+            return
 
         if self._needs_rebuild or set(self._topic_order) != set(visible):
             self._rebuild(visible)
@@ -149,16 +203,8 @@ class TopicDetailTable(NavDataTable):
                 return report.status.topic_panel_column
         return None
 
-    def _set_extra_column(self, header: str | None) -> None:
-        """Add/remove/relabel the extra column to match `header` (None = no extra column)."""
-        if self._extra_column_header is not None:
-            self.remove_column(EXTRA_COLUMN_KEY)
-        if header is not None:
-            self.add_column(header, key=EXTRA_COLUMN_KEY, width=EXTRA_COLUMN_WIDTH)
-        self._extra_column_header = header
-
-    def _rebuild(self, visible: dict[str, TopicReport]) -> None:
-        previous_selection = self.selected_topic
+    def _rebuild(self, visible: dict[str, TopicReport], previous_selection: str | None = None) -> None:
+        previous_selection = previous_selection or self.selected_topic
         if self._sort_by_severity:
             self._topic_order = sorted(visible, key=lambda t: (-visible[t].status.severity, t))
         else:
@@ -182,7 +228,7 @@ class TopicDetailTable(NavDataTable):
 
     def _write_row(self, report: TopicReport) -> None:
         offset = self._marquee_offset.get(report.topic, 0)
-        self.update_cell(report.topic, "topic", marquee_window(report.topic, TOPIC_COLUMN_WIDTH, offset))
+        self.update_cell(report.topic, "topic", marquee_window(report.topic, self._topic_width, offset))
         if report.tier == "excluded":
             # Excluded Topics shows only the name -- there's no status or
             # rate behind it (no subscription of any kind, by design), so
@@ -195,24 +241,25 @@ class TopicDetailTable(NavDataTable):
             return
         label = SEVERITY_LABELS.get(report.status.severity, str(report.status.severity))
         style = SEVERITY_COLORS.get(report.status.severity, "white")
-        self.update_cell(report.topic, "status", f"[{style}]{label}[/{style}]")
+        icon = SEVERITY_ICONS.get(report.status.severity, "?")
+        self.update_cell(report.topic, "status", f"[{style}]{icon} {label}[/{style}]")
         self.update_cell(report.topic, "rate", format_rate(report.rate_hz))
         if self._extra_column_header is not None:
             self.update_cell(report.topic, EXTRA_COLUMN_KEY, report.status.topic_panel_value or "-")
 
     def _advance_marquee(self) -> None:
         for topic in self._topic_order:
-            if len(topic) <= TOPIC_COLUMN_WIDTH:
+            if len(topic) <= self._topic_width:
                 continue
             offset, direction = next_marquee_offset(
                 len(topic),
-                TOPIC_COLUMN_WIDTH,
+                self._topic_width,
                 self._marquee_offset.get(topic, 0),
                 self._marquee_direction.get(topic, 1),
             )
             self._marquee_offset[topic] = offset
             self._marquee_direction[topic] = direction
-            self.update_cell(topic, "topic", marquee_window(topic, TOPIC_COLUMN_WIDTH, offset))
+            self.update_cell(topic, "topic", marquee_window(topic, self._topic_width, offset))
 
     @property
     def selected_topic(self) -> str | None:

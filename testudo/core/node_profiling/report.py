@@ -1,7 +1,7 @@
 """NodeStat: one process's resource reading plus its rolled-up CheckStatus."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from diagnostic_msgs.msg import DiagnosticArray
 
@@ -98,8 +98,9 @@ def build_status(
         ctx_switch_severity = evaluate_zone(sample.ctx_switches_involuntary_per_sec, ctx_switch_zone)
         if ctx_switch_severity >= Severity.WARN:
             codes["NODE-001"] = colorize(
-                f"high involuntary context-switch rate ({sample.ctx_switches_involuntary_per_sec:.0f}/s) "
-                "-- possible CPU starvation",
+                # Kept short: a message wider than the Detail Panel wraps,
+                # taking a row from the readings it sits under.
+                f"possible CPU starvation: preempted {sample.ctx_switches_involuntary_per_sec:.0f} times/s",
                 ctx_switch_severity,
             )
 
@@ -154,6 +155,72 @@ def build_status(
     )
 
 
+def format_core_ranges(cores: str) -> str:
+    """"0,1,2,3,8" -> "0-3,8": a comma-separated core list with consecutive runs collapsed.
+
+    A process allowed on every core of a 16-core machine otherwise reads
+    "0,1,2,...,15" -- wider than everything else in the Detail Panel put
+    together. Returned unchanged if it isn't a plain list of integers.
+    """
+    try:
+        numbers = sorted({int(core) for core in cores.split(",")})
+    except ValueError:
+        return cores
+    ranges: list[str] = []
+    start = previous = numbers[0]
+    for number in numbers[1:] + [None]:
+        if number is not None and number == previous + 1:
+            previous = number
+            continue
+        ranges.append(str(start) if start == previous else f"{start}-{previous}")
+        if number is not None:
+            start = previous = number
+    return ",".join(ranges)
+
+
+def detail_panel_values(values: dict[str, str]) -> dict[str, str]:
+    """`build_status`'s `values`, regrouped for reading in the Detail Panel rather than for plotting.
+
+    The published `DiagnosticStatus` wants one plain number per key
+    (`memory_mb`, `memory_percent`, `ctx_switches_voluntary`, ...) so a
+    consumer can plot any of them; on screen that's 16 separate rows,
+    several with labels long enough that the Detail Panel's grid can't
+    fit two columns side by side in a tiled terminal -- and the whole
+    thing scrolls. This pairs readings that belong together onto one row
+    under a short label, in the order a person looks for them: who runs
+    it and how it's doing, then CPU, memory, and scheduling. The process
+    name and PID aren't repeated here -- `node_stat_to_topic_report` puts
+    them in the panel's header line. Only what `values`
+    actually holds is shown (affinity, nice, user, open FDs and GPU are
+    each absent on some platforms).
+    """
+    shown: dict[str, str] = {}
+
+    def copy(key: str, source: str, formatter=lambda value: value) -> None:
+        if source in values:
+            shown[key] = formatter(values[source])
+
+    copy("user", "username")
+    copy("state", "status")
+    copy("uptime", "uptime")
+    copy("cpu_percent", "cpu_percent")
+    copy("cpu_affinity", "cpu_affinity", format_core_ranges)
+    copy("nice", "nice")
+    if "memory_mb" in values:
+        shown["memory"] = f"{values['memory_mb']} MB ({values.get('memory_percent', '?')} %)"
+    copy("gpu_memory_mb", "gpu_memory_mb")
+    if "threads" in values:
+        shown["threads"] = f"{values['threads']} (+{values.get('subprocesses', '0')} subproc)"
+    copy("open_fds", "open_fds")
+    if "ctx_switches_voluntary" in values:
+        shown["ctx_switches"] = (
+            f"{values['ctx_switches_voluntary']} vol / {values.get('ctx_switches_involuntary', '?')} invol"
+        )
+    # The starvation signal (see build_status): involuntary switches per second.
+    copy("preempted_per_sec", "ctx_switches_involuntary_per_sec")
+    return shown
+
+
 def node_stat_to_topic_report(stat: NodeStat) -> TopicReport:
     """Wrap `stat` in a synthetic `TopicReport` so it flows through the Plugin/Topic/Detail
     Panel machinery like any other check (see `tui/categorize.py`'s `NODES_CATEGORY`),
@@ -161,8 +228,18 @@ def node_stat_to_topic_report(stat: NodeStat) -> TopicReport:
     unresolved); `rate_hz=None` since there's no Hz concept for a process --
     the Topic Panel already renders a missing rate as "-", the same honest
     blank it uses when a real topic hasn't measured one yet.
+
+    The report's status carries `detail_panel_values`' regrouped values,
+    not `stat.status.values` as published -- this report only ever feeds
+    the TUI, while `build_node_diagnostic_array` publishes `stat.status`
+    itself, one plain number per key. `msg_type` (there is no message
+    behind a process) carries the OS process name and PID, which is what
+    the Detail Panel's header shows next to the node name -- one line
+    for both identities instead of a row spent on each.
     """
-    return TopicReport(topic=stat.identity, msg_type="process", tier="node", status=stat.status, rate_hz=None)
+    status = replace(stat.status, values=detail_panel_values(stat.status.values))
+    msg_type = f"{stat.process_name} ({stat.pid})"
+    return TopicReport(topic=stat.identity, msg_type=msg_type, tier="node", status=status, rate_hz=None)
 
 
 def build_node_diagnostic_array(stamp, stats: list[NodeStat], overall: CheckStatus) -> DiagnosticArray:

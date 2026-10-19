@@ -7,6 +7,9 @@ from textual.reactive import reactive
 from textual.widgets import Static
 
 
+_SEGMENT_SEPARATOR = " [dim]│[/dim] "
+
+
 def format_duration(seconds: float) -> str:
     """A compact `1h02m03s` / `2m03s` / `3s` duration string."""
     total = int(seconds)
@@ -56,12 +59,18 @@ class TestudoHeader(Static):
         # Wall clock is the overwhelmingly common case, so it's left implied
         # rather than spelled out; "clock: sim" only appears when sim time
         # is actually active, since that's the case worth flagging.
-        clock_segment = "  |  clock: sim" if self.sim_time_active else ""
-        flags = " [b][PAUSED][/b]" if self.paused else ""
-        return (
-            f"[b]testudo[/b]  |  ROS {self._ros_distro}  |  domain {self._ros_domain_id}  |  "
-            f"{self._dds_implementation}  |  uptime {format_duration(self.uptime_seconds)}{clock_segment}{flags}"
-        )
+        # Labels dimmed, values at full strength: the eye lands on what
+        # varies between robots/runs, not on the words "ROS"/"domain".
+        segments = [
+            f"[dim]ROS[/dim] {self._ros_distro}",
+            f"[dim]domain[/dim] {self._ros_domain_id}",
+            self._dds_implementation,
+            f"[dim]up[/dim] {format_duration(self.uptime_seconds)}",
+        ]
+        if self.sim_time_active:
+            segments.append("[dim]clock[/dim] sim")
+        flags = "  [b reverse] PAUSED [/b reverse]" if self.paused else ""
+        return f"[b]testudo[/b]  {_SEGMENT_SEPARATOR.join(segments)}{flags}"
 
     def watch_uptime_seconds(self) -> None:
         self.update(self._render_text())

@@ -1,7 +1,14 @@
 """build_status / node_stat_to_topic_report: synthetic data only, no live process needed."""
 from __future__ import annotations
 
-from testudo.core.node_profiling.report import NodeStat, build_status, format_duration, node_stat_to_topic_report
+from testudo.core.node_profiling.report import (
+    NodeStat,
+    build_status,
+    detail_panel_values,
+    format_core_ranges,
+    format_duration,
+    node_stat_to_topic_report,
+)
 from testudo.core.node_profiling.sampler import ProcessSample
 from testudo.plugins.base import Severity, ThresholdZone
 
@@ -168,7 +175,46 @@ def test_node_stat_to_topic_report_shape() -> None:
     )
     report = node_stat_to_topic_report(stat)
     assert report.topic == "/controller_server"
-    assert report.msg_type == "process"
+    assert report.msg_type == "controller_server (123)"  # shown in the Detail Panel header
     assert report.tier == "node"
     assert report.rate_hz is None
-    assert report.status is status
+    assert report.status.severity == status.severity
+    assert report.status.codes == status.codes
+    assert report.status.topic_panel_value == status.topic_panel_value
+
+
+def test_format_core_ranges_collapses_consecutive_cores() -> None:
+    assert format_core_ranges("0,1,2,3") == "0-3"
+    assert format_core_ranges("0,1,2,3,8,10,11") == "0-3,8,10-11"
+    assert format_core_ranges("5") == "5"
+    assert format_core_ranges("not,cores") == "not,cores"
+
+
+def test_detail_panel_values_pairs_related_readings_under_short_labels() -> None:
+    shown = detail_panel_values(_build(_sample(), gpu_memory_mb=312.0, num_children=2).values)
+    assert shown == {
+        "user": "robot",
+        "state": "running",
+        "uptime": "2m5s",
+        "cpu_percent": "10.0",
+        "cpu_affinity": "0-1",
+        "nice": "0",
+        "memory": "50.0 MB (1.50 %)",
+        "gpu_memory_mb": "312.0",
+        "threads": "4 (+2 subproc)",
+        "open_fds": "12",
+        "ctx_switches": "1000 vol / 5 invol",
+        "preempted_per_sec": "1.0",
+    }
+
+
+def test_detail_panel_values_omits_what_the_platform_did_not_report() -> None:
+    shown = detail_panel_values(_build(_sample(cpu_affinity=None, nice=None, username=None, num_fds=None)).values)
+    assert not {"cpu_affinity", "nice", "user", "open_fds", "gpu_memory_mb"} & set(shown)
+
+
+def test_published_values_keep_one_plain_number_per_key() -> None:
+    """Regrouping is for the TUI only -- `build_status` (what gets published) is untouched by it."""
+    values = _build(_sample()).values
+    assert values["memory_mb"] == "50.0"
+    assert values["ctx_switches_involuntary"] == "5"

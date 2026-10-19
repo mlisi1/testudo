@@ -468,3 +468,25 @@ def test_moving_cursor_up_on_an_empty_topic_table_does_not_crash() -> None:
             assert topics.selected_topic is None
 
     run(body())
+
+
+def test_topic_column_fills_the_pane_and_shows_status_icons() -> None:
+    """A wide terminal shows a long topic name in full rather than a 16-character window."""
+    long_topic = "/navigate_to_pose/_action/status"
+    reports = [TopicReport(long_topic, "nav_msgs/msg/Odometry", "full", CheckStatus(Severity.WARN, "l", "m"))]
+
+    async def body():
+        app = TestudoApp(StaticDataSource(reports, CheckStatus(Severity.WARN, "overall", "m")), ros_distro="jazzy")
+        async with app.run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            topics = app.screen.query_one(TopicDetailTable)
+            assert str(topics.get_cell(long_topic, "topic")) == long_topic
+            assert "▲ WARN" in str(topics.get_cell(long_topic, "status"))
+            wide = topics.ordered_columns[0].width
+
+            await pilot.resize_terminal(70, 30)
+            await pilot.pause()
+            assert topics.ordered_columns[0].width < wide
+            assert topics.selected_topic == long_topic
+
+    run(body())
