@@ -27,14 +27,23 @@ from typing import Any
 from sensor_msgs.msg import NavSatFix, NavSatStatus
 
 from testudo.plugins.base import (
-    SEVERITY_COLORS,
     CheckPlugin,
     CheckStatus,
     Severity,
     ThresholdZone,
+    colorize,
     evaluate_zone,
 )
-from testudo.plugins.render import meter
+from testudo.plugins.builtin.gnss_layout import (
+    fix_history,
+    horizontal_vertical,
+    position_line,
+    services,
+    short_fix_label,
+    sigma_cell,
+    sigma_h,
+)
+from testudo.plugins.render import downsample, meter, sparkline
 
 _NAVSATFIX_TYPE = "sensor_msgs/msg/NavSatFix"
 
@@ -45,13 +54,13 @@ _POSITION_AXES = ("x", "y", "z")
 
 _EARTH_RADIUS_M = 6371000.0
 
-#: Per-axis meter width on a wide-enough Detail Panel; collapses to one
-#: square (see `render.meter`) on a narrow one.
 _METER_SEGMENTS = 6
-_COMPACT_METER_SEGMENTS = 1
-#: Gap between the x/y/z chunks when they sit side by side on one row.
-_AXIS_GAP = "   "
-_AXIS_VALUE_WIDTH = 9
+
+#: The σh / jump-speed trends: one sample per this many seconds, this many kept.
+_TREND_SAMPLE_SECONDS = 1.0
+_TREND_SIZE = 60
+#: Cells a trend sparkline is averaged down to.
+_TREND_WIDTH = 20
 
 _FIX_DROPOUT_WINDOW_SIZE = 20
 
@@ -84,19 +93,6 @@ def _haversine_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) ->
     return _EARTH_RADIUS_M * c
 
 
-def _axis_chunk(axis: str, value: float, zone: ThresholdZone | None, segments: int) -> str:
-    """One axis's short label, its covariance value, and its meter -- e.g. "cov_x:   0.0001 ▮▮▮▮▮▮"."""
-    bar = meter(value, zone, segments)
-    meter_part = f" {bar}" if bar else ""
-    return f"cov_{axis}:{value:>{_AXIS_VALUE_WIDTH}.4g}{meter_part}"
-
-
-def _covariance_block(covariance: tuple[float, float, float], zone: ThresholdZone | None, segments: int, joiner: str) -> str:
-    """x/y/z covariance chunks joined side by side (`joiner=_AXIS_GAP`) or stacked (`joiner="\\n"`)."""
-    chunks = [_axis_chunk(axis, value, zone, segments) for axis, value in zip(_POSITION_AXES, covariance)]
-    return joiner.join(chunks) + "\n"
-
-
 class GnssPlugin(CheckPlugin):
     """Fix-status, covariance, dropout-ratio, jump-speed, and frame_id checks for sensor_msgs/NavSatFix."""
 
@@ -119,6 +115,11 @@ class GnssPlugin(CheckPlugin):
         self._jump_speed_mps: float | None = None
         self._dropout_window: deque[bool] = deque(maxlen=_FIX_DROPOUT_WINDOW_SIZE)
         self._dropout_ratio = 0.0
+        self._position: tuple[float, float, float] = (0.0, 0.0, 0.0)
+        self._service = 0
+        self._sigma_h_trend: deque[float] = deque(maxlen=_TREND_SIZE)
+        self._jump_trend: deque[float] = deque(maxlen=_TREND_SIZE)
+        self._last_trend_sample: float | None = None
 
     @classmethod
     def msg_types(cls) -> tuple[str, ...]:
@@ -139,11 +140,24 @@ class GnssPlugin(CheckPlugin):
             "fix_dropout_ratio": ThresholdZone(green=0.05, orange=0.2),
         }
 
+    def on_tick(self, now_seconds: float) -> None:
+        if self._message_count == 0:
+            return
+        if self._last_trend_sample is None or now_seconds - self._last_trend_sample >= _TREND_SAMPLE_SECONDS:
+            self._sigma_h_trend.append(sigma_h(self._position_covariance) if self._covariance_known() else math.nan)
+            self._jump_trend.append(self._jump_speed_mps if self._jump_speed_mps is not None else math.nan)
+            self._last_trend_sample = now_seconds
+
+    def _covariance_known(self) -> bool:
+        return self._covariance_type != NavSatFix.COVARIANCE_TYPE_UNKNOWN
+
     def on_message(self, topic: str, msg: Any) -> None:
         self._message_count += 1
         self._check_frame_id(msg.header.frame_id)
 
         self._status = msg.status.status
+        self._service = msg.status.service
+        self._position = (msg.latitude, msg.longitude, msg.altitude)
         self._covariance_type = msg.position_covariance_type
         self._position_covariance = tuple(
             float(msg.position_covariance[i]) for i in _POSITION_COVARIANCE_DIAG_INDICES
@@ -196,7 +210,7 @@ class GnssPlugin(CheckPlugin):
         fix_severity = Severity.ERROR if self._status == NavSatStatus.STATUS_NO_FIX else Severity.OK
 
         covariance_label = _COVARIANCE_TYPE_LABELS.get(self._covariance_type, str(self._covariance_type))
-        covariance_known = self._covariance_type != NavSatFix.COVARIANCE_TYPE_UNKNOWN
+        covariance_known = self._covariance_known()
         covariance_zone = self.thresholds.get("position_covariance")
         axis_severities = (
             [evaluate_zone(value, covariance_zone) for value in self._position_covariance]
@@ -247,41 +261,61 @@ class GnssPlugin(CheckPlugin):
             problems.append(f"frame_id changed (now '{self._last_frame_id}')")
         message = "; ".join(problems) if problems else f"{fix_label} nominal"
 
-        # Per-axis covariance leads the Detail Panel -- it's the single most
-        # actionable number here -- with x/y/z side by side (wide) or
-        # stacked with 1-segment meters (narrow), same wide/compact split as
-        # OdometryPlugin's own axis blocks. No paired lat/lon/alt the way
-        # Odometry pairs a value with its variance: unlike a robot-frame
-        # x/y/z position, a raw lat/lon isn't itself actionable here.
-        values: dict[str, str] = {}
-        if covariance_known:
-            values["position_covariance"] = _covariance_block(
-                self._position_covariance, covariance_zone, _METER_SEGMENTS, _AXIS_GAP
+        codes: dict[str, str] = {}
+        if fix_severity != Severity.OK:
+            codes["GNSS-001"] = colorize("no fix", fix_severity)
+        if covariance_severity != Severity.OK:
+            codes["GNSS-002"] = colorize(
+                f"position σ high ({', '.join(bad_axes)} m²; per-axis limit {covariance_zone.orange:g})"
+                if covariance_zone is not None and covariance_zone.orange is not None
+                else f"position σ high ({', '.join(bad_axes)} m²)",
+                covariance_severity,
             )
-            values["position_covariance_compact"] = _covariance_block(
-                self._position_covariance, covariance_zone, _COMPACT_METER_SEGMENTS, "\n"
-            )
-        else:
-            values["position_covariance"] = "n/a (covariance_type unknown)"
+        if dropout_severity != Severity.OK:
+            codes["GNSS-003"] = colorize(f"fix dropped in {sum(self._dropout_window)}/{len(self._dropout_window)}", dropout_severity)
+        if jump_severity != Severity.OK:
+            codes["GNSS-004"] = colorize(f"implausible jump at {self._jump_speed_mps:.3g} m/s", jump_severity)
+        if stuck_severity != Severity.OK:
+            codes["GNSS-005"] = colorize(f"fix identical for {self._stuck_count} messages", stuck_severity)
+        if invalid_severity != Severity.OK:
+            codes["GNSS-006"] = colorize(f"NaN/Inf in {self._invalid_ratio:.0%} of lat/lon/alt", invalid_severity)
+        if frame_id_severity != Severity.OK:
+            codes["GNSS-007"] = colorize(f"frame_id changed (now '{self._last_frame_id}')", frame_id_severity)
 
-        values.update(
-            {
-                "fix_status": fix_label,
-                "covariance_type": covariance_label,
-                "invalid_ratio": f"{self._invalid_ratio:.4g}",
-                "stuck_count": str(self._stuck_count),
-                "jump_speed_mps": f"{self._jump_speed_mps:.4g}" if self._jump_speed_mps is not None else "n/a",
-                "fix_dropout_ratio": f"{self._dropout_ratio:.4g}",
-                "frame_id": self._last_frame_id or "",
-            }
+        # σh/σv instead of three per-axis chunks: people think in "±26 cm
+        # horizontal". Each meter judges the worst single axis it
+        # summarizes against the per-axis zone, so the meter and the
+        # verdict above always agree.
+        var_h, var_v = horizontal_vertical(self._position_covariance)
+        var_x, var_y, _var_z = self._position_covariance
+        fix_chip = colorize(f"● {fix_label}", fix_severity)
+        horizontal = sigma_cell("σ horiz", var_h if covariance_known else None, covariance_zone, max(var_x, var_y))
+        vertical = sigma_cell("σ vert", var_v if covariance_known else None, covariance_zone, var_v)
+        jump = (
+            f"{self._jump_speed_mps:.2f} m/s {meter(self._jump_speed_mps, self.thresholds.get('jump_speed_mps'), _METER_SEGMENTS)}"
+            if self._jump_speed_mps is not None
+            else "[dim]–[/dim]"
         )
+        values: dict[str, str] = {
+            "fix": f"{fix_chip}   {horizontal}   {vertical}   [dim]cov {covariance_label}[/dim]",
+            "fixes": fix_history(self._dropout_window, dropout_severity),
+            "jump": jump,
+            "stuck": str(self._stuck_count),
+            "invalid": f"{self._invalid_ratio:.0%}",
+            "σh_more": f"{sparkline(downsample(self._sigma_h_trend, _TREND_WIDTH), covariance_severity, floor=0.0) or '[dim]–[/dim]'} [dim]({len(self._sigma_h_trend)} s)[/dim]",
+            "position": position_line(*self._position),
+            "frame": self._last_frame_id or "",
+            "services_more": services(self._service),
+            "jump_trend_more": sparkline(downsample(self._jump_trend, _TREND_WIDTH), jump_severity, floor=0.0) or "[dim]–[/dim]",
+        }
 
-        # Topic Panel "Fix" column: the single most at-a-glance number when
-        # scanning several GNSS receivers at once -- colored by fix_severity
-        # specifically (not `worst`), so a covariance/jump/dropout problem
-        # on an otherwise-fixed receiver doesn't paint the fix label itself red.
-        fix_color = SEVERITY_COLORS.get(fix_severity, "white")
-        topic_panel_value = f"[{fix_color}]{fix_label}[/{fix_color}]"
+        # Topic Panel "Fix" column: the fix label (colored by fix_severity
+        # only, so a covariance problem on a fixed receiver doesn't paint
+        # the fix itself red) plus σh, the number that says how good it is.
+        sigma = sigma_h(self._position_covariance)
+        topic_panel_value = colorize(short_fix_label(fix_label), fix_severity)
+        if covariance_known:
+            topic_panel_value += colorize(f" ±{sigma:.2f}" if sigma < 10 else f" ±{sigma:.0f}", covariance_severity)
 
         return CheckStatus(
             severity=worst,
@@ -290,4 +324,5 @@ class GnssPlugin(CheckPlugin):
             values=values,
             topic_panel_column="Fix",
             topic_panel_value=topic_panel_value,
+            codes=codes,
         )

@@ -3,8 +3,14 @@ from __future__ import annotations
 
 from sensor_msgs.msg import NavSatFix, NavSatStatus
 
+from rich.text import Text
+
 from testudo.plugins.base import Severity
 from testudo.plugins.builtin.gnss import GnssPlugin
+
+
+def _plain(markup: str) -> str:
+    return Text.from_markup(markup).plain
 
 _METERS_PER_DEGREE_LAT = 111_000.0  # ~ at the equator, close enough for test fixtures
 
@@ -46,7 +52,8 @@ def test_nominal_fix_is_ok() -> None:
     plugin.on_message("/gps/fix", _fix(covariance=(0.0001, 0, 0, 0, 0.0001, 0, 0, 0, 0.0001)))
     status = plugin.get_status()
     assert status.severity == Severity.OK
-    assert status.values["fix_status"] == "FIX"
+    assert _plain(status.values["fix"]).startswith("● FIX   σ horiz ±0.01m ▮▮▮▮▮▮   σ vert ±0.01m ▮▮▮▮▮▮")
+    assert _plain(status.topic_panel_value) == "FIX ±0.01"
 
 
 def test_no_fix_is_error() -> None:
@@ -55,6 +62,7 @@ def test_no_fix_is_error() -> None:
     status = plugin.get_status()
     assert status.severity == Severity.ERROR
     assert "no fix" in status.message
+    assert "GNSS-001" in status.codes
 
 
 def test_sbas_fix_is_ok() -> None:
@@ -74,8 +82,9 @@ def test_unknown_covariance_type_does_not_penalize_zero_covariance() -> None:
     )
     status = plugin.get_status()
     assert status.severity == Severity.OK
-    assert "n/a" in status.values["position_covariance"]
-    assert "position_covariance_compact" not in status.values
+    assert "σ horiz n/a (unknown)" in _plain(status.values["fix"])
+    assert "▮" not in status.values["fix"]  # no reassuring green meter for an unreported covariance
+    assert _plain(status.topic_panel_value) == "FIX"
 
 
 def test_known_covariance_above_threshold_is_flagged() -> None:
@@ -85,6 +94,7 @@ def test_known_covariance_above_threshold_is_flagged() -> None:
     status = plugin.get_status()
     assert status.severity == Severity.ERROR
     assert "position covariance out of bounds" in status.message
+    assert "GNSS-002" in status.codes
 
 
 def test_covariance_flags_the_specific_bad_axis() -> None:
@@ -97,6 +107,9 @@ def test_covariance_flags_the_specific_bad_axis() -> None:
     assert "z=" in status.message
     assert "x=" not in status.message
     assert "y=" not in status.message
+    # The vertical meter judges z; the horizontal one stays green.
+    assert "σ vert ±0.71m [bold red]▮" in status.values["fix"]
+    assert "σ horiz ±0.01m [green]▮▮▮▮▮▮" in status.values["fix"]
 
 
 def test_nan_latitude_counts_as_invalid() -> None:
@@ -115,7 +128,8 @@ def test_stuck_fix_escalates_after_repeats() -> None:
     status = plugin.get_status()
     assert status.severity == Severity.WARN
     assert "stuck for" in status.message
-    assert status.values["stuck_count"] == "3"
+    assert status.values["stuck"] == "3"
+    assert "GNSS-005" in status.codes
 
 
 def test_frame_id_change_is_flagged() -> None:
@@ -148,7 +162,7 @@ def test_jump_is_not_evaluated_across_a_dropout() -> None:
     # The fix immediately after a dropout has no valid "previous real fix"
     # to compare against (the dropout message cleared it), so no jump_speed
     # should have been computed from the pre-dropout position.
-    assert status.values["jump_speed_mps"] == "n/a"
+    assert _plain(status.values["jump"]) == "–"
 
 
 def test_fix_dropout_ratio_flags_intermittent_loss() -> None:
@@ -159,39 +173,34 @@ def test_fix_dropout_ratio_flags_intermittent_loss() -> None:
     status = plugin.get_status()
     # 5/20 = 0.25 dropout ratio > orange 0.2.
     assert "fix dropout ratio" in status.message
+    assert _plain(status.values["fixes"]) == "▯▮▮▮" * 5 + "  5/20 dropped"
+    assert "GNSS-003" in status.codes
 
 
-def test_covariance_block_is_first_in_values() -> None:
+def test_fix_headline_leads_and_position_is_dim_context() -> None:
     plugin = GnssPlugin()
-    plugin.on_message("/gps/fix", _fix(covariance=(0.0001, 0, 0, 0, 0.0001, 0, 0, 0, 0.0001)))
-    status = plugin.get_status()
-    assert next(iter(status.values)) == "position_covariance"
+    plugin.on_message("/gps/fix", _fix(lat=45.40642131, lon=11.87683212, alt=31.24))
+    values = plugin.get_status().values
+    assert next(iter(values)) == "fix"
+    assert values["position"] == "[dim]lat 45.4064213  lon 11.8768321  alt 31.2 m[/dim]"
 
 
-def test_covariance_block_uses_short_labels() -> None:
+def test_gbas_fix_is_shortened_in_the_topic_panel() -> None:
     plugin = GnssPlugin()
-    plugin.on_message("/gps/fix", _fix(covariance=(0.0001, 0, 0, 0, 0.0001, 0, 0, 0, 0.0001)))
-    status = plugin.get_status()
-    assert "cov_x:" in status.values["position_covariance"]
-    assert "cov_y:" in status.values["position_covariance"]
-    assert "cov_z:" in status.values["position_covariance"]
+    plugin.on_message("/gps/fix", _fix(status=NavSatStatus.STATUS_GBAS_FIX, covariance=(0.04, 0, 0, 0, 0.0276, 0, 0, 0, 0)))
+    assert _plain(plugin.get_status().topic_panel_value) == "GBAS ±0.26"
 
 
-def test_covariance_block_wide_puts_axes_on_one_line() -> None:
+def test_trends_sample_once_a_second_and_services_are_named() -> None:
     plugin = GnssPlugin()
-    plugin.on_message("/gps/fix", _fix(covariance=(0.0001, 0, 0, 0, 0.0001, 0, 0, 0, 0.0001)))
-    status = plugin.get_status()
-    wide = status.values["position_covariance"].strip("\n")
-    assert wide.count("\n") == 0
-    assert "cov_x:" in wide and "cov_y:" in wide and "cov_z:" in wide
-
-
-def test_covariance_block_compact_stacks_axes() -> None:
-    plugin = GnssPlugin()
-    plugin.on_message("/gps/fix", _fix(covariance=(0.0001, 0, 0, 0, 0.0001, 0, 0, 0, 0.0001)))
-    status = plugin.get_status()
-    compact = status.values["position_covariance_compact"].strip("\n")
-    assert compact.count("\n") == 2  # three axes, one per line
+    msg = _fix(covariance=(0.0001, 0, 0, 0, 0.0001, 0, 0, 0, 0.0001))
+    msg.status.service = NavSatStatus.SERVICE_GPS | NavSatStatus.SERVICE_GALILEO
+    plugin.on_message("/gps/fix", msg)
+    for t in (0.0, 0.5, 1.0, 2.0):
+        plugin.on_tick(t)
+    values = plugin.get_status().values
+    assert _plain(values["σh_more"]) == "███ (3 s)"  # steady, scaled from 0
+    assert values["services_more"] == "GPS+GAL"
 
 
 def test_default_thresholds_cover_expected_metrics() -> None:
