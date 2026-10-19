@@ -39,7 +39,14 @@ class TestudoApp(App):
        overflow-x: hidden is the enforced "no horizontal scrollbar" --
        content that doesn't fit a fixed column is clipped (Topic) or
        marqueed (Topic, when wider than its column), never scrolled to. */
-    #category-table { width: auto; height: 1fr; overflow-x: hidden; }
+    /* The Plugin Panel's table takes only its rows' height, so the
+       "Needs attention" list (widgets/attention.py) can use what's left
+       under it; a long category list takes the whole pane and the list
+       gets no rows, which hides it. The pane's background is the table's
+       ($surface), so the two read as one panel. */
+    #left-pane { width: auto; height: 1fr; background: $surface; }
+    #category-table { width: auto; height: auto; max-height: 100%; overflow-x: hidden; }
+    #attention { width: 100%; height: 1fr; padding: 1 1 0 1; }
     #topic-table { width: 1fr; min-width: 40; height: 1fr; overflow-x: hidden; }
     /* 45%, not 30% -- on a genuinely small pane (a quarter-tiled terminal,
        the realistic use case, not a fullscreen one) 30% of an already-short

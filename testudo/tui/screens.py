@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections import Counter
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal
+from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen, Screen
 from textual.widgets import DataTable, Input, Static
 
@@ -17,6 +17,7 @@ from testudo.tui.categorize import category_for
 from testudo.tui.data_source import WatchSnapshot
 from testudo.tui.detail_render import render_detail
 from testudo.tui.keybinds import FILTER_BINDING, HELP_TEXT, PANE_LEFT_BINDING, PANE_RIGHT_BINDING, SORT_BINDING
+from testudo.tui.widgets.attention import attention_text
 from testudo.tui.widgets.category_summary import CategorySummaryTable
 from testudo.tui.widgets.header import TestudoHeader
 from testudo.tui.widgets.topic_panel import TopicDetailTable
@@ -54,7 +55,9 @@ class DashboardScreen(Screen):
     def compose(self) -> ComposeResult:
         yield TestudoHeader(self.app.ros_distro, self.app.ros_domain_id, self.app.dds_implementation)
         with Horizontal(id="panes"):
-            yield CategorySummaryTable(id="category-table")
+            with Vertical(id="left-pane"):
+                yield CategorySummaryTable(id="category-table")
+                yield Static("", id="attention")
             yield TopicDetailTable(id="topic-table")
         yield Static("", id="detail-pane")
         yield Input(placeholder="filter by name, enter/esc to apply", id="filter-input")
@@ -87,7 +90,16 @@ class DashboardScreen(Screen):
 
     def refresh_categories(self) -> None:
         self.query_one(CategorySummaryTable).update_categories(self.app.latest_snapshot.reports)
+        self.refresh_attention()
         self.refresh_topics()
+
+    def refresh_attention(self) -> None:
+        """Fill the Plugin Panel's free rows with the "Needs attention" list (hidden when there are none)."""
+        attention = self.query_one("#attention", Static)
+        text = attention_text(
+            self.app.latest_snapshot.reports, attention.content_size.width, attention.content_size.height
+        )
+        attention.update(text or "")
 
     def refresh_topics(self) -> None:
         category = self.query_one(CategorySummaryTable).selected_category
@@ -114,7 +126,9 @@ class DashboardScreen(Screen):
     def on_resize(self, event) -> None:
         # The detail pane's size (which render_detail lays out for) just
         # changed -- redraw so the value grid and a wide<->narrow meter
-        # swap aren't stuck at whatever fit before the resize.
+        # swap aren't stuck at whatever fit before the resize. Same for the
+        # Plugin Panel's free rows under its categories.
+        self.refresh_attention()
         self.refresh_detail()
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
