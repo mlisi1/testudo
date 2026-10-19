@@ -41,7 +41,15 @@ import numpy as np
 from sensor_msgs.msg import LaserScan, PointCloud2
 from sensor_msgs_py.point_cloud2 import read_points
 
-from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, ThresholdZone, evaluate_zone
+from testudo.plugins.base import SEVERITY_COLORS, CheckPlugin, CheckStatus, Severity, ThresholdZone, colorize, evaluate_zone
+from testudo.plugins.builtin.point_stream_layout import (
+    format_points,
+    profile_line,
+    returns_bar,
+    returns_text,
+    scan_profile,
+)
+from testudo.plugins.render import fmt_size
 
 _LASER_SCAN_TYPE = "sensor_msgs/msg/LaserScan"
 _POINT_CLOUD_TYPE = "sensor_msgs/msg/PointCloud2"
@@ -119,7 +127,17 @@ class PointStreamPlugin(CheckPlugin):
         self._malformed = False
         self._malformed_detail = ""
         self._empty_payload = False
+        self._all_zero = False
         self._detail = "no messages received yet"
+        # Shares of beams/points per class for the returns bar:
+        # (valid, no return, out of range, invalid).
+        self._shares = (0.0, 0.0, 0.0, 0.0)
+        self._points = 0
+        # LaserScan only: the angular profile and its span line.
+        self._profile: str | None = None
+        self._beams: str | None = None
+        # PointCloud2 only: shape, density, fields and payload size.
+        self._cloud: str | None = None
 
     @classmethod
     def msg_types(cls) -> tuple[str, ...]:
@@ -161,21 +179,29 @@ class PointStreamPlugin(CheckPlugin):
         self._last_signature = signature
 
     def _on_laser_scan(self, msg: LaserScan) -> None:
-        ranges = msg.ranges
-        total = len(ranges)
+        ranges = np.asarray(msg.ranges, dtype=np.float64)
+        total = ranges.size
         # REP 117: +Inf means "no obstacle detected within range" (valid);
         # NaN and -Inf aren't standard readings and count as invalid.
-        invalid = sum(1 for r in ranges if math.isnan(r) or r == float("-inf"))
-        out_of_bounds = sum(
-            1 for r in ranges if not math.isnan(r) and not math.isinf(r) and not (msg.range_min <= r <= msg.range_max)
-        )
+        invalid = int(np.count_nonzero(np.isnan(ranges) | np.isneginf(ranges)))
+        no_return = int(np.count_nonzero(np.isposinf(ranges)))
+        finite = ranges[np.isfinite(ranges)]
+        out_of_bounds = int(np.count_nonzero((finite < msg.range_min) | (finite > msg.range_max)))
         self._invalid_ratio = (invalid + out_of_bounds) / total if total else 0.0
         self._plausibility_ok = out_of_bounds == 0
+        self._points = total
+        if total:
+            valid = total - invalid - no_return - out_of_bounds
+            self._shares = (valid / total, no_return / total, out_of_bounds / total, invalid / total)
 
-        all_zero = total > 0 and all(r == 0.0 for r in ranges)
-        self._detail = "all-zero scan" if all_zero else f"{invalid} invalid, {out_of_bounds} out-of-bounds of {total}"
+        self._all_zero = total > 0 and not np.any(ranges)
+        self._detail = "all-zero scan" if self._all_zero else f"{invalid} invalid, {out_of_bounds} out-of-bounds of {total}"
+        self._profile = profile_line(
+            scan_profile(ranges, msg.range_max), msg.angle_min, msg.angle_max, msg.range_min, msg.range_max
+        )
+        self._beams = f"{total} @ {math.degrees(abs(msg.angle_increment)):.3g}°"
 
-        self._check_stuck(tuple(ranges))
+        self._check_stuck(tuple(msg.ranges))
 
     def _on_point_cloud(self, msg: PointCloud2) -> None:
         data = bytes(msg.data)
@@ -188,6 +214,12 @@ class PointStreamPlugin(CheckPlugin):
             return
 
         self._invalid_ratio, self._no_return_ratio = _invalid_and_no_return_ratios(msg)
+        self._points = point_count
+        self._shares = (1.0 - self._invalid_ratio - self._no_return_ratio, self._no_return_ratio, 0.0, self._invalid_ratio)
+        shape = f"organized {msg.width}×{msg.height}" if msg.height > 1 else "unorganized"
+        dense = "dense ✓" if msg.is_dense else "[dim]dense ✗[/dim]"
+        fields = " ".join(field.name for field in msg.fields)
+        self._cloud = f"{shape}  {dense}  [dim]fields[/dim] {fields}  [dim]{fmt_size(len(data))}[/dim]"
         self._detail = (
             f"{point_count} point(s), {self._no_return_ratio:.1%} no return, {self._invalid_ratio:.2%} invalid"
         )
@@ -223,11 +255,41 @@ class PointStreamPlugin(CheckPlugin):
             problems.append(f"frame_id changed (now '{self._last_frame_id}')")
         message = "; ".join(problems) if problems else self._detail
 
-        values = {
-            "invalid_ratio": f"{self._invalid_ratio:.4g}",
-            **({"no_return_ratio": f"{self._no_return_ratio:.4g}"} if self._no_return_ratio is not None else {}),
-            "stuck_count": str(self._stuck_count),
-            "frame_id": self._last_frame_id or "",
-            "detail": self._detail,
-        }
-        return CheckStatus(severity=worst, label="point_stream", message=message, values=values)
+        codes: dict[str, str] = {}
+        if invalid_severity != Severity.OK:
+            codes["SENS-001"] = colorize(f"invalid readings {self._invalid_ratio:.1%}", invalid_severity)
+        if stuck_severity != Severity.OK:
+            codes["SENS-002"] = colorize(f"identical for {self._stuck_count} messages", stuck_severity)
+        if self._all_zero:
+            codes["SENS-003"] = colorize("all-zero scan", Severity.WARN)
+        if plausibility_severity != Severity.OK:
+            codes["SENS-004"] = colorize("ranges outside range_min..range_max", plausibility_severity)
+        if frame_id_severity != Severity.OK:
+            codes["SENS-005"] = colorize(f"frame_id changed (now '{self._last_frame_id}')", frame_id_severity)
+        if empty_severity != Severity.OK:
+            codes["SENS-006"] = colorize("empty point cloud", empty_severity)
+        if malformed_severity != Severity.OK:
+            codes["SENS-007"] = colorize(self._malformed_detail, malformed_severity)
+
+        values: dict[str, str] = {}
+        if self._cloud is not None:
+            values["cloud"] = f"{self._points:,} pts  {self._cloud}"
+        if not self._empty_payload:
+            values["returns"] = f"{returns_bar(*self._shares)}  {returns_text(*self._shares, invalid_severity)}"
+        if self._profile is not None:
+            values["profile"] = self._profile
+        if self._beams is not None:
+            values["beams"] = self._beams
+        values["stuck"] = str(self._stuck_count)
+        values["frame"] = self._last_frame_id or ""
+
+        color = SEVERITY_COLORS.get(worst, "white")
+        return CheckStatus(
+            severity=worst,
+            label="point_stream",
+            message=message,
+            values=values,
+            topic_panel_column="Points",
+            topic_panel_value=f"[{color}]{format_points(self._points)}[/{color}]",
+            codes=codes,
+        )

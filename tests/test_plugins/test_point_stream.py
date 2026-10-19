@@ -5,8 +5,15 @@ from sensor_msgs.msg import LaserScan, PointCloud2, PointField
 from sensor_msgs_py.point_cloud2 import create_cloud_xyz32
 from std_msgs.msg import Header
 
+from rich.text import Text
+
 from testudo.plugins.base import Severity
 from testudo.plugins.builtin.point_stream import PointStreamPlugin
+
+
+def _legend(status) -> str:
+    """The returns bar's legend: the plain text after the bar."""
+    return Text.from_markup(status.values["returns"]).plain.split("  ", 1)[1]
 
 
 def _laser_scan(ranges: list[float], range_min: float = 0.0, range_max: float = 10.0, frame_id: str = "laser") -> LaserScan:
@@ -68,7 +75,7 @@ def test_laser_scan_positive_inf_is_valid_per_rep117() -> None:
     plugin.on_message("/scan", _laser_scan(ranges))
     status = plugin.get_status()
     assert status.severity == Severity.OK
-    assert status.values["invalid_ratio"] == "0"
+    assert _legend(status) == "90% valid · 10% no return · 0% invalid"
 
 
 def test_laser_scan_negative_inf_counts_as_invalid() -> None:
@@ -92,7 +99,7 @@ def test_laser_scan_all_zero_is_reported_in_detail() -> None:
     plugin.on_message("/scan", _laser_scan([0.0, 0.0, 0.0], range_min=0.0, range_max=10.0))
     status = plugin.get_status()
     assert status.severity == Severity.OK
-    assert status.values["detail"] == "all-zero scan"
+    assert "SENS-003" in status.codes
 
 
 def test_laser_scan_stuck_value_escalates_after_repeats() -> None:
@@ -103,7 +110,8 @@ def test_laser_scan_stuck_value_escalates_after_repeats() -> None:
     status = plugin.get_status()
     assert status.severity == Severity.WARN
     assert "stuck for" in status.message
-    assert status.values["stuck_count"] == "3"
+    assert status.values["stuck"] == "3"
+    assert "SENS-002" in status.codes
 
 
 def test_laser_scan_frame_id_change_is_flagged() -> None:
@@ -123,7 +131,8 @@ def test_point_cloud_nominal_is_ok() -> None:
     plugin.on_message("/points", _point_cloud([(1.0, 2.0, 3.0), (4.0, 5.0, 6.0)]))
     status = plugin.get_status()
     assert status.severity == Severity.OK
-    assert "2 point(s)" in status.values["detail"]
+    assert Text.from_markup(status.values["cloud"]).plain.startswith("2 pts  unorganized  dense ✓  fields x y z")
+    assert status.topic_panel_value.endswith("2[/green]")
 
 
 def test_point_cloud_nan_coordinate_counts_as_invalid() -> None:
@@ -142,8 +151,7 @@ def test_point_cloud_nan_in_non_dense_cloud_is_a_no_return_not_invalid() -> None
     plugin.on_message("/points", _point_cloud(points, is_dense=False))
     status = plugin.get_status()
     assert status.severity == Severity.OK
-    assert float(status.values["no_return_ratio"]) == 0.4
-    assert float(status.values["invalid_ratio"]) == 0.0
+    assert _legend(status) == "60% valid · 40% no return · 0% invalid"
 
 
 def test_point_cloud_inf_in_non_dense_cloud_is_still_invalid() -> None:
@@ -152,7 +160,7 @@ def test_point_cloud_inf_in_non_dense_cloud_is_still_invalid() -> None:
     plugin.on_message("/points", _point_cloud(points, is_dense=False))
     status = plugin.get_status()
     assert status.severity == Severity.ERROR
-    assert float(status.values["no_return_ratio"]) == 0.0
+    assert _legend(status) == "90% valid · 0% no return · 10% invalid"
 
 
 def test_point_cloud_empty_payload_is_error() -> None:
@@ -181,7 +189,7 @@ def test_point_cloud_stuck_cloud_escalates_after_repeats() -> None:
     status = plugin.get_status()
     assert status.severity == Severity.WARN
     assert "stuck for" in status.message
-    assert status.values["stuck_count"] == "3"
+    assert status.values["stuck"] == "3"
 
 
 def test_point_cloud_frame_id_change_is_flagged() -> None:
@@ -207,9 +215,29 @@ def test_point_cloud_without_xyz_fields_reports_zero_invalid_ratio() -> None:
     plugin = PointStreamPlugin()
     plugin.on_message("/points", msg)
     status = plugin.get_status()
-    assert status.values["invalid_ratio"] == "0"
+    assert _legend(status) == "100% valid · 0% no return · 0% invalid"
 
 
 def test_default_thresholds_cover_both_metrics() -> None:
     thresholds = PointStreamPlugin.default_thresholds()
     assert set(thresholds) == {"invalid_ratio", "stuck_count"}
+
+
+def test_laser_scan_profile_and_beams() -> None:
+    import math
+
+    plugin = PointStreamPlugin()
+    scan = _laser_scan([1.0, 2.0, float("inf"), float("nan")], range_max=4.0)
+    scan.angle_min, scan.angle_max, scan.angle_increment = -math.pi / 2, math.pi / 2, math.radians(0.5)
+    plugin.on_message("/scan", scan)
+    values = plugin.get_status().values
+    assert Text.from_markup(values["profile"]).plain == "▃▅█   -90° … +90°  0.00–4.0 m"
+    assert values["beams"] == "4 @ 0.5°"
+
+
+def test_returns_bar_is_fixed_width_and_never_hides_a_small_share() -> None:
+    from testudo.plugins.builtin.point_stream_layout import format_points, returns_bar
+
+    bar = Text.from_markup(returns_bar(0.99, 0.0, 0.0, 0.01)).plain
+    assert len(bar) == 24 and bar.endswith("░")
+    assert format_points(720) == "720" and format_points(29184) == "29.2k" and format_points(1_310_000) == "1.31M"
