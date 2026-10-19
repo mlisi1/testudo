@@ -53,13 +53,17 @@ import psutil
 
 from testudo.core.node_profiling.cmdline_parse import parse_remapped_node_name
 
+#: Testudo's own row when its process isn't itself a resolved ROS node --
+#: a name a person recognizes in the Topic Panel, unlike its PID.
+SELF_IDENTITY = "testudo (self)"
+
 
 @dataclass(frozen=True)
 class ResolvedProcess:
     """One OS process Testudo is tracking, with its best-effort ROS identity."""
 
     pid: int
-    identity: str  # fully-qualified ROS node name if resolved, else f"pid:{pid}"
+    identity: str  # fully-qualified ROS node name if resolved, else SELF_IDENTITY for Testudo itself
     process_name: str
     resolved: bool
     #: Every descendant (recursive), counted from this same rediscovery
@@ -110,7 +114,7 @@ def resolve_processes(
 
     if self_pid not in resolved:
         self_name = next((name or _first_basename(cmdline) for pid, cmdline, name in processes if pid == self_pid), "testudo")
-        resolved[self_pid] = ResolvedProcess(pid=self_pid, identity=f"pid:{self_pid}", process_name=self_name, resolved=False)
+        resolved[self_pid] = ResolvedProcess(pid=self_pid, identity=SELF_IDENTITY, process_name=self_name, resolved=False)
 
     children_by_parent: dict[int, list[int]] = {}
     for pid, parent_pid in parent_pids.items():

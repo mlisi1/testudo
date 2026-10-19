@@ -224,8 +224,8 @@ def detail_panel_values(values: dict[str, str]) -> dict[str, str]:
 def node_stat_to_topic_report(stat: NodeStat) -> TopicReport:
     """Wrap `stat` in a synthetic `TopicReport` so it flows through the Plugin/Topic/Detail
     Panel machinery like any other check (see `tui/categorize.py`'s `NODES_CATEGORY`),
-    rather than a separate screen. `topic` is the node identity (or `pid:<n>` if
-    unresolved); `rate_hz=None` since there's no Hz concept for a process --
+    rather than a separate screen. `topic` is the node identity (or `testudo (self)`
+    for Testudo's own unresolved process); `rate_hz=None` since there's no Hz concept for a process --
     the Topic Panel already renders a missing rate as "-", the same honest
     blank it uses when a real topic hasn't measured one yet.
 

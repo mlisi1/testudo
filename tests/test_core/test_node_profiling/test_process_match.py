@@ -1,7 +1,7 @@
 """Tier 1/Tier 2 resolution against a synthetic process list -- no live processes needed."""
 from __future__ import annotations
 
-from testudo.core.node_profiling.process_match import ResolvedProcess, resolve_processes
+from testudo.core.node_profiling.process_match import SELF_IDENTITY, ResolvedProcess, resolve_processes
 
 
 class _FakeProc:
@@ -122,7 +122,7 @@ def test_self_pid_always_included_even_when_unresolved() -> None:
     by_pid = {r.pid: r for r in resolved}
     assert 999 in by_pid
     assert by_pid[999].resolved is False
-    assert by_pid[999].identity == "pid:999"
+    assert by_pid[999].identity == SELF_IDENTITY == "testudo (self)"
     assert by_pid[999].process_name == "python3"
 
 
@@ -164,3 +164,4 @@ def test_num_children_counts_every_descendant_from_the_same_snapshot() -> None:
     by_pid = {r.pid: r for r in resolved}
     assert by_pid[100].num_children == 2
     assert by_pid[999].num_children == 0
+
