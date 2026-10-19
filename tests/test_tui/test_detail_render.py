@@ -39,6 +39,21 @@ def test_render_detail_shows_more_values_only_in_a_tall_pane() -> None:
     assert not any("trend" in line for line in _plain(render_detail(report, width=100)))
 
 
+def test_more_values_that_would_push_codes_out_of_view_are_dropped_last_first() -> None:
+    tree = "\n".join(f"branch {i}" for i in range(9))
+    report = _report(
+        {"rate": "9.9", "trend_more": "up", "tree_more": tree},
+        severity=Severity.ERROR,
+        codes={"TF-002": "missing chain"},
+    )
+    short = _plain(render_detail(report, width=100, height=11))
+    assert "[TF-002] missing chain" in short
+    assert "trend  up" in short
+    assert not any("branch" in line for line in short)
+    tall = _plain(render_detail(report, width=100, height=20))
+    assert "branch 8" in "\n".join(tall)
+
+
 def test_humanize_moves_a_unit_suffix_from_the_key_onto_a_numeric_value() -> None:
     pairs = [("time_in_status_s", "12.4"), ("rate_hz", "9.98"), ("jump_speed_mps", "3"), ("frequency_per_min", "0.8")]
     assert humanize_pairs(pairs) == [

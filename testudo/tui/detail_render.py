@@ -311,6 +311,25 @@ def _header_line(report: TopicReport, width: int) -> str:
     return line
 
 
+def _body_entries(report: TopicReport, values: dict[str, str], width: int, is_tall: bool) -> list[tuple[str, str, bool]]:
+    """`values` as (label, value, own_line) body entries, with the publishers entry placed for `report`'s tier."""
+    pairs = humanize_pairs(resolve_values(values, width < NARROW_DETAIL_WIDTH, is_tall))
+    entries = [
+        (label, value, True) if "\n" in value or _width(value) > _MAX_GRID_VALUE_WIDTH else (label, _style_value(value), False)
+        for label, value in pairs
+    ]
+    publishers = _publishers_entry(report)
+    if publishers is not None:
+        # Without a plugin's readings, who publishes the topic is the most
+        # useful thing to show, so it leads; under a plugin's readings it's
+        # secondary -- shown last, and only with rows to spare.
+        if report.tier != "full":
+            entries.insert(0, publishers)
+        elif is_tall:
+            entries.append(publishers)
+    return entries
+
+
 def render_detail(report: TopicReport, width: int, height: int | None = None) -> str:
     """The Detail Panel's full markup for `report`, laid out for a `width` x `height` pane.
 
@@ -332,21 +351,18 @@ def render_detail(report: TopicReport, width: int, height: int | None = None) ->
     max_rows = _DEFAULT_GRID_ROWS if height is None else max(1, height - header_rows - code_rows)
 
     is_tall = height is not None and height - header_rows >= TALL_DETAIL_ROWS
-    pairs = humanize_pairs(resolve_values(report.status.values, width < NARROW_DETAIL_WIDTH, is_tall))
-    entries = [
-        (label, value, True) if "\n" in value or _width(value) > _MAX_GRID_VALUE_WIDTH else (label, _style_value(value), False)
-        for label, value in pairs
-    ]
-    publishers = _publishers_entry(report)
-    if publishers is not None:
-        # Without a plugin's readings, who publishes the topic is the most
-        # useful thing to show, so it leads; under a plugin's readings it's
-        # secondary -- shown last, and only with rows to spare.
-        if report.tier != "full":
-            entries.insert(0, publishers)
-        elif is_tall:
-            entries.append(publishers)
-    body = _fitted_body_lines(entries, width, max_rows)
+    values = report.status.values
+    # `_more` blocks are extras for a tall pane: drop them, last first,
+    # until the body fits, so one big block (a TF tree) never pushes the
+    # codes -- what's actually wrong -- below the fold.
+    more_keys = [key for key in values if key.endswith(MORE_VALUE_SUFFIX)] if is_tall else []
+    for keep in range(len(more_keys), -1, -1):
+        dropped = {name for key in more_keys[keep:] for name in (key, key + COMPACT_VALUE_SUFFIX)}
+        kept = {key: value for key, value in values.items() if key not in dropped}
+        body = _fitted_body_lines(_body_entries(report, kept, width, is_tall), width, max_rows)
+        # A multi-line value is one entry in `body` but several rows on screen.
+        if sum(line.count("\n") + 1 for line in body) <= max_rows:
+            break
     lines.extend(body)
 
     if codes:
