@@ -26,11 +26,21 @@ import math
 from rich.text import Text
 
 from testudo.core.topic_report import TopicReport
-from testudo.plugins.base import COMPACT_VALUE_SUFFIX, SEVERITY_COLORS, SEVERITY_ICONS, SEVERITY_LABELS
+from testudo.plugins.base import (
+    COMPACT_VALUE_SUFFIX,
+    MORE_VALUE_SUFFIX,
+    SEVERITY_COLORS,
+    SEVERITY_ICONS,
+    SEVERITY_LABELS,
+)
 
 #: Detail Panel width (columns) below which `resolve_values` prefers a
 #: value's `_compact` variant over its full one, where both exist.
 NARROW_DETAIL_WIDTH = 60
+
+#: Rows under the header a Detail Panel needs before `_more` values are
+#: shown at all -- the 136x36 case has ~13, the 101x23 one ~6.
+TALL_DETAIL_ROWS = 10
 
 #: Key suffix -> unit shown after the value instead of inside the label.
 #: Longest suffix first, so "_mps" is tried before "_s" would ever match.
@@ -66,12 +76,22 @@ _MAX_VALUES_MOVED_OUT_OF_GRID = 3
 _DEFAULT_GRID_ROWS = 6
 
 
-def resolve_values(values: dict[str, str], is_narrow: bool) -> list[tuple[str, str]]:
+def resolve_values(values: dict[str, str], is_narrow: bool, is_tall: bool = False) -> list[tuple[str, str]]:
     """Collapse `<key>`/`<key>_compact` pairs in `values` down to one entry each.
 
     Preserves `values`' insertion order. A key with no compact counterpart
     (most of them) passes through unchanged, from either side of the pair.
+    A `<key>_more` entry is kept as `<key>` only when `is_tall`, and
+    dropped otherwise.
     """
+    return [
+        (key[: -len(MORE_VALUE_SUFFIX)], value) if key.endswith(MORE_VALUE_SUFFIX) else (key, value)
+        for key, value in _resolve_compact(values, is_narrow)
+        if is_tall or not key.endswith(MORE_VALUE_SUFFIX)
+    ]
+
+
+def _resolve_compact(values: dict[str, str], is_narrow: bool) -> list[tuple[str, str]]:
     resolved: list[tuple[str, str]] = []
     skip: set[str] = set()
     for key, value in values.items():
@@ -288,7 +308,7 @@ def render_detail(report: TopicReport, width: int, height: int | None = None) ->
     currently active problem gets its own `[CODE] message` line,
     independently of the others, rather than one string with them all
     run together. `height=None` (unknown) falls back to a fixed row
-    budget for the value grid.
+    budget for the value grid, and leaves `_more` values out.
     """
     lines = [_header_line(report, width)]
     # A header still wider than the pane wraps; those rows aren't the grid's to use.
@@ -300,7 +320,8 @@ def render_detail(report: TopicReport, width: int, height: int | None = None) ->
     code_rows = sum(math.ceil(_width(line) / max(1, width)) for line in code_lines)
     max_rows = _DEFAULT_GRID_ROWS if height is None else max(1, height - header_rows - code_rows)
 
-    pairs = humanize_pairs(resolve_values(report.status.values, width < NARROW_DETAIL_WIDTH))
+    is_tall = height is not None and height - header_rows >= TALL_DETAIL_ROWS
+    pairs = humanize_pairs(resolve_values(report.status.values, width < NARROW_DETAIL_WIDTH, is_tall))
     entries = [
         (label, value, True) if "\n" in value or _width(value) > _MAX_GRID_VALUE_WIDTH else (label, _style_value(value), False)
         for label, value in pairs

@@ -85,6 +85,15 @@ class ThresholdZone:
 #: `check`/`replay` text) drop the compact variant.
 COMPACT_VALUE_SUFFIX = "_compact"
 
+#: `CheckStatus.values` key suffix marking a secondary value, shown only
+#: when the Detail Panel is tall enough to have room to spare (e.g. a
+#: sparkline or a history strip next to the headline numbers it expands
+#: on) and dropped first on a short one. Shown under its key without the
+#: suffix. Same kind of naming convention as `COMPACT_VALUE_SUFFIX` (the
+#: two combine as `<key>_more_compact`). The published DiagnosticStatus
+#: keeps it; the one-line `check`/`replay` report drops it.
+MORE_VALUE_SUFFIX = "_more"
+
 
 @dataclass(frozen=True)
 class CheckStatus:

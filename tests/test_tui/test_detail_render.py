@@ -22,6 +22,20 @@ def test_resolve_values_picks_the_compact_variant_only_when_narrow() -> None:
     assert resolve_values(values, is_narrow=True) == [("gauge", "small"), ("other", "x")]
 
 
+def test_resolve_values_shows_more_variants_only_when_tall() -> None:
+    values = {"rate": "9.9", "trend_more": "wide", "trend_more_compact": "small"}
+    assert resolve_values(values, is_narrow=False) == [("rate", "9.9")]
+    assert resolve_values(values, is_narrow=False, is_tall=True) == [("rate", "9.9"), ("trend", "wide")]
+    assert resolve_values(values, is_narrow=True, is_tall=True) == [("rate", "9.9"), ("trend", "small")]
+
+
+def test_render_detail_shows_more_values_only_in_a_tall_pane() -> None:
+    report = _report({"rate": "9.9", "trend_more": "up"})
+    assert not any("trend" in line for line in _plain(render_detail(report, width=100, height=7)))
+    assert "trend  up" in _plain(render_detail(report, width=100, height=11))
+    assert not any("trend" in line for line in _plain(render_detail(report, width=100)))
+
+
 def test_humanize_moves_a_unit_suffix_from_the_key_onto_a_numeric_value() -> None:
     pairs = [("time_in_status_s", "12.4"), ("rate_hz", "9.98"), ("jump_speed_mps", "3"), ("frequency_per_min", "0.8")]
     assert humanize_pairs(pairs) == [

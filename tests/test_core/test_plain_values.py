@@ -21,3 +21,9 @@ def test_plain_values_single_line_drops_multiline_blocks() -> None:
     values = {"meters": "x ■■\ny ■■", "rate": "10"}
     assert plain_values(values, single_line=True) == {"rate": "10"}
     assert plain_values(values) == values
+
+
+def test_plain_values_single_line_drops_more_values_but_publishing_keeps_them() -> None:
+    values = {"rate": "10", "trend_more": "▁▂▃"}
+    assert plain_values(values, single_line=True) == {"rate": "10"}
+    assert plain_values(values) == values

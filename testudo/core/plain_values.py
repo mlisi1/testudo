@@ -11,7 +11,7 @@ from __future__ import annotations
 from rich.errors import MarkupError
 from rich.text import Text
 
-from testudo.plugins.base import COMPACT_VALUE_SUFFIX
+from testudo.plugins.base import COMPACT_VALUE_SUFFIX, MORE_VALUE_SUFFIX
 
 
 def strip_markup(value: str) -> str:
@@ -26,12 +26,14 @@ def plain_values(values: dict[str, str], single_line: bool = False) -> dict[str,
     """`values` without markup or `_compact` duplicates, in their original order.
 
     `single_line=True` also drops multi-line values (pre-formatted meter
-    blocks, which only read as intended in the Detail Panel's grid) for a
-    one-line-per-topic report.
+    blocks, which only read as intended in the Detail Panel's grid) and
+    secondary `_more` values for a one-line-per-topic report.
     """
     plain: dict[str, str] = {}
     for key, value in values.items():
         if key.endswith(COMPACT_VALUE_SUFFIX):
+            continue
+        if single_line and key.endswith(MORE_VALUE_SUFFIX):
             continue
         text = strip_markup(value)
         if single_line and "\n" in text:
