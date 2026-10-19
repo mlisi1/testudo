@@ -18,10 +18,12 @@ def _laser_scan(ranges: list[float], range_min: float = 0.0, range_max: float = 
     return msg
 
 
-def _point_cloud(points: list[tuple[float, float, float]], frame_id: str = "lidar"):
+def _point_cloud(points: list[tuple[float, float, float]], frame_id: str = "lidar", is_dense: bool = True):
     header = Header()
     header.frame_id = frame_id
-    return create_cloud_xyz32(header, points)
+    cloud = create_cloud_xyz32(header, points)
+    cloud.is_dense = is_dense
+    return cloud
 
 
 def test_no_messages_yet_is_ok() -> None:
@@ -131,6 +133,26 @@ def test_point_cloud_nan_coordinate_counts_as_invalid() -> None:
     status = plugin.get_status()
     assert status.severity == Severity.ERROR
     assert "invalid ratio" in status.message
+
+
+def test_point_cloud_nan_in_non_dense_cloud_is_a_no_return_not_invalid() -> None:
+    """An organized lidar cloud (is_dense: false) keeps a NaN slot for every beam with no return."""
+    plugin = PointStreamPlugin()
+    points = [(1.0, 2.0, 3.0)] * 6 + [(float("nan"), float("nan"), float("nan"))] * 4
+    plugin.on_message("/points", _point_cloud(points, is_dense=False))
+    status = plugin.get_status()
+    assert status.severity == Severity.OK
+    assert float(status.values["no_return_ratio"]) == 0.4
+    assert float(status.values["invalid_ratio"]) == 0.0
+
+
+def test_point_cloud_inf_in_non_dense_cloud_is_still_invalid() -> None:
+    plugin = PointStreamPlugin()
+    points = [(1.0, 2.0, 3.0)] * 9 + [(float("inf"), 0.0, 0.0)]
+    plugin.on_message("/points", _point_cloud(points, is_dense=False))
+    status = plugin.get_status()
+    assert status.severity == Severity.ERROR
+    assert float(status.values["no_return_ratio"]) == 0.0
 
 
 def test_point_cloud_empty_payload_is_error() -> None:

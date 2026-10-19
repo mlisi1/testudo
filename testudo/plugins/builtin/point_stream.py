@@ -25,7 +25,11 @@ dependencies; no PCL, no real geometry processing): a malformed cloud
 (declared height*row_step longer than the actual payload), an empty
 payload, a NaN/Inf ratio sampled from the x/y/z fields (skipped if the
 cloud doesn't publish them), a stuck (byte-for-byte identical) cloud, and
-frame_id consistency.
+frame_id consistency. A cloud declaring `is_dense: false` (typical of an
+organized lidar cloud, e.g. a VLP-16's 16 rings) is *allowed* to carry NaN
+points -- that's how a beam with no return keeps its slot in the grid --
+so those count as a reported `no_return_ratio`, not as invalid; only Inf
+is invalid there. A cloud claiming `is_dense: true` has no such excuse.
 """
 from __future__ import annotations
 
@@ -65,24 +69,34 @@ def _check_point_cloud_shape(msg: PointCloud2) -> tuple[bool, str]:
     return False, ""
 
 
-def _invalid_point_ratio(msg: PointCloud2) -> float:
-    """Fraction of points with a non-finite x/y/z coordinate, or 0.0 if the cloud has none of those fields."""
+def _invalid_and_no_return_ratios(msg: PointCloud2) -> tuple[float, float]:
+    """(invalid, no-return) fractions of points, judged on the x/y/z coordinates.
+
+    A NaN coordinate is a no-return placeholder in a cloud declaring
+    `is_dense: false`, and invalid in one claiming `is_dense: true`; an
+    infinite coordinate is always invalid. (0.0, 0.0) if the cloud has
+    none of the coordinate fields.
+    """
     present = {field.name for field in msg.fields}
     field_names = [name for name in _COORDINATE_FIELD_NAMES if name in present]
     if not field_names:
-        return 0.0
+        return 0.0, 0.0
     try:
         points = read_points(msg, field_names=field_names, skip_nans=False)
     except Exception:
         # A malformed cloud (bad field/offset/datatype combination) is
         # already flagged by `_check_point_cloud_shape`'s length check, or
         # close enough to it -- don't also raise out of a content check.
-        return 0.0
+        return 0.0, 0.0
     if points.size == 0:
-        return 0.0
+        return 0.0, 0.0
     coords = np.stack([points[name].astype(np.float64) for name in field_names], axis=-1)
-    finite_per_point = np.all(np.isfinite(coords), axis=-1)
-    return float(np.count_nonzero(~finite_per_point)) / coords.shape[0]
+    total = coords.shape[0]
+    non_finite = np.count_nonzero(~np.all(np.isfinite(coords), axis=-1))
+    if msg.is_dense:
+        return float(non_finite) / total, 0.0
+    infinite = np.count_nonzero(np.any(np.isinf(coords), axis=-1))
+    return float(infinite) / total, float(non_finite - infinite) / total
 
 
 class PointStreamPlugin(CheckPlugin):
@@ -100,6 +114,7 @@ class PointStreamPlugin(CheckPlugin):
         self._last_signature: Any = None
         self._stuck_count = 0
         self._invalid_ratio = 0.0
+        self._no_return_ratio: float | None = None
         self._plausibility_ok = True
         self._malformed = False
         self._malformed_detail = ""
@@ -172,8 +187,10 @@ class PointStreamPlugin(CheckPlugin):
             self._detail = "empty point cloud"
             return
 
-        self._invalid_ratio = _invalid_point_ratio(msg)
-        self._detail = f"{point_count} point(s), {self._invalid_ratio:.2%} invalid"
+        self._invalid_ratio, self._no_return_ratio = _invalid_and_no_return_ratios(msg)
+        self._detail = (
+            f"{point_count} point(s), {self._no_return_ratio:.1%} no return, {self._invalid_ratio:.2%} invalid"
+        )
         self._check_stuck(_payload_signature(data))
 
     def get_status(self) -> CheckStatus:
@@ -208,6 +225,7 @@ class PointStreamPlugin(CheckPlugin):
 
         values = {
             "invalid_ratio": f"{self._invalid_ratio:.4g}",
+            **({"no_return_ratio": f"{self._no_return_ratio:.4g}"} if self._no_return_ratio is not None else {}),
             "stuck_count": str(self._stuck_count),
             "frame_id": self._last_frame_id or "",
             "detail": self._detail,
