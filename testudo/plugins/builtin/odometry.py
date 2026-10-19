@@ -6,12 +6,11 @@ covariance matrices, an unbounded covariance growth-rate sanity check, and
 (when a `cmd_vel` related topic is configured) a cross-check against
 commanded velocity to catch a robot that isn't moving despite being told to.
 
-The Detail Panel's per-axis breakdown (position x/y/z, orientation
-roll/pitch/yaw, each with its own covariance and a zone-colored meter)
-converts the pose orientation quaternion to roll/pitch/yaw via
-`_quaternion_to_euler` purely for display, matching the axes
-`nav_msgs/Odometry`'s orientation covariance is already expressed against
-(REP 103) -- it plays no part in any of this plugin's actual checks.
+The Detail Panel's per-axis breakdown (position and orientation σ, each
+with a zone-colored meter, beside actual vs. commanded velocity) is laid
+out by `odometry_layout.py`. The pose orientation quaternion is converted
+to roll/pitch/yaw via `_quaternion_to_euler` purely for display -- it plays
+no part in any of this plugin's actual checks.
 """
 from __future__ import annotations
 
@@ -22,7 +21,6 @@ from typing import Any
 import numpy as np
 
 from testudo.plugins.base import (
-    SEVERITY_COLORS,
     CheckPlugin,
     CheckStatus,
     Severity,
@@ -30,7 +28,15 @@ from testudo.plugins.base import (
     colorize,
     evaluate_zone,
 )
-from testudo.plugins.render import meter
+from testudo.plugins.builtin.odometry_layout import (
+    POSITION_AXES,
+    motion_rows,
+    pose_line,
+    side_by_side,
+    sigma_rows,
+    twist_sigma_line,
+)
+from testudo.plugins.render import downsample, meter, sparkline
 
 #: Position (x, y, z) and orientation (roll, pitch, yaw -- rotation about
 #: X/Y/Z, per REP 103) variances live at these diagonal indices in the
@@ -40,9 +46,9 @@ _ROLL_VARIANCE_INDEX = 21
 _PITCH_VARIANCE_INDEX = 28
 _YAW_VARIANCE_INDEX = 35
 _ORIENTATION_VARIANCE_INDICES = (_ROLL_VARIANCE_INDEX, _PITCH_VARIANCE_INDEX, _YAW_VARIANCE_INDEX)
-
-_POSITION_AXES = ("x", "y", "z")
-_ORIENTATION_AXES = ("roll", "pitch", "yaw")
+#: Forward speed and yaw rate variances in the twist covariance.
+_TWIST_LINEAR_X_VARIANCE_INDEX = 0
+_TWIST_ANGULAR_Z_VARIANCE_INDEX = 35
 
 #: Eigenvalues below this (not just < 0) count as a real PSD violation --
 #: allows for floating-point noise around zero.
@@ -55,20 +61,15 @@ _CMD_MOVING_THRESHOLD_RADPS = 0.05
 _ODOM_STUCK_THRESHOLD_MPS = 0.02
 _ODOM_STUCK_THRESHOLD_RADPS = 0.02
 
-#: Per-axis meter width (filled/empty squares) on a wide enough Detail
-#: Panel; collapses to one square (see `render.meter`) on a narrow one. Kept
-#: short (not e.g. 10+) since position and orientation sit side by side
-#: (see `_pose_block_wide`), each getting roughly half the Detail Panel's
-#: width, not all of it.
+#: Per-axis meter width on a wide enough Detail Panel; one square on a narrow one.
 _METER_SEGMENTS = 6
 _COMPACT_METER_SEGMENTS = 1
 
-_AXIS_LABEL_WIDTH = 6
-_AXIS_VALUE_WIDTH = 7
-_AXIS_VARIANCE_WIDTH = 7
-#: Gap between the position (left) and orientation (right) columns in the
-#: wide side-by-side layout.
-_GROUP_GAP = "   "
+#: The horizontal-σ trend: one sample per this many seconds, this many kept.
+_SIGMA_SAMPLE_SECONDS = 1.0
+_SIGMA_HISTORY_SIZE = 60
+#: Cells the σxy sparkline is averaged down to.
+_TREND_WIDTH = 20
 
 
 def _is_positive_semidefinite(matrix: np.ndarray) -> bool:
@@ -103,36 +104,6 @@ def _split_zone(zone: ThresholdZone | None, parts: int) -> ThresholdZone | None:
     )
 
 
-def _axis_line(label: str, value: float, variance: float, zone: ThresholdZone | None, segments: int) -> str:
-    """One line: an axis's value and its covariance, with a meter for the latter.
-
-    Column widths match `_axis_group_header` so a header row lines up with
-    every axis row under it.
-    """
-    bar = meter(variance, zone, segments)
-    meter_part = f" {bar}" if bar else ""
-    return (
-        f"{label:<{_AXIS_LABEL_WIDTH}}{value:>{_AXIS_VALUE_WIDTH}.3f} "
-        f"{variance:>{_AXIS_VARIANCE_WIDTH}.3f}{meter_part}"
-    )
-
-
-def _axis_group_header(segments: int) -> str:
-    """Bold "value"/"cov" column headers aligned over `_axis_line`'s numeric columns.
-
-    Takes `segments` to pad out a trailing blank exactly as wide as
-    `_axis_line`'s own meter column (`" " + segments` chars, matching
-    `meter_part` there) -- without it, a *second* header (e.g. orientation's,
-    to the right of position's) starts too early, before where its axis
-    rows actually begin.
-    """
-    meter_width = 1 + segments
-    return (
-        f"{'':<{_AXIS_LABEL_WIDTH}}[b]{'value':>{_AXIS_VALUE_WIDTH}}[/b] "
-        f"[b]{'cov':>{_AXIS_VARIANCE_WIDTH}}[/b]{'':<{meter_width}}"
-    )
-
-
 class OdometryPlugin(CheckPlugin):
     """Covariance sanity, growth-rate, and (optional) cmd_vel cross-check for nav_msgs/Odometry."""
 
@@ -156,6 +127,12 @@ class OdometryPlugin(CheckPlugin):
         self._last_linear_x = 0.0
         self._last_angular_z = 0.0
         self._last_cmd_vel: tuple[float, float] | None = None
+        self._twist_variance: tuple[float, float] = (0.0, 0.0)
+        self._frames: tuple[str, str] = ("", "")
+        self._now = 0.0
+        self._stamp_lag: float | None = None
+        self._sigma_xy_history: deque[float] = deque(maxlen=_SIGMA_HISTORY_SIZE)
+        self._last_sigma_sample: float | None = None
 
     @classmethod
     def msg_types(cls) -> tuple[str, ...]:
@@ -168,6 +145,18 @@ class OdometryPlugin(CheckPlugin):
             "yaw_variance": ThresholdZone(green=0.01, orange=0.1),
             "covariance_growth_rate": ThresholdZone(green=0.01, orange=0.1),
         }
+
+    def on_tick(self, now_seconds: float) -> None:
+        self._now = now_seconds
+        if self._message_count == 0:
+            return
+        if self._last_sigma_sample is None or now_seconds - self._last_sigma_sample >= _SIGMA_SAMPLE_SECONDS:
+            self._sigma_xy_history.append(self._sigma_xy())
+            self._last_sigma_sample = now_seconds
+
+    def _sigma_xy(self) -> float:
+        """Horizontal position σ in meters: sqrt(var_x + var_y), the "±26 cm" people think in."""
+        return math.sqrt(max(0.0, self._position_variance[0] + self._position_variance[1]))
 
     def on_message(self, topic: str, msg: Any) -> None:
         if topic == self.related_topics.get("cmd_vel"):
@@ -196,7 +185,15 @@ class OdometryPlugin(CheckPlugin):
         self._pose_psd_ok = _is_positive_semidefinite(pose_matrix)
         self._twist_psd_ok = _is_positive_semidefinite(twist_matrix)
 
+        self._twist_variance = (
+            float(twist_covariance[_TWIST_LINEAR_X_VARIANCE_INDEX]),
+            float(twist_covariance[_TWIST_ANGULAR_Z_VARIANCE_INDEX]),
+        )
+        self._frames = (msg.header.frame_id, msg.child_frame_id)
+
         stamp_seconds = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        # Only meaningful once a tick has set the clock and the stamp is set at all.
+        self._stamp_lag = self._now - stamp_seconds if self._now > 0 and stamp_seconds > 0 else None
         self._growth_history.append((stamp_seconds, self._position_covariance_trace))
         self._growth_rate = self._compute_growth_rate()
 
@@ -253,134 +250,68 @@ class OdometryPlugin(CheckPlugin):
             problems.append(cmd_vel_message)
         message = "; ".join(problems) if problems else "odometry nominal"
 
-        # TUI_DATA_DESIGN.md's error-code proposal: every currently active
-        # problem, independently of one another (unlike `message`, which
-        # rolls them all into one string) -- a topic can have several active
-        # codes at once (e.g. ODOM-001 and ODOM-006 simultaneously). Kept to
-        # a couple words each: these render inline next to the roll/pitch/
-        # yaw rows (see `_pose_block_wide`), not as their own section, so
-        # there's no room for a full sentence per code.
         codes: dict[str, str] = {}
         if trace_severity != Severity.OK:
-            codes["ODOM-001"] = colorize("cov high", trace_severity)
+            codes["ODOM-001"] = colorize(
+                f"position covariance high (trace {self._position_covariance_trace:.3g} m²)", trace_severity
+            )
         if yaw_severity != Severity.OK:
-            codes["ODOM-002"] = colorize("yaw high", yaw_severity)
+            codes["ODOM-002"] = colorize(f"yaw variance high ({self._yaw_variance:.3g} rad²)", yaw_severity)
         if growth_severity != Severity.OK:
-            codes["ODOM-003"] = colorize("growing", growth_severity)
+            codes["ODOM-003"] = colorize(f"covariance growing {self._growth_rate:+.3g} m²/s", growth_severity)
         if not self._pose_psd_ok:
-            codes["ODOM-004"] = colorize("pose PSD", Severity.ERROR)
+            codes["ODOM-004"] = colorize("pose covariance not positive semi-definite", Severity.ERROR)
         if not self._twist_psd_ok:
-            codes["ODOM-005"] = colorize("twist PSD", Severity.ERROR)
+            codes["ODOM-005"] = colorize("twist covariance not positive semi-definite", Severity.ERROR)
         if cmd_vel_severity != Severity.OK:
-            codes["ODOM-006"] = colorize("cmd_vel", cmd_vel_severity)
+            codes["ODOM-006"] = colorize("cmd_vel commands motion, odometry reports none", cmd_vel_severity)
 
-        cmd_vel_topic = self.related_topics.get("cmd_vel")
-        cmd_vel_detail = f"cmd_vel ({cmd_vel_topic}): {cmd_vel_message}" if cmd_vel_topic else f"cmd_vel: {cmd_vel_message}"
-
-        # Per-axis position/orientation breakdown (values + their own
-        # covariance, one meter each) per TUI_DATA_DESIGN.md's Odometry
-        # Detail Panel proposal -- supersedes a flat position_covariance_trace/
-        # yaw_variance pair with the individual x/y/z and roll/pitch/yaw
-        # numbers those two were only ever a summary of. Orientation axes
-        # share yaw_variance's threshold zone. Position axes are judged per
-        # axis, not against the trace (a sum of three variances, so judging
-        # one axis by it reads every axis as healthier than it is): an
-        # explicit `position_axis_variance` zone if configured, else the
-        # trace's zone split evenly across x/y/z.
-        #
-        # Wide layout: position and orientation side by side (3 rows + a
-        # "value"/"var" column-header row) -- there's usually horizontal
-        # room going spare that a single stacked column never used. Compact
-        # (narrow-terminal) layout stays a plain 6-row stack with 1-segment
-        # meters: a real second column needs real width, which is exactly
-        # what a narrow panel doesn't have.
+        # Position axes are judged per axis, not against the trace (a sum of
+        # three variances, so judging one axis by it reads every axis as
+        # healthier than it is): an explicit `position_axis_variance` zone if
+        # configured, else the trace's zone split evenly across x/y/z.
+        # Orientation axes share yaw_variance's zone.
         position_zone = self.thresholds.get("position_axis_variance") or _split_zone(
-            self.thresholds.get("position_covariance_trace"), len(_POSITION_AXES)
+            self.thresholds.get("position_covariance_trace"), len(POSITION_AXES)
         )
         orientation_zone = self.thresholds.get("yaw_variance")
-        position_data = list(zip(_POSITION_AXES, self._position, self._position_variance))
-        orientation_data = list(zip(_ORIENTATION_AXES, self._orientation_rpy, self._orientation_variance))
+        growth_zone = self.thresholds.get("covariance_growth_rate")
+        psd = (self._pose_psd_ok, self._twist_psd_ok)
+        motion = motion_rows((self._last_linear_x, self._last_angular_z), self._last_cmd_vel, psd)
 
-        # Active error codes render as short "[CODE] text" tags to the right
-        # of the roll/pitch/yaw rows -- one per row, in the same order as
-        # `codes` (ODOM-001 first) -- rather than their own section, so
-        # they're visible without costing any extra lines. A topic with more
-        # than 3 simultaneously-active codes (all six is possible) overflows
-        # onto extra lines below the 3 rows instead of being dropped.
-        error_tags = [f"[b]\\[{code}][/b] {short_message}" for code, short_message in codes.items()]
+        def sigmas(segments: int) -> list[str]:
+            return sigma_rows(self._position_variance, self._orientation_variance, position_zone, orientation_zone, segments)
 
-        def _pose_block_wide() -> str:
-            header = _axis_group_header(_METER_SEGMENTS) + _GROUP_GAP + _axis_group_header(_METER_SEGMENTS)
-            rows = [header]
-            for index, ((p_label, p_value, p_var), (o_label, o_value, o_var)) in enumerate(
-                zip(position_data, orientation_data)
-            ):
-                left = _axis_line(p_label, p_value, p_var, position_zone, _METER_SEGMENTS)
-                right = _axis_line(o_label, o_value, o_var, orientation_zone, _METER_SEGMENTS)
-                row = f"{left}{_GROUP_GAP}{right}"
-                if index < len(error_tags):
-                    row = f"{row}{_GROUP_GAP}{error_tags[index]}"
-                rows.append(row)
-            rows.extend(error_tags[len(position_data) :])
-            # Trailing "\n": a little breathing room before the growth/PSD/
-            # cmd_vel line that follows this one in `values` -- the generic
-            # Detail Panel renderer joins consecutive `values` entries with
-            # one "\n" of its own, so this trailing one plus that join
-            # together leave exactly one blank line between the two.
-            return "\n".join(rows) + "\n"
-
-        def _pose_block_compact() -> str:
-            lines = (
-                [
-                    _axis_line(label, value, var, position_zone, _COMPACT_METER_SEGMENTS)
-                    for label, value, var in position_data
-                ]
-                + [
-                    _axis_line(label, value, var, orientation_zone, _COMPACT_METER_SEGMENTS)
-                    for label, value, var in orientation_data
-                ]
-                + error_tags
-            )
-            return "\n".join(lines) + "\n"
-
-        pose_psd = f"pose{'✓' if self._pose_psd_ok else '✗'}"
-        twist_psd = f"twist{'✓' if self._twist_psd_ok else '✗'}"
-        growth_meter = meter(abs(self._growth_rate), self.thresholds.get("covariance_growth_rate"), _METER_SEGMENTS)
-        growth_meter_compact = meter(
-            abs(self._growth_rate), self.thresholds.get("covariance_growth_rate"), _COMPACT_METER_SEGMENTS
-        )
-
-        # growth-rate + PSD + cmd_vel cross-check share one line -- put the
-        # cmd_vel result to the right of growth/PSD rather than its own row,
-        # since there's horizontal room going spare here just like there was
-        # for the position/orientation blocks above.
+        frame, child = self._frames
+        trend = sparkline(downsample(self._sigma_xy_history, _TREND_WIDTH), trace_severity, floor=0.0)
         values = {
-            "position_orientation": _pose_block_wide(),
-            "position_orientation_compact": _pose_block_compact(),
-            "growth_psd": f"{abs(self._growth_rate):>7.3f}/s {growth_meter}  PSD {pose_psd} {twist_psd}   {cmd_vel_detail}",
-            "growth_psd_compact": (
-                f"{abs(self._growth_rate):>7.3f}/s {growth_meter_compact}  PSD {pose_psd} {twist_psd}   {cmd_vel_detail}"
+            # Wide: σ and motion side by side, one row per axis. Narrow: the
+            # σ rows alone with one-square meters, motion on rows of its own.
+            "axes": side_by_side(sigmas(_METER_SEGMENTS), motion),
+            "axes_compact": "\n".join(sigmas(_COMPACT_METER_SEGMENTS) + motion),
+            "σxy": (
+                f"{trend or '[dim]–[/dim]'} [dim]({len(self._sigma_xy_history)} s)[/dim]   "
+                f"growth {self._growth_rate:+.3f} m²/s {meter(abs(self._growth_rate), growth_zone, _METER_SEGMENTS)}   "
+                f"[dim]{frame or '?'} → {child or '?'}[/dim]"
             ),
+            "pose_more": pose_line(self._position, self._orientation_rpy[2]),
+            "twist_σ_more": twist_sigma_line(*self._twist_variance),
         }
+        if self._stamp_lag is not None:
+            values["stamp_lag_more"] = f"{self._stamp_lag * 1000:.0f} ms"
 
-        # Topic Panel "Cov" column per TUI_DATA_DESIGN.md's Odometry proposal
-        # (Option 1): position_covariance_trace, zone-colored -- the single
-        # most continuously informative number for "is localization
-        # confidence degrading", scanned across many odometry topics at once.
-        trace_color = SEVERITY_COLORS.get(trace_severity, "white")
-        topic_panel_value = f"[{trace_color}]{self._position_covariance_trace:.3f}[/{trace_color}]"
-
-        # `codes` is deliberately NOT also passed to CheckStatus here: it's
-        # already rendered inline (see `error_tags` above), and the generic
-        # Detail Panel would otherwise show every active code a second time
-        # in its own fallback section below `values`. That fallback stays
-        # for plugins/liveness statuses that don't have a custom placement
-        # for their codes the way this one now does.
         return CheckStatus(
             severity=worst,
             label="odometry",
             message=message,
             values=values,
-            topic_panel_column="Cov",
-            topic_panel_value=topic_panel_value,
+            topic_panel_column="σxy",
+            topic_panel_value=self._sigma_xy_cell(trace_severity, growth_zone),
+            codes=codes,
         )
+
+    def _sigma_xy_cell(self, severity: int, growth_zone: ThresholdZone | None) -> str:
+        """The Topic Panel cell: horizontal σ colored by the trace's zone, with a trend arrow from the growth check."""
+        steady = growth_zone.green if growth_zone is not None and growth_zone.green is not None else 0.0
+        arrow = "↑" if self._growth_rate > steady else "↓" if self._growth_rate < -steady else ""
+        return colorize(f"±{self._sigma_xy():.2f}{arrow}", severity)

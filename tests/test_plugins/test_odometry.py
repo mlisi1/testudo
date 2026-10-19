@@ -2,14 +2,19 @@
 from __future__ import annotations
 
 import math
-import re
 
 import pytest
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 
+from rich.text import Text
+
 from testudo.plugins.base import Severity
 from testudo.plugins.builtin.odometry import OdometryPlugin
+
+
+def _plain(markup: str) -> str:
+    return Text.from_markup(markup).plain
 
 
 def _odometry(
@@ -83,8 +88,10 @@ def test_negative_diagonal_covariance_fails_psd_check() -> None:
     status = plugin.get_status()
     assert status.severity == Severity.ERROR
     assert "positive semi-definite" in status.message
-    assert "pose✗" in status.values["growth_psd"]
-    assert "twist✓" in status.values["growth_psd"]
+    axes = _plain(status.values["axes"])
+    assert "✗ pose" in axes
+    assert "✓ twist" in axes
+    assert set(status.codes) == {"ODOM-004"}  # twist covariance is untouched (all zero, valid PSD)
 
 
 def test_rapid_covariance_growth_is_flagged() -> None:
@@ -100,7 +107,7 @@ def test_cmd_vel_cross_check_without_related_topic_configured_is_ok() -> None:
     plugin = OdometryPlugin()
     plugin.on_message("/odom", _odometry(linear_x=0.0))
     status = plugin.get_status()
-    assert "cmd_vel: no cmd_vel received yet" in status.values["growth_psd"]
+    assert "cmd     – m/s" in _plain(status.values["axes"])
     assert status.severity == Severity.OK
 
 
@@ -111,6 +118,8 @@ def test_cmd_vel_cross_check_flags_commanded_motion_with_no_odometry_movement() 
     status = plugin.get_status()
     assert status.severity == Severity.WARN
     assert "cmd_vel commands motion" in status.message
+    assert "0.00  cmd  0.50 m/s" in _plain(status.values["axes"])
+    assert "ODOM-006" in status.codes
 
 
 def test_cmd_vel_cross_check_passes_when_odometry_matches_commanded_motion() -> None:
@@ -142,104 +151,88 @@ def test_no_messages_yet_has_no_topic_panel_column() -> None:
     assert status.topic_panel_value == ""
 
 
-def test_topic_panel_column_is_covariance_trace() -> None:
+def test_topic_panel_column_is_horizontal_sigma() -> None:
     plugin = OdometryPlugin()
-    plugin.on_message("/odom", _odometry(xx=0.03))
+    plugin.on_message("/odom", _odometry(xx=0.03, yy=0.0076))
     status = plugin.get_status()
-    assert status.topic_panel_column == "Cov"
-    assert "0.03" in status.topic_panel_value
+    assert status.topic_panel_column == "σxy"
+    assert _plain(status.topic_panel_value) == "±0.19"
 
 
-def test_topic_panel_value_is_colored_by_its_own_zone() -> None:
+def test_topic_panel_value_is_colored_by_its_own_zone_with_a_growth_arrow() -> None:
     plugin = OdometryPlugin()
-    plugin.on_message("/odom", _odometry(xx=0.2, yy=0.2, zz=0.2))  # trace 0.6 >> default orange 0.1 -> ERROR
+    plugin.on_message("/odom", _odometry(stamp_sec=0, xx=0.0))
+    plugin.on_message("/odom", _odometry(stamp_sec=1, xx=0.2, yy=0.2, zz=0.2))  # trace 0.6 >> orange 0.1, growing
     status = plugin.get_status()
     assert "[bold red]" in status.topic_panel_value
+    assert _plain(status.topic_panel_value).endswith("↑")
 
 
-def test_growth_psd_detail_reflects_severity_and_psd_state() -> None:
+def test_growth_rate_is_shown_with_a_meter_colored_by_its_zone() -> None:
     plugin = OdometryPlugin()
     plugin.on_message("/odom", _odometry(stamp_sec=0, xx=0.0))
     plugin.on_message("/odom", _odometry(stamp_sec=0, stamp_nanosec=10_000_000, xx=0.05))  # +0.05 in 10ms = 5/s -> ERROR
     status = plugin.get_status()
-    detail = status.values["growth_psd"]
-    assert "pose✓" in detail
-    assert "twist✓" in detail
-    assert "[bold red]" in detail  # growth rate meter colored by its own (ERROR) zone
+    assert "growth +5.000 m²/s" in _plain(status.values["σxy"])
+    assert "[bold red]▮" in status.values["σxy"]
+    assert "ODOM-003" in status.codes
 
 
-def test_position_orientation_block_has_every_axis_labeled() -> None:
+def test_axes_block_has_a_row_per_axis_with_sigma_and_motion_side_by_side() -> None:
     plugin = OdometryPlugin()
-    plugin.on_message("/odom", _odometry(xx=0.2, yaw_variance=0.05))
-    status = plugin.get_status()
-    block = status.values["position_orientation"]
-    for axis in ("x", "y", "z", "roll", "pitch", "yaw"):
-        assert axis in block
-    assert block.count("\n") == 4  # header row + 3 side-by-side rows + trailing blank-line separator
+    plugin.on_message("/odom", _odometry(xx=0.0676, yaw_variance=0.0001))
+    rows = _plain(plugin.get_status().values["axes"]).splitlines()
+    assert len(rows) == 3
+    assert rows[0].startswith("x      ±0.26m ")
+    assert "roll" in rows[0] and rows[0].rstrip().endswith("m/s")
+    assert "yaw    ±0.57°" in rows[2] and "PSD" in rows[2]
+    # The orientation group starts in the same column on every row.
+    assert len({row.index(axis) for row, axis in zip(rows, ("roll", "pitch", "yaw"))}) == 1
 
 
-def test_position_orientation_block_has_value_and_cov_column_headers() -> None:
-    plugin = OdometryPlugin()
-    plugin.on_message("/odom", _odometry(xx=0.2))
-    status = plugin.get_status()
-    header = status.values["position_orientation"].splitlines()[0]
-    assert header.count("value") == 2  # one per side-by-side group
-    assert header.count("cov") == 2
-    assert header.count("[b]") == 4  # both headers, both columns, bold
-
-
-def test_position_orientation_header_group_width_matches_axis_line_group_width() -> None:
-    from testudo.plugins.builtin.odometry import _GROUP_GAP, _METER_SEGMENTS, _axis_group_header
-
+def test_axes_compact_variant_stacks_motion_under_one_square_meters() -> None:
     plugin = OdometryPlugin()
     plugin.on_message("/odom", _odometry(xx=0.2))
     status = plugin.get_status()
-    first_axis_row = status.values["position_orientation"].splitlines()[1]
-
-    # One header group's rendered width (its label/value/cov columns *and*
-    # its meter placeholder) plus the group gap must land exactly where the
-    # orientation axes' row actually starts ("roll") -- this is the
-    # invariant the screenshot-reported bug violated (the header omitted
-    # the meter placeholder, so the second header group started 7 columns
-    # too early relative to "roll").
-    plain_header_group = re.sub(r"\[/?[^\]]+\]", "", _axis_group_header(_METER_SEGMENTS))
-    plain_row = re.sub(r"\[/?[^\]]+\]", "", first_axis_row)
-    second_axis_start = plain_row.index("roll")
-    assert len(plain_header_group) + len(_GROUP_GAP) == second_axis_start
+    compact = _plain(status.values["axes_compact"]).splitlines()
+    assert len(compact) == 6
+    assert compact[0].count("▮") + compact[0].count("▯") == 2  # one square each for x and roll
 
 
-def test_position_orientation_compact_variant_has_no_header_and_is_stacked() -> None:
+def test_sigma_xy_trend_samples_once_a_second_on_tick() -> None:
     plugin = OdometryPlugin()
-    plugin.on_message("/odom", _odometry())  # nominal -- no active codes to append
-    status = plugin.get_status()
-    compact = status.values["position_orientation_compact"]
-    assert "value" not in compact
-    assert compact.count("\n") == 6  # six stacked one-line axes, no header, trailing blank-line separator
+    plugin.on_tick(1.0)
+    plugin.on_message("/odom", _odometry(xx=0.01))
+    for t in (1.0, 1.5, 2.0, 3.0):
+        plugin.on_tick(t)
+    plugin.on_message("/odom", _odometry(xx=0.04))
+    plugin.on_tick(4.0)
+    value = _plain(plugin.get_status().values["σxy"])
+    assert value.startswith("▅▅▅█ (4 s)")  # σ 0.1 then 0.2, scaled from 0
 
 
-def test_position_orientation_compact_variant_has_fewer_meter_squares() -> None:
+def test_frame_pair_and_secondary_values() -> None:
     plugin = OdometryPlugin()
-    plugin.on_message("/odom", _odometry(xx=0.2))
-    status = plugin.get_status()
-    wide = status.values["position_orientation"]
-    compact = status.values["position_orientation_compact"]
-
-    def square_count(text: str) -> int:
-        return text.count("▮") + text.count("▯")
-
-    assert square_count(compact) < square_count(wide)
-
-
-def test_position_orientation_block_reflects_actual_pose_position() -> None:
-    plugin = OdometryPlugin()
-    msg = _odometry()
+    msg = _odometry(stamp_sec=9)
+    msg.header.frame_id = "odom"
+    msg.child_frame_id = "base_link"
     msg.pose.pose.position.x = 1.234
-    msg.pose.pose.position.y = -5.678
+    plugin.on_tick(9.012)
     plugin.on_message("/odom", msg)
+    values = plugin.get_status().values
+    assert _plain(values["σxy"]).endswith("odom → base_link")
+    assert "x 1.234" in _plain(values["pose_more"])
+    assert values["stamp_lag_more"] == "12 ms"
+    assert "twist_σ_more" in values
+
+
+def test_codes_go_in_the_generic_code_lines() -> None:
+    plugin = OdometryPlugin(related_topics={"cmd_vel": "/cmd_vel"})
+    plugin.on_message("/cmd_vel", _twist(linear_x=0.5))
+    plugin.on_message("/odom", _odometry(xx=0.2, yy=0.2, zz=0.2, linear_x=0.0))  # trace over + cmd_vel mismatch
     status = plugin.get_status()
-    block = status.values["position_orientation"]
-    assert "1.234" in block
-    assert "-5.678" in block
+    assert set(status.codes) == {"ODOM-001", "ODOM-006"}
+    assert "[bold red]" in status.codes["ODOM-001"]
 
 
 def test_quaternion_to_euler_recovers_a_quarter_turn_yaw() -> None:
@@ -250,63 +243,6 @@ def test_quaternion_to_euler_recovers_a_quarter_turn_yaw() -> None:
     assert roll == pytest.approx(0.0, abs=1e-9)
     assert pitch == pytest.approx(0.0, abs=1e-9)
     assert yaw == pytest.approx(math.pi / 2, abs=1e-9)
-
-
-def test_cmd_vel_check_detail_names_the_cross_checked_topic() -> None:
-    plugin = OdometryPlugin(related_topics={"cmd_vel": "/cmd_vel"})
-    plugin.on_message("/cmd_vel", _twist(linear_x=0.5))
-    plugin.on_message("/odom", _odometry(linear_x=0.0))
-    status = plugin.get_status()
-    assert "cmd_vel (/cmd_vel):" in status.values["growth_psd"]
-
-
-def test_nominal_odometry_has_no_error_tags_inline() -> None:
-    plugin = OdometryPlugin()
-    plugin.on_message("/odom", _odometry())
-    status = plugin.get_status()
-    assert "ODOM-" not in status.values["position_orientation"]
-
-
-def test_covariance_trace_over_threshold_shows_odom_001_inline() -> None:
-    plugin = OdometryPlugin()
-    plugin.on_message("/odom", _odometry(xx=0.2, yy=0.2, zz=0.2))  # trace 0.6 -> ERROR
-    status = plugin.get_status()
-    block = status.values["position_orientation"]
-    assert "ODOM-001" in block
-    assert "[bold red]" in block
-    assert "ODOM-002" not in block
-
-
-def test_psd_failure_shows_the_specific_pose_or_twist_code_inline_not_both() -> None:
-    plugin = OdometryPlugin()
-    msg = _odometry()
-    cov = list(msg.pose.covariance)
-    cov[0] = -1.0
-    msg.pose.covariance = cov
-    plugin.on_message("/odom", msg)
-    status = plugin.get_status()
-    block = status.values["position_orientation"]
-    assert "ODOM-004" in block
-    assert "ODOM-005" not in block  # twist covariance is untouched (all zero, valid PSD)
-
-
-def test_multiple_simultaneous_problems_all_show_up_inline() -> None:
-    plugin = OdometryPlugin(related_topics={"cmd_vel": "/cmd_vel"})
-    plugin.on_message("/cmd_vel", _twist(linear_x=0.5))
-    plugin.on_message("/odom", _odometry(xx=0.2, yy=0.2, zz=0.2, linear_x=0.0))  # trace over + cmd_vel mismatch
-    status = plugin.get_status()
-    block = status.values["position_orientation"]
-    assert "ODOM-001" in block
-    assert "ODOM-006" in block
-
-
-def test_check_status_codes_field_stays_empty_since_errors_render_inline() -> None:
-    # Avoids the generic Detail Panel fallback double-rendering codes that
-    # this plugin already places itself, next to roll/pitch/yaw.
-    plugin = OdometryPlugin()
-    plugin.on_message("/odom", _odometry(xx=0.2, yy=0.2, zz=0.2))
-    status = plugin.get_status()
-    assert status.codes == {}
 
 
 def test_split_zone_divides_every_configured_boundary() -> None:
