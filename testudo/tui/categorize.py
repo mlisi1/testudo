@@ -7,20 +7,24 @@ from __future__ import annotations
 
 from testudo.core.topic_report import TopicReport
 
-#: Message types whose plugin-derived category name reads better than the
-#: message type's own short name would (e.g. "GoalStatusArray" -> "Nav2 Actions").
+#: Message types whose category reads better as what the topics *are* than
+#: as the message type's own short name (e.g. "GoalStatusArray" -> "Nav2
+#: Actions", "NavSatFix" -> "GNSS").
 _FRIENDLY_NAMES = {
     "action_msgs/msg/GoalStatusArray": "Nav2 Actions",
+    "nav2_msgs/msg/BehaviorTreeLog": "BT Navigator",
     "tf2_msgs/msg/TFMessage": "TF",
-    "sensor_msgs/msg/Image": "ImageStream",
-    "sensor_msgs/msg/CompressedImage": "ImageStream",
-    "sensor_msgs/msg/LaserScan": "PointStream",
-    "sensor_msgs/msg/PointCloud2": "PointStream",
+    "sensor_msgs/msg/NavSatFix": "GNSS",
+    "sensor_msgs/msg/Imu": "IMU",
+    "sensor_msgs/msg/Image": "Cameras",
+    "sensor_msgs/msg/CompressedImage": "Cameras",
+    "sensor_msgs/msg/LaserScan": "Lidar",
+    "sensor_msgs/msg/PointCloud2": "Lidar",
     # No plugin covers this type (see subscription_manager.py's
     # `_PRESENCE_ONLY_MSG_TYPES_WITHOUT_PLUGIN`), but it's still a camera
     # frame wearing a codec's wire format -- group it with the rest of a
     # camera's topics rather than giving it its own "Packet" row.
-    "theora_image_transport/msg/Packet": "ImageStream",
+    "theora_image_transport/msg/Packet": "Cameras",
 }
 
 #: Vitals-tier topics have no plugin identity to group by, so they all land here.

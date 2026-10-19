@@ -17,7 +17,7 @@ def test_vitals_tier_always_goes_to_other_category() -> None:
 
 def test_full_tier_uses_message_type_short_name() -> None:
     assert category_for(_report("nav_msgs/msg/Odometry", "full")) == "Odometry"
-    assert category_for(_report("sensor_msgs/msg/Imu", "full")) == "Imu"
+    assert category_for(_report("sensor_msgs/msg/Imu", "full")) == "IMU"
 
 
 def test_full_tier_friendly_name_overrides() -> None:
@@ -31,8 +31,8 @@ def test_unknown_full_tier_type_falls_back_to_short_name() -> None:
 
 def test_presence_tier_gets_its_own_category_not_other() -> None:
     """A presence-only topic still has a plugin identity -- it shouldn't disappear into Other Topics."""
-    assert category_for(_report("sensor_msgs/msg/Image", "presence")) == "ImageStream"
-    assert category_for(_report("sensor_msgs/msg/PointCloud2", "presence")) == "PointStream"
+    assert category_for(_report("sensor_msgs/msg/Image", "presence")) == "Cameras"
+    assert category_for(_report("sensor_msgs/msg/PointCloud2", "presence")) == "Lidar"
 
 
 def test_presence_tier_unknown_type_falls_back_to_short_name() -> None:
@@ -40,13 +40,13 @@ def test_presence_tier_unknown_type_falls_back_to_short_name() -> None:
 
 
 def test_point_stream_friendly_name_groups_2d_and_3d_together() -> None:
-    assert category_for(_report("sensor_msgs/msg/LaserScan", "full")) == "PointStream"
-    assert category_for(_report("sensor_msgs/msg/PointCloud2", "presence")) == "PointStream"
+    assert category_for(_report("sensor_msgs/msg/LaserScan", "full")) == "Lidar"
+    assert category_for(_report("sensor_msgs/msg/PointCloud2", "presence")) == "Lidar"
 
 
 def test_theora_packet_groups_with_image_stream() -> None:
-    """No plugin covers theora packets, but they're still a camera's frames -- group with ImageStream, not alone."""
-    assert category_for(_report("theora_image_transport/msg/Packet", "presence")) == "ImageStream"
+    """No plugin covers theora packets, but they're still a camera's frames -- group with Cameras, not alone."""
+    assert category_for(_report("theora_image_transport/msg/Packet", "presence")) == "Cameras"
 
 
 def test_excluded_tier_always_goes_to_its_own_category_regardless_of_msg_type() -> None:

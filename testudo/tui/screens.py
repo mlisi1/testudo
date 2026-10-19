@@ -65,10 +65,10 @@ class DashboardScreen(Screen):
         self.query_one(CategorySummaryTable).focus()
 
     def _hint_text(self) -> str:
-        return (
-            "arrows/j/k: move   tab/←→: switch pane   /: filter   s: sort   "
-            "p: pause   r: reset   ?: help   q: quit"
-        )
+        # One line even at 101 columns (the narrowest typical terminal):
+        # `r` (reset) is left to the help overlay, the rest is what a
+        # first-time user needs to find their way around.
+        return "j/k move · tab/←→ pane · / filter · s sort · p pause · o options · ? help · q quit"
 
     def sync_header(self) -> None:
         header = self.query_one(TestudoHeader)

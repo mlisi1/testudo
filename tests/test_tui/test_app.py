@@ -33,11 +33,9 @@ def _reports() -> list[TopicReport]:
                 topic_panel_value="[bold red]0.6[/bold red]",
             ),
         ),
-        # "Imu", not "LaserScan"/"PointStream": needs a category name that
-        # sorts alphabetically *before* "Odometry" (the ERROR/worst one) so
-        # severity-order and name-order pick a different first row --
-        # PointStream now sorts after Odometry (see categorize.py's
-        # LaserScan/PointCloud2 -> "PointStream" friendly name).
+        # "IMU", not "Lidar": needs a category name that sorts
+        # alphabetically *before* "Odometry" (the ERROR/worst one) so
+        # severity-order and name-order pick a different first row.
         TopicReport("/imu", "sensor_msgs/msg/Imu", "full", CheckStatus(Severity.OK, "sensor", "nominal")),
         TopicReport("/battery", "sensor_msgs/msg/BatteryState", "vitals", CheckStatus(Severity.OK, "liveness", "alive")),
     ]
@@ -60,7 +58,7 @@ def test_app_starts_with_all_three_panes_populated() -> None:
             assert isinstance(app.screen, DashboardScreen)
             categories = app.screen.query_one(CategorySummaryTable)
             topics = app.screen.query_one(TopicDetailTable)
-            # 3 reports across 3 categories: Odometry, Imu, Other Topics.
+            # 3 reports across 3 categories: Odometry, IMU, Other Topics.
             assert categories.row_count == 3
             # Severity sort puts "Odometry" (ERROR, worst) on top by default,
             # so its 1 topic should already be showing in the topics pane
@@ -242,7 +240,7 @@ def test_sort_toggle_changes_focused_table_row_order() -> None:
             severity_order_first = categories.get_row_at(0)[0]
             await pilot.press("s")
             name_order_first = categories.get_row_at(0)[0]
-            # Alphabetical first ("Imu") differs from severity-first ("Odometry", the ERROR one).
+            # Alphabetical first ("IMU") differs from severity-first ("Odometry", the ERROR one).
             assert severity_order_first != name_order_first
 
     run(body())
