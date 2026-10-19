@@ -74,7 +74,8 @@ def test_image_stuck_frame_escalates_after_repeats() -> None:
     status = plugin.get_status()
     assert status.severity == Severity.WARN
     assert "stuck for" in status.message
-    assert status.values["stuck_count"] == "3"
+    assert status.values["stuck"] == "3"
+    assert "IMG-003" in status.codes
 
 
 def test_image_frame_id_change_is_flagged() -> None:
@@ -97,9 +98,10 @@ def test_image_topic_panel_shows_size_column() -> None:
 def test_detail_values_report_human_readable_size() -> None:
     plugin = ImageStreamPlugin()
     plugin.on_message("/camera/image_raw", _image())
-    size = plugin.get_status().values["size"]
-    assert "KB" in size or "MB" in size
-    assert "bytes" not in size
+    stream = plugin.get_status().values["stream"]
+    assert stream.startswith("4×2 ? · step 4")
+    assert "KB/frame" in stream or "MB/frame" in stream
+    assert "bytes" not in stream
 
 
 def test_bandwidth_defaults_to_zero_without_on_tick() -> None:
@@ -108,7 +110,7 @@ def test_bandwidth_defaults_to_zero_without_on_tick() -> None:
     plugin = ImageStreamPlugin()
     for _ in range(3):
         plugin.on_message("/camera/image_raw", _image())
-    assert plugin.get_status().values["bandwidth"] == "0.0KB/s"
+    assert plugin.get_status().values["stream"].endswith("· 0.0KB/s [dim]checked[/dim]")
 
 
 def test_bandwidth_estimated_from_on_tick_timestamps() -> None:
@@ -117,9 +119,10 @@ def test_bandwidth_estimated_from_on_tick_timestamps() -> None:
     for second in range(5):
         plugin.on_tick(float(second))
         plugin.on_message("/camera/image_raw/compressed", frame)
-    bandwidth = plugin.get_status().values["bandwidth"]
-    assert bandwidth.endswith("KB/s")
-    assert bandwidth != "0.0KB/s"
+    stream = plugin.get_status().values["stream"]
+    assert stream.startswith("jpeg ")
+    assert "KB/s" in stream
+    assert "· 0.0KB/s" not in stream
 
 
 # --- CompressedImage -----------------------------------------------------

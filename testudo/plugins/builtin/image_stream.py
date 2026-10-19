@@ -37,9 +37,10 @@ from testudo.plugins.base import (
     CheckStatus,
     Severity,
     ThresholdZone,
+    colorize,
     evaluate_zone,
 )
-from testudo.plugins.render import fmt_size
+from testudo.plugins.render import fmt_size, meter, sparkline
 
 _IMAGE_TYPE = "sensor_msgs/msg/Image"
 _COMPRESSED_IMAGE_TYPE = "sensor_msgs/msg/CompressedImage"
@@ -64,6 +65,22 @@ _BANDWIDTH_WINDOW_LEN = 10
 #: guessed at.
 _JPEG_MAGIC = b"\xff\xd8"
 _PNG_MAGIC = b"\x89PNG"
+
+
+def _codec(fmt: str) -> str:
+    """The codec a CompressedImage.format names -- "jpeg" for "rgb8; jpeg compressed bgr8" -- else the format as-is."""
+    fmt_lower = fmt.lower()
+    for codec in ("jpeg", "png", "zstd", "rvl"):
+        if codec in fmt_lower:
+            return codec
+    return "jpeg" if "jpg" in fmt_lower else fmt
+
+
+def _flipped(zone: ThresholdZone | None) -> ThresholdZone | None:
+    """A higher-is-better ratio zone as the equivalent higher-is-worse "shortfall" zone (for `meter`)."""
+    if zone is None:
+        return None
+    return ThresholdZone(*(1.0 - b if b is not None else None for b in (zone.green, zone.orange, zone.red)))
 
 
 def _payload_signature(data: bytes) -> tuple[int, bytes]:
@@ -119,6 +136,9 @@ class ImageStreamPlugin(CheckPlugin):
         self._malformed = False
         self._malformed_detail = ""
         self._size_drop_ratio = 1.0
+        # What the frames are: "jpeg" (compressed) or "640×480 rgb8 · step 1920" (raw).
+        self._kind = ""
+        self._compressed = False
 
     @classmethod
     def msg_types(cls) -> tuple[str, ...]:
@@ -154,8 +174,12 @@ class ImageStreamPlugin(CheckPlugin):
 
         if isinstance(msg, Image):
             self._malformed, self._malformed_detail = _check_image_shape(msg)
+            self._kind = f"{msg.width}×{msg.height} {msg.encoding or '?'} · step {msg.step}"
+            self._compressed = False
         elif isinstance(msg, CompressedImage):
             self._malformed, self._malformed_detail = _check_compressed_format(msg.format, data)
+            self._kind = _codec(msg.format)
+            self._compressed = True
 
         if self._empty_payload:
             return
@@ -218,12 +242,36 @@ class ImageStreamPlugin(CheckPlugin):
             problems.append(f"frame_id changed (now '{self._last_frame_id}')")
         message = "; ".join(problems) if problems else fmt_size(self._last_size)
 
+        codes: dict[str, str] = {}
+        if empty_severity != Severity.OK:
+            codes["IMG-001"] = colorize("empty payload", empty_severity)
+        if malformed_severity != Severity.OK:
+            codes["IMG-002"] = colorize(self._malformed_detail, malformed_severity)
+        if stuck_severity != Severity.OK:
+            codes["IMG-003"] = colorize(f"frame identical for {self._stuck_count} messages", stuck_severity)
+        if size_drop_severity != Severity.OK:
+            codes["IMG-004"] = colorize(f"frame size dropped to {self._size_drop_ratio:.0%} of average", size_drop_severity)
+        if frame_id_severity != Severity.OK:
+            codes["IMG-005"] = colorize(f"frame_id changed (now '{self._last_frame_id}')", frame_id_severity)
+
+        size_zone = self.thresholds.get("size_drop_ratio")
+        drop_meter = meter(1.0 - self._size_drop_ratio, _flipped(size_zone), 6)
+        sizes = sparkline(self._size_history, size_drop_severity, floor=0.0)
         values = {
-            "size": fmt_size(self._last_size),
-            "bandwidth": f"{fmt_size(self._bandwidth_bytes_per_second())}/s",
-            "stuck_count": str(self._stuck_count),
-            "frame_id": self._last_frame_id or "",
+            "stream": (
+                f"{self._kind}  {fmt_size(self._last_size)}/frame · "
+                # Decimated: this is the checked frames' throughput, not the topic's.
+                f"{fmt_size(self._bandwidth_bytes_per_second())}/s [dim]checked[/dim]"
+            ),
+            "sizes": (
+                f"{sizes or '[dim]–[/dim]'} [dim](last {len(self._size_history)})[/dim]   "
+                f"{colorize(f'{self._size_drop_ratio:.0%}', size_drop_severity)} of avg {drop_meter}"
+            ).rstrip(),
+            "stuck": str(self._stuck_count),
         }
+        if self._compressed:
+            values["payload"] = colorize("✗ " + self._malformed_detail, Severity.ERROR) if self._malformed else f"✓ {self._kind}"
+        values["frame"] = (self._last_frame_id or "") + (" [dim](changed)[/dim]" if self._frame_id_changed else "")
 
         # Topic Panel "Size" column: the single most informative number for
         # scanning several camera topics at once (a frozen or collapsed
@@ -239,4 +287,5 @@ class ImageStreamPlugin(CheckPlugin):
             values=values,
             topic_panel_column="Size",
             topic_panel_value=topic_panel_value,
+            codes=codes,
         )
