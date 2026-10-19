@@ -119,6 +119,26 @@ def qos_from_publisher_infos(infos: list[TopicEndpointInfo], topic_name: str) ->
     return first_publisher_info(infos, topic_name).qos_profile
 
 
+def describe_publisher(info: TopicEndpointInfo) -> str:
+    """One publisher as "who, with what QoS" -- e.g. `/bt_navigator (reliable, volatile)`.
+
+    What the Detail Panel shows under "publishers": the most frequent
+    follow-up question about any topic is who is sending it.
+    """
+    node = fully_qualified_node_name(info.node_namespace, info.node_name)
+    qos = info.qos_profile
+    policies = [_policy_name(qos.reliability), _policy_name(qos.durability)]
+    return f"{node} ({', '.join(policy for policy in policies if policy)})"
+
+
+def _policy_name(policy: object) -> str:
+    """`ReliabilityPolicy.BEST_EFFORT` -> "best effort"; "" for an unknown/system-default policy."""
+    name = getattr(policy, "name", "")
+    if name in ("", "UNKNOWN", "SYSTEM_DEFAULT"):
+        return ""
+    return name.lower().replace("_", " ")
+
+
 def first_publisher_info(infos: list[TopicEndpointInfo], topic_name: str) -> TopicEndpointInfo:
     """Pick the publisher endpoint info to use for a subscription.
 

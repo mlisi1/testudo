@@ -114,6 +114,16 @@ def test_resolve_publisher_info_raises_on_no_publishers() -> None:
         resolve_publisher_info(node, "/unpublished")
 
 
+def test_describe_publisher_names_the_node_and_its_qos() -> None:
+    from rclpy.qos import DurabilityPolicy, ReliabilityPolicy
+
+    from testudo.core.discovery import describe_publisher
+
+    qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+    info = _FakeEndpointInfo(qos_profile=qos, node_name="camera", node_namespace="/front")
+    assert describe_publisher(info) == "/front/camera (best effort, transient local)"
+
+
 def test_fully_qualified_node_name_combines_namespace_and_name() -> None:
     assert fully_qualified_node_name("/", "talker") == "/talker"
     assert fully_qualified_node_name("/ns", "talker") == "/ns/talker"

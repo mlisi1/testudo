@@ -23,6 +23,10 @@ class TopicReport:
     tier: str  # "vitals", "full", "presence", or "excluded"
     status: CheckStatus
     rate_hz: float | None = None
+    #: Each publisher as seen when the topic was discovered
+    #: (`discovery.describe_publisher`); empty when unknown (replay, an
+    #: excluded topic, a topic with none).
+    publishers: tuple[str, ...] = ()
 
 
 #: Message types whose publishers only speak when something changes -- a
@@ -246,16 +250,17 @@ def presence_report(topic_name: str, msg_type: str) -> TopicReport:
     settles for knowing a publisher is there, unless the topic is declared
     under `topics:` to opt into real monitoring.
     """
-    message = "publisher present; not subscribed by default (heavy topic type -- declare under topics: to monitor)"
+    message = "publisher present; not subscribed by default"
+    values = {"not_subscribed": f"heavy type; declare under topics: -> {msg_type} to check content"}
     return TopicReport(
         topic=topic_name,
         msg_type=msg_type,
         tier="presence",
-        status=CheckStatus(severity=Severity.OK, label="presence", message=message),
+        status=CheckStatus(severity=Severity.OK, label="presence", message=message, values=values),
     )
 
 
-def excluded_report(topic_name: str, msg_type: str) -> TopicReport:
+def excluded_report(topic_name: str, msg_type: str, rule: str = "") -> TopicReport:
     """Build a bare report for a topic dropped by a user `exclude_topics` rule.
 
     Unlike `presence_report`, Testudo never resolves publisher info for an
@@ -264,13 +269,15 @@ def excluded_report(topic_name: str, msg_type: str) -> TopicReport:
     requires, but it's what lets the TUI group these into their own
     category instead of the topic silently vanishing. The Topic Panel
     shows only the name for this tier; there's deliberately nothing else
-    (status, rate) to show.
+    (status, rate) to show. `rule` (e.g. "regex ^/filter") is which
+    exclude rule matched, so the user can find the one to delete.
     """
+    values = {"excluded_by_rule": rule} if rule else {}
     return TopicReport(
         topic=topic_name,
         msg_type=msg_type,
         tier="excluded",
-        status=CheckStatus(severity=Severity.OK, label="excluded", message="excluded from monitoring"),
+        status=CheckStatus(severity=Severity.OK, label="excluded", message="excluded from monitoring", values=values),
     )
 
 
@@ -295,4 +302,4 @@ def suppress_if_inactive(
         message=f"node '{owning_node}' is {state}; diagnostics suppressed",
         values={"lifecycle_state": state or ""},
     )
-    return TopicReport(topic=report.topic, msg_type=report.msg_type, tier=report.tier, status=status, rate_hz=report.rate_hz)
+    return replace(report, status=status)

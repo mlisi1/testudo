@@ -422,6 +422,25 @@ def test_exclude_topics_regex_pattern_gets_an_excluded_report_not_a_subscription
     excluded = reports_by_topic["/heavy/points"]
     assert excluded.tier == "excluded"
     assert excluded.status.severity == Severity.OK
+    assert excluded.status.values == {"excluded_by_rule": "regex ^/heavy/"}
+    assert excluded.publishers == ()
+
+
+def test_reports_carry_every_publisher_seen_at_discovery() -> None:
+    node = _FakeNode(
+        topics=[("/cmd_vel", ["geometry_msgs/msg/Twist"])],
+        publishers_by_topic={
+            "/cmd_vel": [
+                _FakeEndpointInfo(qos_profile=_qos(), node_name="controller_server"),
+                _FakeEndpointInfo(qos_profile=_qos(), node_name="teleop", node_namespace="/joy"),
+            ]
+        },
+    )
+    manager = SubscriptionManager(node, _config(), [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+
+    publishers = manager.reports()[0].publishers
+    assert [publisher.split(" ")[0] for publisher in publishers] == ["/controller_server", "/joy/teleop"]
 
 
 def test_default_excluded_topics_never_get_an_excluded_report() -> None:

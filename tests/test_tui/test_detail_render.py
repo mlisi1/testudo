@@ -12,8 +12,11 @@ def _plain(markup: str) -> list[str]:
     return Text.from_markup(markup).plain.split("\n")
 
 
-def _report(values: dict[str, str], severity: int = Severity.OK, tier: str = "full", **status_kwargs) -> TopicReport:
-    return TopicReport("/scan", "sensor_msgs/msg/LaserScan", tier, CheckStatus(severity, "l", "m", values, **status_kwargs))
+def _report(
+    values: dict[str, str], severity: int = Severity.OK, tier: str = "full", publishers: tuple[str, ...] = (), **status_kwargs
+) -> TopicReport:
+    status = CheckStatus(severity, "l", "m", values, **status_kwargs)
+    return TopicReport("/scan", "sensor_msgs/msg/LaserScan", tier, status, publishers=publishers)
 
 
 def test_resolve_values_picks_the_compact_variant_only_when_narrow() -> None:
@@ -147,3 +150,18 @@ def test_overflowing_layout_stays_a_plain_grid_when_moving_values_out_would_not_
     values = {f"key_{i}": "value" for i in range(8)}
     lines = _plain(render_detail(_report(values), width=14, height=3))
     assert lines[1:] == [f"key {i}  value" for i in range(8)]
+
+
+def test_publishers_lead_a_presence_report_but_trail_a_full_one_only_when_tall() -> None:
+    from dataclasses import replace
+
+    from testudo.core.topic_report import presence_report
+
+    presence = replace(presence_report("/cam/image_raw", "sensor_msgs/msg/Image"), publishers=("/cam (reliable, volatile)",))
+    lines = _plain(render_detail(presence, width=100, height=6))
+    assert lines[1] == "publisher  /cam (reliable, volatile)"
+    assert "declare under topics: -> sensor_msgs/msg/Image" in lines[2]
+
+    full = _report({"a": "1"}, publishers=("/x (reliable, volatile)", "/y (reliable, volatile)"))
+    assert not any("publishers" in line for line in _plain(render_detail(full, width=100, height=6)))
+    assert _plain(render_detail(full, width=100, height=12))[-1] == "publishers  /x (reliable, volatile), /y (reliable, volatile)"

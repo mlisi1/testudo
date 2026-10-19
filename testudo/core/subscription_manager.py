@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
 import rclpy
@@ -45,8 +45,9 @@ from testudo.core.config import ActionConfig, ExcludeRule, SeverityMode, Testudo
 from testudo.core.discovery import (
     NoPublishersError,
     TopicInfo,
+    describe_publisher,
+    first_publisher_info,
     fully_qualified_node_name,
-    resolve_publisher_info,
     resolve_subscription_qos,
 )
 from testudo.core.global_watches import DEFAULT_GET_STATE_TIMEOUT_SECONDS
@@ -218,6 +219,9 @@ class SubscriptionManager:
         # publish-once (robot_description, extrinsics), so their silence is
         # reported as "latched", not STALE (see topic_report.liveness_status).
         self._latched: set[str] = set()
+        # topic name -> every publisher seen at discovery, described for
+        # display (see `discovery.describe_publisher`).
+        self._publishers_by_topic: dict[str, tuple[str, ...]] = {}
         # topic name -> live Subscription handle, for every subscription this
         # manager holds (vitals, full-tier, related-topic, and lifecycle
         # transition_event alike -- the latter populated by
@@ -399,13 +403,15 @@ class SubscriptionManager:
         if self._maybe_record_excluded(topic_name, msg_type_str):
             return
         self._msg_type_by_topic[topic_name] = msg_type_str
+        publisher_infos = self._node.get_publishers_info_by_topic(topic_name)
         try:
-            publisher_info = resolve_publisher_info(self._node, topic_name)
+            publisher_info = first_publisher_info(publisher_infos, topic_name)
         except NoPublishersError:
             _logger.warning("topic '%s' has no publishers", topic_name)
             self._no_publishers.add(topic_name)
             return
         self._no_publishers.discard(topic_name)
+        self._publishers_by_topic[topic_name] = tuple(describe_publisher(info) for info in publisher_infos)
         self._owning_node_by_topic[topic_name] = fully_qualified_node_name(
             publisher_info.node_namespace, publisher_info.node_name
         )
@@ -585,7 +591,9 @@ class SubscriptionManager:
             # No `_suppress`: an excluded topic never resolves an owning
             # node (no publisher-info query -- that's the whole point), so
             # lifecycle-aware suppression would always be a no-op for it.
-            reports.append(excluded_report(topic_name, msg_type))
+            rule = self._matching_exclude_rule(topic_name)
+            rule_text = f"{rule.match_type.value} {rule.pattern}" if rule is not None else ""
+            reports.append(excluded_report(topic_name, msg_type, rule_text))
         for topic_name, vitals in self._vitals.items():
             topic_config = self._topic_config_by_name.get(topic_name)
             rate_threshold = topic_config.thresholds.get("rate_hz") if topic_config is not None else None
@@ -625,6 +633,8 @@ class SubscriptionManager:
         return {"latched": topic_name in self._latched, "event_driven": event_driven}
 
     def _suppress(self, topic_name: str, report: TopicReport) -> TopicReport:
+        """`report` with its publishers attached, and lifecycle-suppressed if its node is inactive."""
+        report = replace(report, publishers=self._publishers_by_topic.get(topic_name, ()))
         return suppress_if_inactive(report, self._owning_node_by_topic.get(topic_name), self._lifecycle_tracker)
 
     def _weight_for_topic(self, topic_name: str) -> float:

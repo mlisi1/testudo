@@ -17,6 +17,9 @@ format for the TUI itself:
 - a value that is long, or pre-formatted across several lines (a plugin's
   own meter block, TUI_DATA_DESIGN.md's Track A), keeps a full-width line
   of its own, in its original position;
+- who publishes the topic, when known: leading the body for a topic no
+  plugin reads (presence/vitals), last and only in a tall pane under a
+  plugin's own readings;
 - active error codes last.
 """
 from __future__ import annotations
@@ -283,6 +286,14 @@ def _fitted_body_lines(entries: list[tuple[str, str, bool]], width: int, max_row
     return plain
 
 
+def _publishers_entry(report: TopicReport) -> tuple[str, str, bool] | None:
+    """A full-width `publishers` body entry for `report`, or None if its publishers aren't known."""
+    if not report.publishers:
+        return None
+    label = "publisher" if len(report.publishers) == 1 else "publishers"
+    return (label, ", ".join(report.publishers), True)
+
+
 def _header_line(report: TopicReport, width: int) -> str:
     if report.tier == "excluded":
         # Nothing is checked on an excluded topic, so there is no severity
@@ -326,6 +337,15 @@ def render_detail(report: TopicReport, width: int, height: int | None = None) ->
         (label, value, True) if "\n" in value or _width(value) > _MAX_GRID_VALUE_WIDTH else (label, _style_value(value), False)
         for label, value in pairs
     ]
+    publishers = _publishers_entry(report)
+    if publishers is not None:
+        # Without a plugin's readings, who publishes the topic is the most
+        # useful thing to show, so it leads; under a plugin's readings it's
+        # secondary -- shown last, and only with rows to spare.
+        if report.tier != "full":
+            entries.insert(0, publishers)
+        elif is_tall:
+            entries.append(publishers)
     body = _fitted_body_lines(entries, width, max_rows)
     lines.extend(body)
 
