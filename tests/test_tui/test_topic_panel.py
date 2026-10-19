@@ -141,7 +141,7 @@ def test_rate_column_is_mem_for_nodes_and_state_for_actions() -> None:
     assert rate_cell(node, "Mem") == "56.4M"
 
     def action(state: str) -> TopicReport:
-        values = {"current_status": state}
+        values = {"state": {"executing": "[green]▶ EXECUTING[/green] 1.0s", "canceling": "⊘ CANCELING", "succeeded": "◌ idle"}[state]}
         return TopicReport("/spin/_action/status", "action_msgs/msg/GoalStatusArray", "full", CheckStatus(Severity.OK, "a", "", values))
 
     assert rate_column_header(action("executing")) == "State"

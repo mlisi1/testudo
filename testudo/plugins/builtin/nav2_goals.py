@@ -30,7 +30,8 @@ from typing import Any
 
 from action_msgs.msg import GoalStatus
 
-from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, ThresholdZone, evaluate_zone
+from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, ThresholdZone, colorize, evaluate_zone
+from testudo.plugins.render import meter, sparkline, strip
 
 _TERMINAL_STATUSES = frozenset({GoalStatus.STATUS_SUCCEEDED, GoalStatus.STATUS_CANCELED, GoalStatus.STATUS_ABORTED})
 _ACTIVE_STATUSES = frozenset({GoalStatus.STATUS_ACCEPTED, GoalStatus.STATUS_EXECUTING, GoalStatus.STATUS_CANCELING})
@@ -47,6 +48,36 @@ _STATUS_NAMES: dict[int, str] = {
 
 _DURATION_WINDOW_SIZE = 20
 _ACCEPTANCE_WINDOW_SIZE = 20
+_OUTCOME_WINDOW_SIZE = 20
+#: Outcomes shown in the Topic Panel's "Last 5" column.
+_TOPIC_PANEL_OUTCOMES = 5
+_METER_SEGMENTS = 6
+
+#: A terminal status as a `render.strip` outcome: success, failure, or
+#: neither (a cancel is a decision, not a failure).
+_OUTCOME_SEVERITIES: dict[int, int | None] = {
+    GoalStatus.STATUS_SUCCEEDED: Severity.OK,
+    GoalStatus.STATUS_ABORTED: Severity.ERROR,
+    GoalStatus.STATUS_CANCELED: None,
+}
+
+#: The `state` headline's chip for each active status. The Topic Panel's
+#: "State" column keys off the leading glyph (see `topic_panel.rate_cell`).
+_ACTIVE_CHIPS = {
+    GoalStatus.STATUS_ACCEPTED: "[green]▶ ACCEPTED[/green]",
+    GoalStatus.STATUS_EXECUTING: "[green]▶ EXECUTING[/green]",
+    GoalStatus.STATUS_CANCELING: "[yellow]⊘ CANCELING[/yellow]",
+}
+_IDLE_CHIP = "[dim]◌ idle[/dim]"
+
+
+def _failure_zone(success_zone: ThresholdZone | None) -> ThresholdZone | None:
+    """A higher-is-better success-rate zone as the equivalent higher-is-worse failure-rate zone (for `meter`)."""
+    if success_zone is None:
+        return None
+    return ThresholdZone(
+        *(1.0 - boundary if boundary is not None else None for boundary in (success_zone.green, success_zone.orange, success_zone.red))
+    )
 
 
 class _GoalRecord:
@@ -79,6 +110,8 @@ class Nav2GoalPlugin(CheckPlugin):
         self._status_since: float | None = None
         self._distance_remaining_m: float | None = None
         self._estimated_time_remaining_s: float | None = None
+        # Each finished goal as (outcome severity or None, duration), newest last.
+        self._outcomes: deque[tuple[int | None, float]] = deque(maxlen=_OUTCOME_WINDOW_SIZE)
 
     @classmethod
     def msg_types(cls) -> tuple[str, ...]:
@@ -121,7 +154,9 @@ class Nav2GoalPlugin(CheckPlugin):
             record.last_status = status.status
 
             if newly_terminal:
-                self._durations.append(max(0.0, self._now - record.accepted_stamp))
+                duration = max(0.0, self._now - record.accepted_stamp)
+                self._durations.append(duration)
+                self._outcomes.append((_OUTCOME_SEVERITIES[status.status], duration))
                 if status.status == GoalStatus.STATUS_SUCCEEDED:
                     self._succeeded += 1
                 elif status.status == GoalStatus.STATUS_ABORTED:
@@ -172,6 +207,36 @@ class Nav2GoalPlugin(CheckPlugin):
             return None
         return (len(self._acceptance_times) - 1) / span * 60.0
 
+    def _state_line(self) -> str:
+        """The headline: what the server is doing now and for how long, and how the last goal ended."""
+        time_in_status = None if self._status_since is None else max(0.0, self._now - self._status_since)
+        since = f" {time_in_status:.1f}s" if time_in_status is not None else ""
+        chip = _ACTIVE_CHIPS.get(self._current_status)
+        if chip is not None:
+            parts = [f"{chip}{since}"]
+            if self._active_count > 1:
+                parts.append(f"{self._active_count} goals")
+            if self._distance_remaining_m is not None:
+                parts.append(f"{self._distance_remaining_m:.1f} m left")
+            if self._estimated_time_remaining_s is not None:
+                parts.append(f"ETA {self._estimated_time_remaining_s:.0f} s")
+            return " · ".join(parts)
+        if not self._outcomes:
+            return f"{_IDLE_CHIP} · no goal finished yet"
+        outcome, duration = self._outcomes[-1]
+        ended = {Severity.OK: "succeeded", Severity.ERROR: "aborted"}.get(outcome, "canceled")
+        return f"{_IDLE_CHIP}{since} · last {strip([outcome])} {ended} in {duration:.1f}s"
+
+    def _history_line(self) -> str:
+        """The recent outcomes as a strip, plus the all-time tallies."""
+        tallies = (
+            f"{colorize(f'{self._succeeded}✓', Severity.OK)} "
+            f"{colorize(f'{self._aborted}✗', Severity.ERROR)} "
+            f"[dim]{self._canceled}⊘[/dim]"
+        )
+        recent = strip(outcome for outcome, _duration in self._outcomes)
+        return f"{recent}  {tallies}" if recent else tallies
+
     def get_status(self) -> CheckStatus:
         if self._message_count == 0:
             return CheckStatus(severity=Severity.OK, label="nav2-action", message="no goal status received yet")
@@ -194,30 +259,38 @@ class Nav2GoalPlugin(CheckPlugin):
         worst = max(success_severity, duration_severity, frequency_severity)
 
         problems = []
+        codes: dict[str, str] = {}
         if success_severity != Severity.OK:
             problems.append(f"success rate {success_rate:.0%}")
+            codes["NAV-001"] = colorize(f"success rate {success_rate:.0%}", success_severity)
         if duration_severity != Severity.OK:
             problems.append(f"mean duration {mean_duration:.1f}s")
+            codes["NAV-002"] = colorize(f"mean goal duration {mean_duration:.1f}s", duration_severity)
         if frequency_severity != Severity.OK:
             problems.append(f"invocation frequency {frequency:.1f}/min")
+            codes["NAV-003"] = colorize(f"invoked {frequency:.1f} times/min", frequency_severity)
         message = "; ".join(problems) if problems else "nominal"
 
-        time_in_status = None if self._status_since is None else max(0.0, self._now - self._status_since)
-        values = {
-            "current_status": _STATUS_NAMES.get(self._current_status, "unknown"),
-            "time_in_status_s": f"{time_in_status:.3g}" if time_in_status is not None else "n/a",
-            "active_count": str(self._active_count),
-            "succeeded": str(self._succeeded),
-            "aborted": str(self._aborted),
-            "canceled": str(self._canceled),
-            "success_rate": f"{success_rate:.3g}" if success_rate is not None else "n/a",
-            "mean_duration_s": f"{mean_duration:.3g}" if mean_duration is not None else "n/a",
-            "frequency_per_min": f"{frequency:.3g}" if frequency is not None else "n/a",
-            "distance_remaining_m": (
-                f"{self._distance_remaining_m:.3g}" if self._distance_remaining_m is not None else "n/a"
-            ),
-            "estimated_time_remaining_s": (
-                f"{self._estimated_time_remaining_s:.3g}" if self._estimated_time_remaining_s is not None else "n/a"
-            ),
-        }
-        return CheckStatus(severity=worst, label="nav2-action", message=message, values=values)
+        values = {"state": self._state_line(), "history": self._history_line()}
+        # Readings that don't exist yet are left out rather than shown as
+        # "n/a": on a short Detail Panel every row counts.
+        if success_rate is not None:
+            bar = meter(1.0 - success_rate, _failure_zone(self.thresholds.get("success_rate")), _METER_SEGMENTS)
+            values["success"] = f"{colorize(f'{success_rate:.0%}', success_severity)} {bar}".rstrip()
+        if mean_duration is not None:
+            values["mean_duration_s"] = f"{mean_duration:.3g}"
+        if frequency is not None:
+            values["goal_rate_per_min"] = f"{frequency:.3g}"
+        if len(self._durations) > 1:
+            values["durations_more"] = f"{sparkline(self._durations, duration_severity)} [dim](last {len(self._durations)})[/dim]"
+
+        recent = strip((outcome for outcome, _duration in self._outcomes), width=_TOPIC_PANEL_OUTCOMES)
+        return CheckStatus(
+            severity=worst,
+            label="nav2-action",
+            message=message,
+            values=values,
+            topic_panel_column="Last 5",
+            topic_panel_value=recent or "[dim]–[/dim]",
+            codes=codes,
+        )

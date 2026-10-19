@@ -1,6 +1,8 @@
 """Topic Panel: every topic within one selected category."""
 from __future__ import annotations
 
+from rich.text import Text
+
 from testudo.core.discovery import ACTION_STATUS_SUFFIX
 from testudo.core.topic_report import IDLE_LABEL, LATCHED_LABEL, TopicReport, quiet_label
 from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_ICONS, SEVERITY_LABELS, Severity
@@ -141,12 +143,11 @@ _RATE_FORMATS = (
 )
 
 
-#: Goal states (nav2_goals' `current_status` value) -> the Nav2 Actions
-#: "State" cell: a chip glyph for what the action server is doing now.
+#: The leading glyph of nav2_goals' `state` headline chip -> the Nav2
+#: Actions "State" cell: what the action server is doing now.
 _ACTION_STATE_CELLS = {
-    "accepted": "[green]▶ run[/green]",
-    "executing": "[green]▶ run[/green]",
-    "canceling": "[yellow]⊘ stop[/yellow]",
+    "▶": "[green]▶ run[/green]",
+    "⊘": "[yellow]⊘ stop[/yellow]",
 }
 _ACTION_IDLE_CELL = "[dim]◌ idle[/dim]"
 
@@ -190,7 +191,8 @@ def rate_cell(report: TopicReport, header: str) -> str:
         memory = report.status.values.get("memory", "")
         return format_memory(memory.split()[0] if memory else None)
     if header == "State":
-        return _ACTION_STATE_CELLS.get(report.status.values.get("current_status", ""), _ACTION_IDLE_CELL)
+        state = Text.from_markup(report.status.values.get("state", "")).plain
+        return _ACTION_STATE_CELLS.get(state[:1], _ACTION_IDLE_CELL)
     # A latched topic's "rate" is just its burst of initial messages --
     # meaningless for something that publishes once.
     return format_rate(None if quiet_label(report.status) == LATCHED_LABEL else report.rate_hz)
