@@ -101,6 +101,15 @@ def _quaternion_to_euler(x: float, y: float, z: float, w: float) -> tuple[float,
     return roll, pitch, yaw
 
 
+def _split_zone(zone: ThresholdZone | None, parts: int) -> ThresholdZone | None:
+    """`zone` with every boundary divided by `parts` -- a sum's zone, shared out per summand."""
+    if zone is None:
+        return None
+    return ThresholdZone(
+        *(boundary / parts if boundary is not None else None for boundary in (zone.green, zone.orange, zone.red))
+    )
+
+
 def _meter(value: float, zone: ThresholdZone | None, segments: int) -> str:
     """A `segments`-wide health-bar-style meter for `value` against `zone`.
 
@@ -302,10 +311,12 @@ class OdometryPlugin(CheckPlugin):
         # covariance, one meter each) per TUI_DATA_DESIGN.md's Odometry
         # Detail Panel proposal -- supersedes a flat position_covariance_trace/
         # yaw_variance pair with the individual x/y/z and roll/pitch/yaw
-        # numbers those two were only ever a summary of. Position axes share
-        # position_covariance_trace's threshold zone, orientation axes share
-        # yaw_variance's -- reusing the two existing configurable metrics
-        # rather than needing six new per-axis config keys.
+        # numbers those two were only ever a summary of. Orientation axes
+        # share yaw_variance's threshold zone. Position axes are judged per
+        # axis, not against the trace (a sum of three variances, so judging
+        # one axis by it reads every axis as healthier than it is): an
+        # explicit `position_axis_variance` zone if configured, else the
+        # trace's zone split evenly across x/y/z.
         #
         # Wide layout: position and orientation side by side (3 rows + a
         # "value"/"var" column-header row) -- there's usually horizontal
@@ -313,7 +324,9 @@ class OdometryPlugin(CheckPlugin):
         # (narrow-terminal) layout stays a plain 6-row stack with 1-segment
         # meters: a real second column needs real width, which is exactly
         # what a narrow panel doesn't have.
-        position_zone = self.thresholds.get("position_covariance_trace")
+        position_zone = self.thresholds.get("position_axis_variance") or _split_zone(
+            self.thresholds.get("position_covariance_trace"), len(_POSITION_AXES)
+        )
         orientation_zone = self.thresholds.get("yaw_variance")
         position_data = list(zip(_POSITION_AXES, self._position, self._position_variance))
         orientation_data = list(zip(_ORIENTATION_AXES, self._orientation_rpy, self._orientation_variance))

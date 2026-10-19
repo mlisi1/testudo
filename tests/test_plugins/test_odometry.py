@@ -323,3 +323,14 @@ def test_check_status_codes_field_stays_empty_since_errors_render_inline() -> No
     plugin.on_message("/odom", _odometry(xx=0.2, yy=0.2, zz=0.2))
     status = plugin.get_status()
     assert status.codes == {}
+
+
+def test_split_zone_divides_every_configured_boundary() -> None:
+    from testudo.plugins.base import ThresholdZone
+    from testudo.plugins.builtin.odometry import _split_zone
+
+    zone = _split_zone(ThresholdZone(green=0.03, orange=0.3), 3)
+    assert zone.green == pytest.approx(0.01)
+    assert zone.orange == pytest.approx(0.1)
+    assert zone.red is None
+    assert _split_zone(None, 3) is None
