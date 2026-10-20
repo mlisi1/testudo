@@ -542,3 +542,23 @@ def test_a_poll_landing_after_the_dashboard_is_torn_down_is_ignored() -> None:
             app._notify_dashboard()  # must not raise
 
     run(body())
+
+
+def test_detail_pane_height_follows_its_content() -> None:
+    async def body():
+        reports = [
+            TopicReport(f"/topic_{i:02d}", "std_msgs/msg/String", "vitals", CheckStatus(Severity.OK, "v", "ok"))
+            for i in range(20)
+        ]
+        app = TestudoApp(
+            StaticDataSource(reports, CheckStatus(Severity.OK, "overall", "ok")), ros_distro="jazzy"
+        )
+        async with app.run_test(size=(136, 36)) as pilot:
+            await pilot.pause()
+            detail = app.screen.query_one("#detail-pane")
+            # A vitals row with no values: a few rows, not 45% of the screen,
+            # so all 20 topics fit in the Topic Panel above it.
+            assert detail.outer_size.height < 10
+            assert app.screen.query_one(TopicDetailTable).size.height >= 21
+
+    run(body())

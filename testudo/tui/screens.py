@@ -16,6 +16,7 @@ from textual.widgets import DataTable, Input, Static
 from testudo.tui.categorize import category_for
 from testudo.tui.data_source import WatchSnapshot
 from testudo.tui.detail_render import render_detail
+from testudo.tui.pane_split import DETAIL_CHROME_ROWS, detail_cap, detail_height, rendered_rows
 from testudo.tui.keybinds import (
     COPY_BINDING,
     FILTER_BINDING,
@@ -59,6 +60,9 @@ class DashboardScreen(Screen):
         super().__init__()
         self._filtering = False
         self._filtered_table: DataTable | None = None
+        # The Detail Panel's last (topic, height), so it doesn't shrink
+        # while the same topic stays highlighted (`pane_split.detail_height`).
+        self._detail_sizing: tuple[str, int] | None = None
 
     def compose(self) -> ComposeResult:
         yield TestudoHeader(self.app.ros_distro, self.app.ros_domain_id, self.app.dds_implementation)
@@ -76,6 +80,8 @@ class DashboardScreen(Screen):
         self.sync_header()
         self.refresh_categories()
         self.query_one(CategorySummaryTable).focus()
+        # Nothing has a size until the first layout: size the Detail Panel then.
+        self.call_after_refresh(self.refresh_detail)
 
     def _hint_text(self) -> str:
         # One line even at 101 columns (the narrowest typical terminal):
@@ -116,20 +122,41 @@ class DashboardScreen(Screen):
         self.refresh_detail()
 
     def refresh_detail(self) -> None:
-        """Re-render the Detail Panel for the highlighted topic at the pane's *current* size.
+        """Size the Detail Panel to the highlighted topic's content, then render it at that size.
 
         Layout (`detail_render.render_detail`) depends on the pane's width
         and height -- how many columns the value grid flows into, and
         which of a plugin's wide/`_compact` value pairs fits -- so it is
         recomputed here on every refresh, terminal resizes included (see
         `on_resize` below), not fixed at the status's own construction.
+        The height itself comes from `pane_split`: the rows the content
+        needs, the panes above getting the rest.
         """
         detail = self.query_one("#detail-pane", Static)
         report = self.query_one(TopicDetailTable).selected_report
         if report is None:
             detail.update("[dim]no topic selected[/dim]")
             return
-        detail.update(render_detail(report, detail.size.width, detail.size.height or None))
+        width = detail.size.width
+        available = self.query_one("#panes").outer_size.height + detail.outer_size.height
+        if available <= 0 or width <= 0:
+            # Not laid out yet (see on_mount): render for an unknown height.
+            detail.update(render_detail(report, width, detail.size.height or None))
+            return
+
+        panes_wanted = 1 + max(
+            self.query_one(CategorySummaryTable).row_count, self.query_one(TopicDetailTable).row_count
+        )
+        cap = detail_cap(available, panes_wanted)
+        markup = render_detail(report, width, cap - DETAIL_CHROME_ROWS)
+        previous = self._detail_sizing[1] if self._detail_sizing and self._detail_sizing[0] == report.topic else None
+        height = detail_height(cap, rendered_rows(markup, width), previous)
+        self._detail_sizing = (report.topic, height)
+        if height != detail.outer_size.height:
+            detail.styles.height = height
+            # The Plugin Panel's free rows (the "Needs attention" list) change with it.
+            self.call_after_refresh(self.refresh_attention)
+        detail.update(render_detail(report, width, height - DETAIL_CHROME_ROWS))
 
     def on_resize(self, event) -> None:
         # The detail pane's size (which render_detail lays out for) just

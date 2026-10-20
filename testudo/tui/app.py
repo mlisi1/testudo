@@ -49,10 +49,9 @@ class TestudoApp(App):
     #category-table { width: auto; height: auto; max-height: 100%; overflow-x: hidden; }
     #attention { width: 100%; height: 1fr; padding: 1 1 0 1; }
     #topic-table { width: 1fr; min-width: 40; height: 1fr; overflow-x: hidden; }
-    /* 45%, not 30% -- on a genuinely small pane (a quarter-tiled terminal,
-       the realistic use case, not a fullscreen one) 30% of an already-short
-       screen left the detail pane only 1-2 visible rows even after
-       tightening its content, well short of a single topic's data. */
+    /* 45% only until the first layout: from then on DashboardScreen.
+       refresh_detail sets the height from the highlighted topic's content
+       (tui/pane_split.py), the panes above taking the rest. */
     /* Gold border-top, matching the nav-tips bar and the Topic Panel's
        selection below -- gold marks "the currently highlighted thing",
        and the detail pane is exactly that: the highlighted topic's data. */
