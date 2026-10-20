@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from testudo.plugins.base import Severity
-from testudo.tui.widgets.category_summary import format_severity_breakdown
+from testudo.tui.widgets.category_summary import format_excluded_count, format_severity_breakdown
 
 
 def test_format_severity_breakdown_empty_is_dash() -> None:
@@ -32,3 +32,8 @@ def test_format_severity_breakdown_all_four_severities() -> None:
     counts = {Severity.OK: 1, Severity.WARN: 1, Severity.ERROR: 1, Severity.STALE: 1}
     result = format_severity_breakdown(counts)
     assert result.index("■1") < result.index("✗1") < result.index("▲1") < result.index("✓1")
+
+
+def test_format_excluded_count_is_a_plain_count_not_a_severity() -> None:
+    assert format_excluded_count(5) == "[dim]5 topics[/dim]"
+    assert format_excluded_count(1) == "[dim]1 topic[/dim]"

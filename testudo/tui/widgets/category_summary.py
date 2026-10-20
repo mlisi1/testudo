@@ -39,6 +39,11 @@ def format_severity_breakdown(counts: dict[int, int]) -> str:
     return " ".join(segments) if segments else "-"
 
 
+def format_excluded_count(count: int) -> str:
+    """A plain dim "5 topics": excluded topics aren't checked, so a `✓5` would claim they passed."""
+    return f"[dim]{count} topic{'s' if count != 1 else ''}[/dim]"
+
+
 class CategorySummaryTable(NavDataTable):
     """One row per category: name, and a per-severity breakdown in place of
     separate "worst status" and "topic count" columns -- more information
@@ -129,7 +134,11 @@ class CategorySummaryTable(NavDataTable):
 
     def _write_row(self, category: str, counts: dict[int, int]) -> None:
         self.update_cell(category, "category", category)
-        self.update_cell(category, "status", format_severity_breakdown(counts))
+        if category == EXCLUDED_CATEGORY:
+            status = format_excluded_count(sum(counts.values()))
+        else:
+            status = format_severity_breakdown(counts)
+        self.update_cell(category, "status", status)
 
     @property
     def selected_category(self) -> str | None:
