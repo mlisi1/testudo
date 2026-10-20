@@ -51,7 +51,7 @@ HELP_TEXT = """\
   p                pause / resume the live view
   r                reset stats (clear accumulated history, keep watching)
   o                options menu (exclude topics -- literal or regex)
-  /                filter the focused table by name
+  /                search: on categories, topic names too; on topics, this category
   j / k / arrows   move the cursor -- updates the panes to the right live
   tab / shift+tab  switch focus between the categories and topics tables
   left / right     switch focus between the categories and topics tables

@@ -37,3 +37,17 @@ def test_format_severity_breakdown_all_four_severities() -> None:
 def test_format_excluded_count_is_a_plain_count_not_a_severity() -> None:
     assert format_excluded_count(5) == "[dim]5 topics[/dim]"
     assert format_excluded_count(1) == "[dim]1 topic[/dim]"
+
+
+def test_matching_reports_keeps_all_on_a_category_match_else_matching_topics() -> None:
+    from testudo.core.topic_report import TopicReport
+    from testudo.plugins.base import CheckStatus, Severity
+    from testudo.tui.widgets.category_summary import matching_reports
+
+    reports = [
+        TopicReport(t, "sensor_msgs/msg/Imu", "full", CheckStatus(Severity.OK, "s", "ok")) for t in ("/imu/data", "/imu/raw")
+    ]
+    assert matching_reports("IMU", reports, "") == reports
+    assert matching_reports("IMU", reports, "imu") == reports
+    assert [r.topic for r in matching_reports("IMU", reports, "raw")] == ["/imu/raw"]
+    assert matching_reports("IMU", reports, "velodyne") == []

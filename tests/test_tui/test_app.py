@@ -200,6 +200,28 @@ def test_filter_narrows_the_focused_table() -> None:
     run(body())
 
 
+def test_category_search_finds_a_topic_by_name_and_shows_only_matches() -> None:
+    async def body():
+        reports = _reports() + [
+            TopicReport("/battery_temp", "sensor_msgs/msg/Temperature", "vitals", CheckStatus(Severity.OK, "v", "ok"))
+        ]
+        app = TestudoApp(StaticDataSource(reports, CheckStatus(Severity.OK, "o", "ok")), ros_distro="jazzy")
+        async with app.run_test() as pilot:
+            await pilot.press("slash")
+            for char in "batt":
+                await pilot.press(char)
+            await pilot.press("enter")
+            categories = app.screen.query_one(CategorySummaryTable)
+            topics = app.screen.query_one(TopicDetailTable)
+            # Both /battery* topics are in Other Topics: no category is
+            # named "batt", but that one holds matches -- and only they show.
+            assert [categories.get_row_at(i)[0] for i in range(categories.row_count)] == ["Other Topics"]
+            assert categories.selected_category == "Other Topics"
+            assert topics.row_count == 2
+
+    run(body())
+
+
 def test_escape_while_filtering_clears_filter_instead_of_moving_focus() -> None:
     async def body():
         app = _make_app()

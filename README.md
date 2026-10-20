@@ -104,9 +104,10 @@ odometry's covariance or, for Other Topics, the message type), and a **detail pa
 topic's full status). Moving the cursor — not pressing `Enter` — is what
 drives the other panes live; `Enter`, `Tab`/`Shift+Tab`, or `←`/`→`
 switch focus between the plugin and topic panels, `Esc` refocuses the
-plugin panel (or clears an active filter), `/` to filter the focused
-panel, `s` to toggle its sort (worst first ▼ or by name ▲),
-`p` to pause, `r` to reset accumulated stats, `o` for the options menu
+plugin panel (or clears an active filter), `/` to search (from the
+plugin panel it matches topic names too, so you can find a topic without
+knowing its category), `s` to toggle the focused panel's sort (worst first ▼
+or by name ▲), `y` to copy the highlighted topic's name, `p` to pause, `r` to reset accumulated stats, `o` for the options menu
 (currently: manage `exclude_topics` rules live), `?` for help. Any
 warning/error logged while the TUI has the terminal (most commonly a
 message type whose interface package isn't installed) is buffered rather

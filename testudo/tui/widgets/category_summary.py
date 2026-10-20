@@ -40,6 +40,18 @@ def format_severity_breakdown(counts: dict[int, int]) -> str:
     return " ".join(segments) if segments else "-"
 
 
+def matching_reports(category: str, reports: list[TopicReport], text: str) -> list[TopicReport]:
+    """`reports` (one category's) that a Plugin Panel filter `text` keeps.
+
+    A category whose own name matches keeps all its topics; otherwise only
+    the topics whose name contains `text` -- so typing part of a topic
+    name finds it without knowing which category it's in.
+    """
+    if not text or text in category.lower():
+        return reports
+    return [report for report in reports if text in report.topic.lower()]
+
+
 def format_excluded_count(count: int) -> str:
     """A plain dim "5 topics": excluded topics aren't checked, so a `✓5` would claim they passed."""
     return f"[dim]{count} topic{'s' if count != 1 else ''}[/dim]"
@@ -89,7 +101,15 @@ class CategorySummaryTable(NavDataTable):
         return self._sort_by_severity
 
     def set_filter(self, text: str) -> None:
+        """Keep the categories whose name, or any of whose topics' names, contain `text`."""
         self._filter_text = text.strip().lower()
+
+    def reports_in(self, category: str | None, reports: list[TopicReport]) -> list[TopicReport]:
+        """The topics of `category` this table's filter keeps (see `matching_reports`), for the Topic Panel."""
+        if category is None:
+            return []
+        in_category = [report for report in reports if category_for(report) == category]
+        return matching_reports(category, in_category, self._filter_text)
 
     def set_sort_by_severity(self, sort_by_severity: bool) -> None:
         if sort_by_severity != self._sort_by_severity:
@@ -102,11 +122,8 @@ class CategorySummaryTable(NavDataTable):
         for report in reports:
             grouped.setdefault(category_for(report), []).append(report)
 
-        visible = {
-            category: _severity_counts(category_reports)
-            for category, category_reports in grouped.items()
-            if not self._filter_text or self._filter_text in category.lower()
-        }
+        matched = {category: matching_reports(category, rs, self._filter_text) for category, rs in grouped.items()}
+        visible = {category: _severity_counts(rs) for category, rs in matched.items() if rs}
 
         if self._needs_rebuild or set(self._category_order) != set(visible):
             self._rebuild(visible)

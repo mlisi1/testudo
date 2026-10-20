@@ -13,7 +13,6 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen, Screen
 from textual.widgets import DataTable, Input, Static
 
-from testudo.tui.categorize import category_for
 from testudo.tui.data_source import WatchSnapshot
 from testudo.tui.detail_render import render_detail
 from testudo.tui.pane_split import DETAIL_CHROME_ROWS, detail_cap, detail_height, rendered_rows
@@ -87,7 +86,7 @@ class DashboardScreen(Screen):
         # One line even at 101 columns (the narrowest typical terminal):
         # `r` (reset) is left to the help overlay, the rest is what a
         # first-time user needs to find their way around.
-        return "j/k move · tab/←→ pane · / filter · s sort · p pause · o options · ? help · q quit"
+        return "j/k move · tab/←→ pane · / search · s sort · p pause · o options · ? help · q quit"
 
     def sync_header(self) -> None:
         header = self.query_one(TestudoHeader)
@@ -116,8 +115,8 @@ class DashboardScreen(Screen):
         attention.update(text or "")
 
     def refresh_topics(self) -> None:
-        category = self.query_one(CategorySummaryTable).selected_category
-        reports = [r for r in self.app.latest_snapshot.reports if category is not None and category_for(r) == category]
+        categories = self.query_one(CategorySummaryTable)
+        reports = categories.reports_in(categories.selected_category, self.app.latest_snapshot.reports)
         self.query_one(TopicDetailTable).update_topics(reports)
         self.refresh_detail()
 
@@ -213,6 +212,11 @@ class DashboardScreen(Screen):
             return
         self._filtered_table = table
         filter_input = self.query_one("#filter-input", Input)
+        filter_input.placeholder = (
+            "search topics and categories, enter/esc to apply"
+            if isinstance(table, CategorySummaryTable)
+            else "filter this category's topics, enter/esc to apply"
+        )
         filter_input.display = True
         self._filtering = True
         filter_input.focus()
@@ -224,6 +228,9 @@ class DashboardScreen(Screen):
         if self._filtered_table is not None:
             self._filtered_table.set_filter(event.value)
             self._refresh_from(self._filtered_table)
+            if isinstance(self._filtered_table, CategorySummaryTable):
+                # Land on the first match, so the Topic Panel shows it straight away.
+                self._filtered_table.move_cursor(row=0)
 
     def _stop_filtering(self) -> None:
         filter_input = self.query_one("#filter-input", Input)
