@@ -11,7 +11,7 @@ from rich.markup import escape
 
 from testudo.core.topic_report import TopicReport
 from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_ICONS, Severity
-from testudo.tui.widgets.topic_panel import tail_first
+from testudo.tui.widgets.topic_cells import tail_first
 
 ATTENTION_TITLE = "Needs attention"
 
