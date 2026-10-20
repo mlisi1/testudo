@@ -49,12 +49,18 @@ covariance sanity, TF tree health) those tools don't cover out of the box.
   | Generic sensor | `sensor_msgs/msg/Imu` | NaN/Inf, stuck values, magnitude plausibility, `frame_id` consistency |
   | Point stream | `sensor_msgs/msg/LaserScan` (2D, full tier), `sensor_msgs/msg/PointCloud2` (3D, presence-only by default) | NaN/Inf/out-of-range ratio, stuck reading, `frame_id` consistency, malformed/empty payload (3D only) |
   | Image stream | `sensor_msgs/msg/Image`, `sensor_msgs/msg/CompressedImage` (both presence-only by default) | stuck/empty frame, malformed payload, size-drop, `frame_id` consistency, rolling bandwidth |
+  | GNSS | `sensor_msgs/msg/NavSatFix` | fix status and dropout ratio, per-axis covariance zones (skipped when the driver reports unknown covariance), NaN/Inf, stuck fix, implausible position jumps, `frame_id` consistency |
   | Nav2 goals | `action_msgs/msg/GoalStatusArray` | goal lifecycle, success rate, mean duration, invocation frequency — covers both navigation goals and recovery behaviors |
+  | BT log | `nav2_msgs/msg/BehaviorTreeLog` | currently running nodes, recovery-node trigger frequency (including recoveries wired into the tree as plain service calls) |
   | TF watch | `tf2_msgs/msg/TFMessage` | missing chains, multi-parent frames, stale-edge (extrapolation-risk) detection |
 
   Actual-vs-configured *rate* checks (a planner/controller/costmap
   publishing slower than expected) need no dedicated plugin at all —
   declare a `rate_hz` threshold on any topic.
+- **Node profiling.** CPU, memory, involuntary context switches, a
+  memory-growth slope (leak detection) and, on NVIDIA, GPU memory for every
+  ROS node whose process can be resolved, plus Testudo itself. Shown in the
+  TUI's **Nodes** category and published on `/testudo/nodes`. Live only.
 - **Lifecycle-aware.** Diagnostics for a topic owned by an
   `inactive`/`unconfigured` lifecycle node are suppressed rather than
   flagged red.
@@ -81,11 +87,11 @@ covariance sanity, TF tree health) those tools don't cover out of the box.
 
 ```
 $ testudo check
-[WARN ] /odom                          [full  ] nav_msgs/msg/Odometry               position covariance trace 0.06 out of bounds
-[OK   ] /scan                          [full  ] sensor_msgs/msg/LaserScan           0 invalid, 0 out-of-bounds of 8
-[ERROR] /local_costmap/costmap         [vitals] nav_msgs/msg/OccupancyGrid          rate 0.50Hz below configured threshold
+ERROR /local_costmap/costmap         [vitals  ] nav_msgs/msg/OccupancyGrid          rate 0.50Hz below configured threshold
+WARN  /odom                          [full    ] nav_msgs/msg/Odometry               position covariance trace 0.06 out of bounds
+OK    /scan                          [full    ] sensor_msgs/msg/LaserScan           0 invalid, 0 out-of-bounds of 8
 
-[ERROR] 3 topic(s): OK=1, WARN=1, ERROR=1
+[ERROR] 3 topic(s): OK=1, WARN=1, ERROR=1 (topics_checked=3)
 ```
 
 `testudo watch` shows the same data live, in four panes visible at once:
@@ -93,7 +99,8 @@ a **status bar** (ROS distro, domain, uptime, pause state, and the overall
 verdict with per-severity counts), a **plugin
 panel** (one row per category with a per-severity icon+count breakdown),
 a **topic panel** (every topic in the highlighted category, with its
-status and publish rate in Hz), and a **detail panel** (the highlighted
+status, publish rate in Hz, and one plugin-specific column such as
+odometry's covariance or, for Other Topics, the message type), and a **detail panel** (the highlighted
 topic's full status). Moving the cursor — not pressing `Enter` — is what
 drives the other panes live; `Enter`, `Tab`/`Shift+Tab`, or `←`/`→`
 switch focus between the plugin and topic panels, `Esc` refocuses the
@@ -253,6 +260,11 @@ class CheckPlugin(abc.ABC):
     def get_status(self) -> CheckStatus: ...
 ```
 
+`CheckStatus` carries a severity and message, `values` for people (shown
+in the TUI and the text report, Rich markup allowed) and `metrics` for
+machines (raw numbers, units in the key, what gets published). A plugin
+that sets no `metrics` still publishes its `values`, with markup stripped.
+
 Register it two ways: drop a `.py` file decorated with `@register_plugin`
 into the directory named by `plugins_dir` in your config (no packaging
 needed), or expose it via a `testudo.checks` entry point in your own
@@ -266,8 +278,7 @@ representative examples to build from.
 Testudo is under active development. Discovery, the two-tier subscription
 core, the built-in content plugins, `DiagnosticArray` publishing,
 severity aggregation, bag replay, and the TUI are implemented and tested.
-See [`CLAUDE.md`](CLAUDE.md) for the full milestone plan and architecture
-notes.
+Node profiling and per-plugin, plottable diagnostics output are in too.
 
 ## License
 
