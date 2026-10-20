@@ -31,25 +31,16 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from typing import Any, Callable
 
 import rclpy
 import rclpy.node
-from rclpy.qos import DurabilityPolicy
-from rosidl_runtime_py.utilities import get_message
 
 from testudo.core.aggregator import DEFAULT_REQUIRED_CONSECUTIVE, HysteresisDebouncer, aggregate_reports
 from testudo.core.clock import TestudoClock
 from testudo.core.config import ActionConfig, ExcludeRule, SeverityMode, TestudoConfig, TopicConfig
-from testudo.core.discovery import (
-    NoPublishersError,
-    TopicInfo,
-    describe_publisher,
-    first_publisher_info,
-    fully_qualified_node_name,
-    resolve_subscription_qos,
-)
+from testudo.core.exclusion import add_rule, matching_rule, remove_rule
 from testudo.core.global_watches import DEFAULT_GET_STATE_TIMEOUT_SECONDS
 from testudo.core.lifecycle import LifecycleTracker
 from testudo.core.maintenance import (
@@ -69,8 +60,9 @@ from testudo.core.topic_report import (
     suppress_if_inactive,
     vitals_report,
 )
+from testudo.core.tier_subscription import FullTierState
 from testudo.core.vitals import DEFAULT_STALE_AFTER_SECONDS, TopicVitals
-from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, ThresholdZone, colorize
+from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, colorize
 from testudo.plugins.registry import DiscoveredPlugin
 
 _logger = logging.getLogger(__name__)
@@ -115,16 +107,6 @@ DEFAULT_GRAPH_SETTLE_SECONDS = 1.0
 #: (TopicVitals) still sees every message; only the (potentially expensive)
 #: content check is decimated.
 DEFAULT_MAX_CHECK_RATE_HZ = 10.0
-
-
-@dataclass
-class _FullTierState:
-    """Per-topic bookkeeping for a full-tier subscription."""
-
-    plugin: CheckPlugin
-    vitals: TopicVitals
-    debouncer: HysteresisDebouncer
-    last_checked_seconds: float | None = field(default=None)
 
 
 def _index_plugins_by_msg_type(plugins: list[DiscoveredPlugin]) -> dict[str, type[CheckPlugin]]:
@@ -199,7 +181,7 @@ class SubscriptionManager:
         self._lifecycle_tracker = LifecycleTracker()
 
         self._vitals: dict[str, TopicVitals] = {}
-        self._full_tier: dict[str, _FullTierState] = {}
+        self._full_tier: dict[str, FullTierState] = {}
         # topic name -> msg type, for undeclared topics of a
         # presence-only-by-default type (see DEFAULT_PRESENCE_ONLY_MSG_TYPES)
         # that never get a subscription at all.
@@ -230,9 +212,9 @@ class SubscriptionManager:
         # so maintenance.py's `_clear_all_topics` can destroy everything cleanly.
         self._subscriptions: dict[str, Any] = {}
         # related-topic name -> (owning plugin instance, its primary topic
-        # name). Populated by `_subscribe_full_tier` and consulted by replay
+        # name). Populated by `tier_subscription.subscribe_full_tier` and consulted by replay
         # (`feed_replayed_message`), which has no live-subscription callback
-        # of its own to close over the plugin the way `_subscribe_related_topic` does.
+        # of its own to close over the plugin the way `subscribe_related_topic` does.
         self._related_topic_targets: dict[str, tuple[CheckPlugin, str]] = {}
         # Only `start()` flips this on -- `replay`/one-shot `check` construct
         # a manager and drive `tick()` without ever calling `start()`'s live
@@ -251,120 +233,25 @@ class SubscriptionManager:
         """True for ROS graph bookkeeping/self-exclusion -- stays fully invisible, never an Excluded-category row."""
         return topic_name in self.excluded_topics()
 
-    def _matching_exclude_rule(self, topic_name: str) -> ExcludeRule | None:
-        return next((rule for rule in self._config.exclude_topics if rule.matches(topic_name)), None)
-
     def is_excluded(self, topic_name: str) -> bool:
         """True if `topic_name` gets no subscription of any kind -- default/self, or a user exclude rule."""
-        return self.is_default_excluded(topic_name) or self._matching_exclude_rule(topic_name) is not None
+        return self.is_default_excluded(topic_name) or matching_rule(self, topic_name) is not None
 
     def exclude_rules(self) -> list[ExcludeRule]:
         """Every currently effective user exclude rule (config-loaded, plus anything added this session)."""
         return list(self._config.exclude_topics)
 
     def add_exclude_rule(self, rule: ExcludeRule) -> int | None:
-        """Add `rule` to the effective rule set.
+        """Add a rule; the matched-topic preview count, or None if already in effect (see `exclusion.add_rule`).
 
-        Returns how many already-tracked topics it matches (a preview
-        count for the caller's UI, e.g. the Options screen's "moved N
-        topic(s)" message), or `None` if an identical rule was already in
-        effect -- a no-op the caller uses to skip writing a duplicate
-        line to the config file.
-
-        Deliberately does *not* tear down any matched topic's live
-        subscription itself: this may be called from any thread (the
-        Options screen runs on the TUI's own thread, not the node's spin
-        loop), and `destroy_subscription` isn't safe to interleave with a
-        concurrent `spin_once` elsewhere. Appending to `_config.exclude_topics`
-        is a plain Python list mutation -- safe from any thread -- and the
-        actual move into the excluded tier happens on the next
-        `maintain()` call instead, via `_sweep_excluded_topics`, which
-        only ever runs on the thread that owns the spin loop. The delay
-        is at most one `maintain()` cycle (driven every ~0.1s by `watch`'s
-        spin thread), not user-perceptible.
+        Safe from any thread: the matched topics only move into the
+        excluded tier on the next `maintain()` cycle.
         """
-        if rule in self._config.exclude_topics:
-            return None
-        self._config.exclude_topics.append(rule)
-        return sum(1 for name in self._msg_type_by_topic if name not in self._excluded and rule.matches(name))
+        return add_rule(self, rule)
 
     def remove_exclude_rule(self, rule: ExcludeRule) -> bool:
-        """Remove a previously added exclude rule. Returns True if one was removed.
-
-        A topic that was only excluded via this rule isn't resubscribed
-        directly here -- it's dropped from `_excluded` (and its bookkeeping
-        entry), so the next `discover_and_subscribe` pass picks it back up
-        exactly like any newly-appeared topic. A topic still matched by a
-        *different* remaining rule stays excluded.
-
-        That next pass is forced to happen on the very next `maintain()`
-        call (bypassing `rediscovery_interval_seconds`, same trick
-        `maintenance._clear_all_topics` uses) rather than left to fall due
-        on its own periodic schedule (5s by default): otherwise a topic
-        evicted here is invisible in *every* category -- no longer
-        excluded, not yet rediscovered as vitals/full -- for up to that
-        whole interval. That gap is exactly what made a quick
-        remove-then-re-add of the same rule from the Options screen look
-        like the topic just vanished.
-        """
-        try:
-            self._config.exclude_topics.remove(rule)
-        except ValueError:
-            return False
-        stale = [n for n in self._excluded if self._matching_exclude_rule(n) is None]
-        for name in stale:
-            del self._excluded[name]
-            del self._msg_type_by_topic[name]
-        if stale:
-            self._last_rediscovery_monotonic = None
-        return True
-
-    def _exclude_tracked_topic(self, topic_name: str) -> None:
-        """Move an already-tracked topic into the excluded tier, tearing down its live subscription if any."""
-        msg_type = self._msg_type_by_topic.get(topic_name)
-        subscription = self._subscriptions.pop(topic_name, None)
-        if subscription is not None:
-            self._node.destroy_subscription(subscription)
-        self._vitals.pop(topic_name, None)
-        self._full_tier.pop(topic_name, None)
-        self._presence_only.pop(topic_name, None)
-        self._owning_node_by_topic.pop(topic_name, None)
-        self._no_publishers.discard(topic_name)
-        self._latched.discard(topic_name)
-        self._related_topic_targets.pop(topic_name, None)
-        if msg_type is not None:
-            self._excluded[topic_name] = msg_type
-
-    def _sweep_excluded_topics(self) -> None:
-        """Move any tracked topic newly matching an exclude rule into the excluded tier.
-
-        Called from `maintain()` on every cycle (the node's spin-loop
-        thread) -- see `add_exclude_rule`'s docstring for why this can't
-        happen synchronously wherever a rule was added instead. A rule
-        added since the last sweep (e.g. from the Options screen) is
-        picked up here, cheaply: this is a no-op scan over already-known
-        topic names unless something actually needs excluding.
-        """
-        for name in [
-            n for n in list(self._msg_type_by_topic) if n not in self._excluded and self._matching_exclude_rule(n) is not None
-        ]:
-            self._exclude_tracked_topic(name)
-
-    def _maybe_record_excluded(self, topic_name: str, msg_type_str: str) -> bool:
-        """If `topic_name` matches a user exclude rule, record it (no subscription) and return True.
-
-        Shared by the live discovery loop (`_subscribe_topic`) and replay's
-        per-message loop, so an excluded topic costs the same next-to-
-        nothing either way: one dict entry, never a subscription, never a
-        publisher-info query, never a deserialized message.
-        """
-        if topic_name in self._excluded:
-            return True
-        if self._matching_exclude_rule(topic_name) is None:
-            return False
-        self._msg_type_by_topic[topic_name] = msg_type_str
-        self._excluded[topic_name] = msg_type_str
-        return True
+        """Remove a rule, True if one was; its topics get rediscovered next `maintain()` (see `exclusion.remove_rule`)."""
+        return remove_rule(self, rule)
 
     def start(self) -> None:
         """Subscribe to every currently-discovered, non-excluded topic, then arm live rediscovery.
@@ -398,154 +285,6 @@ class SubscriptionManager:
         info -- still in flight -- ever arrives.
         """
         time.sleep(self._graph_settle_seconds)
-
-    def _subscribe_topic(self, topic_name: str, msg_type_str: str, topics_by_name: dict[str, TopicInfo]) -> None:
-        if self._maybe_record_excluded(topic_name, msg_type_str):
-            return
-        self._msg_type_by_topic[topic_name] = msg_type_str
-        publisher_infos = self._node.get_publishers_info_by_topic(topic_name)
-        try:
-            publisher_info = first_publisher_info(publisher_infos, topic_name)
-        except NoPublishersError:
-            _logger.warning("topic '%s' has no publishers", topic_name)
-            self._no_publishers.add(topic_name)
-            return
-        self._no_publishers.discard(topic_name)
-        self._publishers_by_topic[topic_name] = tuple(describe_publisher(info) for info in publisher_infos)
-        self._owning_node_by_topic[topic_name] = fully_qualified_node_name(
-            publisher_info.node_namespace, publisher_info.node_name
-        )
-        if publisher_info.qos_profile.durability == DurabilityPolicy.TRANSIENT_LOCAL:
-            self._latched.add(topic_name)
-        else:
-            self._latched.discard(topic_name)
-
-        if msg_type_str in self._presence_only_msg_types and topic_name not in self._topic_config_by_name:
-            self._presence_only[topic_name] = msg_type_str
-            return
-
-        try:
-            msg_class = get_message(msg_type_str)
-        except Exception:
-            _logger.exception("could not resolve message class for '%s' (%s)", topic_name, msg_type_str)
-            return
-
-        plugin_class = self._plugin_class_by_msg_type.get(msg_type_str)
-        if plugin_class is None:
-            self._subscribe_vitals_tier(topic_name, msg_class, publisher_info.qos_profile)
-            return
-
-        topic_config = self._topic_config_by_name.get(topic_name)
-        action_config = self._action_config_by_status_topic.get(topic_name)
-        thresholds = dict(plugin_class.default_thresholds())
-        related_topics: dict[str, str] = {}
-        if topic_config is not None:
-            thresholds.update(topic_config.thresholds)
-            related_topics = topic_config.related_topics
-        if action_config is not None:
-            thresholds.update(action_config.thresholds)
-            related_topics = {**related_topics, **action_config.related_topics}
-        self._subscribe_full_tier(
-            topic_name, msg_class, publisher_info.qos_profile, plugin_class, thresholds, related_topics, topics_by_name
-        )
-
-    def _subscribe_vitals_tier(self, topic_name: str, msg_class: type, qos_profile) -> None:
-        vitals = TopicVitals(topic=topic_name)
-        self._vitals[topic_name] = vitals
-
-        def _on_raw_message(_raw_bytes: bytes) -> None:
-            vitals.record_arrival(self._clock.now_seconds())
-
-        # raw=True: the middleware still needs the real message type to match
-        # publishers, but the callback receives serialized bytes and never
-        # deserializes -- that's the whole cost saving of this tier.
-        self._subscriptions[topic_name] = self._node.create_subscription(
-            msg_class, topic_name, _on_raw_message, qos_profile, raw=True
-        )
-
-    def _subscribe_full_tier(
-        self,
-        topic_name: str,
-        msg_class: type,
-        qos_profile,
-        plugin_class: type[CheckPlugin],
-        thresholds: dict[str, ThresholdZone],
-        related_topics: dict[str, str],
-        topics_by_name: dict[str, TopicInfo],
-    ) -> _FullTierState:
-        plugin = plugin_class(thresholds=thresholds, related_topics=related_topics)
-        state = _FullTierState(
-            plugin=plugin,
-            vitals=TopicVitals(topic=topic_name),
-            debouncer=HysteresisDebouncer(self._hysteresis_required_consecutive),
-        )
-        self._full_tier[topic_name] = state
-
-        def _on_message(msg: object) -> None:
-            self._process_full_tier_message(state, topic_name, msg, self._clock.now_seconds())
-
-        self._subscriptions[topic_name] = self._node.create_subscription(msg_class, topic_name, _on_message, qos_profile)
-
-        for related_topic_name in related_topics.values():
-            self._related_topic_targets[related_topic_name] = (plugin, topic_name)
-            self._subscribe_related_topic(related_topic_name, plugin, topics_by_name)
-
-        return state
-
-    def _process_full_tier_message(self, state: _FullTierState, topic_name: str, msg: object, now: float) -> None:
-        """Vitals + decimated content-check for one full-tier message, at `now`.
-
-        Shared by the live subscription callback and replay's
-        `feed_replayed_message`, so both apply identical decimation,
-        on_tick timing, and hysteresis debouncing.
-        """
-        state.vitals.record_arrival(now)
-        min_check_interval = 1.0 / self._max_check_rate_hz if self._max_check_rate_hz > 0 else 0.0
-        if state.last_checked_seconds is not None and (now - state.last_checked_seconds) < min_check_interval:
-            return
-        state.last_checked_seconds = now
-        state.plugin.on_tick(now)
-        state.plugin.on_message(topic_name, msg)
-        state.debouncer.update(state.plugin.get_status())
-
-    def _subscribe_related_topic(
-        self, related_topic_name: str, plugin: CheckPlugin, topics_by_name: dict[str, TopicInfo]
-    ) -> None:
-        """Feed a plugin's related-topic input (e.g. cmd_vel) to the same instance's `on_message`.
-
-        Best-effort: if the related topic isn't currently on the graph or
-        has no publishers, the cross-check it feeds simply never fires --
-        this doesn't block or degrade the primary topic's own checks.
-        """
-        topic_info = topics_by_name.get(related_topic_name)
-        if topic_info is None or not topic_info.msg_types:
-            _logger.warning("related topic '%s' not found on the graph; skipping", related_topic_name)
-            return
-        try:
-            qos_profile = resolve_subscription_qos(self._node, related_topic_name)
-        except NoPublishersError:
-            _logger.warning("related topic '%s' has no publishers; skipping", related_topic_name)
-            return
-        try:
-            msg_class = get_message(topic_info.msg_types[0])
-        except Exception:
-            _logger.exception("could not resolve message class for related topic '%s'", related_topic_name)
-            return
-
-        def _on_related_message(msg: object) -> None:
-            # Related-topic messages aren't decimated (no vitals tracking of
-            # their own), but a plugin relying on on_tick's `now` (e.g.
-            # TFWatchPlugin timestamping an edge) needs it kept current here
-            # too -- a latched (transient-local) related topic like
-            # /tf_static can otherwise deliver its message before the
-            # primary topic's first check ever calls on_tick, leaving `now`
-            # at its plugin-default and making that edge look stale forever.
-            plugin.on_tick(self._clock.now_seconds())
-            plugin.on_message(related_topic_name, msg)
-
-        self._subscriptions[related_topic_name] = self._node.create_subscription(
-            msg_class, related_topic_name, _on_related_message, qos_profile
-        )
 
     def tick(self) -> None:
         """Advance every full-tier plugin's time-based state. Call on a fixed timer."""
@@ -591,7 +330,7 @@ class SubscriptionManager:
             # No `_suppress`: an excluded topic never resolves an owning
             # node (no publisher-info query -- that's the whole point), so
             # lifecycle-aware suppression would always be a no-op for it.
-            rule = self._matching_exclude_rule(topic_name)
+            rule = matching_rule(self, topic_name)
             rule_text = f"{rule.match_type.value} {rule.pattern}" if rule is not None else ""
             reports.append(excluded_report(topic_name, msg_type, rule_text))
         for topic_name, vitals in self._vitals.items():

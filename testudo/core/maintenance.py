@@ -28,8 +28,10 @@ import time
 from typing import TYPE_CHECKING
 
 from testudo.core.discovery import list_topics
+from testudo.core.exclusion import sweep_excluded_topics
 from testudo.core.global_watches import subscribe_lifecycle_tracking, subscribe_tf_watch
 from testudo.core.lifecycle import LifecycleTracker
+from testudo.core.tier_subscription import subscribe_topic
 from testudo.core.topic_report import TopicReport
 from testudo.plugins.base import Severity
 
@@ -86,7 +88,7 @@ def discover_and_subscribe(manager: "SubscriptionManager") -> None:
         if not topic_info.msg_types:
             _logger.warning("topic '%s' has no known message type; skipping", name)
             continue
-        manager._subscribe_topic(name, topic_info.msg_types[0], topics_by_name)
+        subscribe_topic(manager, name, topic_info.msg_types[0], topics_by_name)
 
 
 def maintain(manager: "SubscriptionManager") -> None:
@@ -104,7 +106,7 @@ def maintain(manager: "SubscriptionManager") -> None:
     """
     if not manager._live:
         return
-    manager._sweep_excluded_topics()
+    sweep_excluded_topics(manager)
     _maybe_clear_stale_stack(manager)
     _maybe_rediscover(manager)
 

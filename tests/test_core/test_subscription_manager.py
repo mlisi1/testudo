@@ -458,7 +458,7 @@ def test_default_excluded_topics_never_get_an_excluded_report() -> None:
 def test_add_exclude_rule_previews_the_affected_count_without_unsubscribing_yet() -> None:
     """`add_exclude_rule` must be callable off the spin-loop thread (the TUI's own, from the
     Options screen) -- so it only previews the count and defers any `destroy_subscription`
-    to `_sweep_excluded_topics` (see `maintain()`), never touching the subscription itself."""
+    to `exclusion.sweep_excluded_topics` (see `maintain()`), never touching the subscription itself."""
     node = _FakeNode(
         topics=[("/odom", ["nav_msgs/msg/Odometry"])],
         publishers_by_topic={"/odom": [_FakeEndpointInfo(qos_profile=_qos())]},

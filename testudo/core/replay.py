@@ -33,7 +33,9 @@ from testudo.core.aggregator import HysteresisDebouncer
 from testudo.core.clock import TestudoClock
 from testudo.core.config import TestudoConfig
 from testudo.core.global_watches import TF_STATIC_TOPIC, TF_TOPIC, TF_TYPE
-from testudo.core.subscription_manager import SubscriptionManager, _FullTierState
+from testudo.core.exclusion import maybe_record_excluded
+from testudo.core.subscription_manager import SubscriptionManager
+from testudo.core.tier_subscription import FullTierState, process_full_tier_message
 from testudo.core.topic_report import TopicReport
 from testudo.core.vitals import TopicVitals
 from testudo.plugins.base import CheckStatus
@@ -93,13 +95,13 @@ def _latched_topics(bag_path: str) -> set[str]:
 def _track_for_replay(manager: SubscriptionManager, topic_name: str, msg_type_str: str) -> None:
     """Assign a tier to `topic_name` without a live subscription.
 
-    Mirrors `SubscriptionManager._subscribe_topic`'s tier decision and
+    Mirrors `tier_subscription.subscribe_topic`'s tier decision and
     threshold/related-topics merging, minus the live-only parts (QoS
     negotiation, owning-node attribution, `create_subscription`).
     """
     if topic_name in manager._msg_type_by_topic:
         return
-    if manager._maybe_record_excluded(topic_name, msg_type_str):
+    if maybe_record_excluded(manager, topic_name, msg_type_str):
         return
     manager._msg_type_by_topic[topic_name] = msg_type_str
 
@@ -123,7 +125,7 @@ def _track_for_replay(manager: SubscriptionManager, topic_name: str, msg_type_st
         thresholds.update(action_config.thresholds)
 
     plugin = plugin_class(thresholds=thresholds, related_topics=related_topics)
-    state = _FullTierState(
+    state = FullTierState(
         plugin=plugin,
         vitals=TopicVitals(topic=topic_name),
         debouncer=HysteresisDebouncer(manager._hysteresis_required_consecutive),
@@ -156,7 +158,7 @@ def _feed_replayed_message(manager: SubscriptionManager, topic_name: str, msg_ty
         return
     state = manager._full_tier.get(topic_name)
     if state is not None:
-        manager._process_full_tier_message(state, topic_name, msg, now)
+        process_full_tier_message(manager, state, topic_name, msg, now)
 
 
 def _wire_tf_watch_for_replay(manager: SubscriptionManager, topic_types: dict[str, str]) -> None:
@@ -227,7 +229,7 @@ def replay_bag(
         # excluded topic (e.g. a heavy PointCloud2 someone dropped via
         # `exclude_topics`) shouldn't pay bag-replay's deserialization cost
         # on every single one of its messages just to be thrown away.
-        if manager._maybe_record_excluded(topic_name, msg_type_str):
+        if maybe_record_excluded(manager, topic_name, msg_type_str):
             continue
 
         if topic_name in unresolvable:

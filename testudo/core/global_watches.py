@@ -25,6 +25,7 @@ from testudo.core.discovery import (
     resolve_publisher_info,
     resolve_subscription_qos,
 )
+from testudo.core.tier_subscription import subscribe_full_tier
 
 if TYPE_CHECKING:
     from testudo.core.subscription_manager import SubscriptionManager
@@ -47,7 +48,7 @@ def subscribe_tf_watch(manager: "SubscriptionManager", topics_by_name: dict[str,
     Handled separately from the generic per-topic loop because /tf and
     /tf_static share a message type: type-matching alone would give them
     two independent plugin instances instead of one that sees the whole
-    tree. Reuses `_subscribe_full_tier`'s related-topics wiring to route
+    tree. Reuses `tier_subscription.subscribe_full_tier`'s related-topics wiring to route
     /tf_static to the same instance as /tf.
 
     Returns the topic names claimed (subscribed or recorded as
@@ -92,8 +93,8 @@ def subscribe_tf_watch(manager: "SubscriptionManager", topics_by_name: dict[str,
         thresholds.update(topic_config.thresholds)
     related_topics = {"tf_static": TF_STATIC_TOPIC} if TF_STATIC_TOPIC in topics_by_name else {}
 
-    state = manager._subscribe_full_tier(
-        TF_TOPIC, msg_class, publisher_info.qos_profile, plugin_class, thresholds, related_topics, topics_by_name
+    state = subscribe_full_tier(
+        manager, TF_TOPIC, msg_class, publisher_info.qos_profile, plugin_class, thresholds, related_topics, topics_by_name
     )
 
     # TF's watch list comes from config.tf (parent/child pairs), not the
