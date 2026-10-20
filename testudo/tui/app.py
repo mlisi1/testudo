@@ -11,6 +11,7 @@ import logging
 from typing import Callable
 
 from textual.app import App
+from textual.css.query import NoMatches
 
 from testudo.tui.data_source import WatchDataSource, WatchSnapshot
 from testudo.tui.keybinds import APP_BINDINGS
@@ -148,7 +149,13 @@ class TestudoApp(App):
     def _notify_dashboard(self) -> None:
         for screen in self.screen_stack:
             if isinstance(screen, DashboardScreen):
-                screen.on_snapshot(self.latest_snapshot)
+                try:
+                    screen.on_snapshot(self.latest_snapshot)
+                except NoMatches:
+                    # The poll timer can still fire while the app is
+                    # exiting, after the dashboard's widgets were already
+                    # removed: nothing is left to draw into.
+                    return
 
     def action_toggle_pause(self) -> None:
         if not self.data_source.is_live():

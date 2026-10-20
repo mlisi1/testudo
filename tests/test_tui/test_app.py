@@ -488,3 +488,19 @@ def test_topic_column_fills_the_pane_and_shows_status_icons() -> None:
             assert topics.selected_topic == long_topic
 
     run(body())
+
+
+def test_a_poll_landing_after_the_dashboard_is_torn_down_is_ignored() -> None:
+    """Regression: the poll timer can fire while the app exits, after the dashboard's
+    widgets are gone -- that used to raise NoMatches out of the timer (a flaky test teardown)."""
+
+    async def body():
+        app = _make_app()
+        async with app.run_test() as pilot:
+            dashboard = app.screen
+            assert isinstance(dashboard, DashboardScreen)
+            await dashboard.query_one("#detail-pane").remove()
+            await pilot.pause()
+            app._notify_dashboard()  # must not raise
+
+    run(body())
