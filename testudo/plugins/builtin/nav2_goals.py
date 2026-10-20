@@ -226,6 +226,31 @@ class Nav2GoalPlugin(CheckPlugin):
         ended = {Severity.OK: "succeeded", Severity.ERROR: "aborted"}.get(outcome, "canceled")
         return f"{_IDLE_CHIP}{since} · last {strip([outcome])} {ended} in {duration:.1f}s"
 
+    def _metrics(
+        self, success_rate: float | None, mean_duration: float | None, frequency: float | None
+    ) -> dict[str, float | str]:
+        """The published numbers: current status code and time in it, tallies, rates, durations, feedback."""
+        metrics: dict[str, float | str] = {
+            # The action_msgs/GoalStatus code (2 executing, 4 succeeded, 6 aborted, ...): plottable as a step line.
+            "status": self._current_status,
+            "active_goals": self._active_count,
+            "succeeded": self._succeeded,
+            "aborted": self._aborted,
+            "canceled": self._canceled,
+        }
+        if self._status_since is not None:
+            metrics["time_in_status_s"] = max(0.0, self._now - self._status_since)
+        optional = {
+            "success_rate": success_rate,
+            "mean_duration_s": mean_duration,
+            "last_duration_s": self._outcomes[-1][1] if self._outcomes else None,
+            "goal_rate_per_min": frequency,
+            "distance_remaining_m": self._distance_remaining_m,
+            "estimated_time_remaining_s": self._estimated_time_remaining_s,
+        }
+        metrics.update({key: value for key, value in optional.items() if value is not None})
+        return metrics
+
     def _history_line(self) -> str:
         """The recent outcomes as a strip, plus the all-time tallies."""
         tallies = (
@@ -290,6 +315,7 @@ class Nav2GoalPlugin(CheckPlugin):
             message=message,
             values=values,
             topic_panel_column="Last 5",
+            metrics=self._metrics(success_rate, mean_duration, frequency),
             topic_panel_value=recent or "[dim]–[/dim]",
             codes=codes,
         )

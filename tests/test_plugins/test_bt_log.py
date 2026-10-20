@@ -141,3 +141,15 @@ def test_last_failure_is_the_first_failure_in_its_log_not_the_ancestors_it_casca
     )
     plugin.on_tick(11.0)
     assert _plain(plugin.get_status().values["last_failure"]) == "ComputePathToPose  11s ago"
+
+
+def test_metrics_publish_recovery_rate_counts_and_running_leaf() -> None:
+    plugin = BehaviorTreeLogPlugin()
+    plugin.on_tick(0.0)
+    plugin.on_message("/behavior_tree_log", _log(_change("Spin", "IDLE", "RUNNING", uid=7)))
+    plugin.on_tick(3.0)
+    metrics = plugin.get_status().metrics
+    assert metrics["recovery_count"] == 1
+    assert metrics["recovery_count_Spin"] == 1
+    assert metrics["running_leaf"] == "Spin"
+    assert metrics["last_recovery"] == "Spin" and metrics["last_recovery_age_s"] == 3.0

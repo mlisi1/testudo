@@ -217,3 +217,17 @@ def test_canceled_goal_is_neutral_and_durations_sparkline_is_secondary() -> None
     assert _plain(status.values["success"]).startswith("100% ")
     assert _plain(status.values["history"]) == "✓⊘  1✓ 0✗ 1⊘"
     assert _plain(status.values["durations_more"]) == "█▁ (last 2)"
+
+
+def test_metrics_publish_status_code_tallies_and_success_rate() -> None:
+    plugin = Nav2GoalPlugin()
+    plugin.on_tick(0.0)
+    plugin.on_message("/x", _status_array(_goal_status(1, GoalStatus.STATUS_EXECUTING)))
+    plugin.on_tick(2.0)
+    plugin.on_message("/x", _status_array(_goal_status(1, GoalStatus.STATUS_SUCCEEDED)))
+    metrics = plugin.get_status().metrics
+    assert metrics["status"] == GoalStatus.STATUS_SUCCEEDED
+    assert (metrics["succeeded"], metrics["aborted"], metrics["canceled"]) == (1, 0, 0)
+    assert metrics["success_rate"] == 1.0
+    assert metrics["last_duration_s"] == 2.0
+    assert "distance_remaining_m" not in metrics  # never reported: left out, not published as a placeholder

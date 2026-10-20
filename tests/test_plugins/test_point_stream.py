@@ -241,3 +241,12 @@ def test_returns_bar_is_fixed_width_and_never_hides_a_small_share() -> None:
     bar = Text.from_markup(returns_bar(0.99, 0.0, 0.0, 0.01)).plain
     assert len(bar) == 24 and bar.endswith("░")
     assert format_points(720) == "720" and format_points(29184) == "29.2k" and format_points(1_310_000) == "1.31M"
+
+
+def test_metrics_publish_the_returns_breakdown_as_ratios() -> None:
+    plugin = PointStreamPlugin()
+    plugin.on_message("/scan", _laser_scan([1.0, 2.0, float("inf"), 3.0]))
+    metrics = plugin.get_status().metrics
+    assert metrics["points"] == 4
+    assert metrics["valid_ratio"] + metrics["no_return_ratio"] + metrics["out_of_range_ratio"] + metrics["invalid_ratio"] == 1.0
+    assert metrics["frame_id"] == "laser"

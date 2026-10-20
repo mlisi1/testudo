@@ -259,4 +259,29 @@ class TFWatchPlugin(CheckPlugin):
             topic_panel_column="Frames",
             topic_panel_value=column,
             codes=codes,
+            metrics=self._metrics(trees, multi_parent, stale, chains),
         )
+
+    def _metrics(
+        self,
+        trees: list[tuple[str, int]],
+        multi_parent: dict[str, set[str]],
+        stale: list[tuple[str, str]],
+        chains: list[tuple[tuple[str, str], str, str | None]],
+    ) -> dict[str, float | str]:
+        """The published numbers: tree size, issue counts, each watched chain as 1/0, each dynamic edge's age."""
+        static_count = len(self._static_edges)
+        metrics: dict[str, float | str] = {
+            "frames": len(self._adjacency),
+            "dynamic_edges": len(self._last_seen_seconds) - static_count,
+            "static_edges": static_count,
+            "trees": len(trees),
+            "multi_parent_frames": len(multi_parent),
+            "stale_dynamic_edges": len(stale),
+        }
+        for (parent, child), _line, reason in chains:
+            metrics[f"chain_connected_{parent}_to_{child}"] = reason is None
+        for (parent, child), seen in sorted(self._last_seen_seconds.items()):
+            if (parent, child) not in self._static_edges:
+                metrics[f"edge_age_s_{parent}_to_{child}"] = self._now - seen
+        return metrics

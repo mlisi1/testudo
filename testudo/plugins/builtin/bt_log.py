@@ -164,6 +164,25 @@ class BehaviorTreeLogPlugin(CheckPlugin):
             return None
         return (len(self._recovery_trigger_times) - 1) / span * 60.0
 
+    def _metrics(self, frequency: float | None) -> dict[str, float | str]:
+        """The published numbers: recovery rate and counts (total and per type), the running leaf, last events' ages."""
+        metrics: dict[str, float | str] = {"recovery_count": self._recovery_trigger_count}
+        if frequency is not None:
+            metrics["recovery_frequency_per_min"] = frequency
+        for name, count in sorted(self._recovery_counts.items()):
+            metrics[f"recovery_count_{name}"] = count
+        if self._running_nodes:
+            metrics["running_leaf"] = self._branch()[-1]
+        if self._recovery_trigger_count:
+            last_name, last_at = self._last_recovery
+            metrics["last_recovery"] = last_name
+            metrics["last_recovery_age_s"] = self._now - last_at
+        if self._last_failure is not None:
+            name, at = self._last_failure
+            metrics["last_failure"] = name
+            metrics["last_failure_age_s"] = self._now - at
+        return metrics
+
     def _running_line(self) -> str:
         """The running branch as a path with its leaf (what the robot is doing) in bold, or idle + the last one."""
         if self._running_nodes:
@@ -204,6 +223,7 @@ class BehaviorTreeLogPlugin(CheckPlugin):
 
         column = colorize(f"{frequency:.1f}", severity) if frequency is not None else "[dim]–[/dim]"
         return CheckStatus(
+            metrics=self._metrics(frequency),
             severity=severity,
             label="nav2-bt",
             message=message,

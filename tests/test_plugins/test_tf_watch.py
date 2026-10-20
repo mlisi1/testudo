@@ -150,3 +150,16 @@ def test_reset_clears_the_tree_but_keeps_watched_pairs_and_window() -> None:
     assert plugin.related_topics == {"tf_static": "/tf_static"}
     plugin.on_tick(5.0)
     assert "TF-003" in plugin.get_status().codes  # 3 s window kept
+
+
+def test_metrics_publish_counts_chain_flags_and_dynamic_edge_ages() -> None:
+    plugin = TFWatchPlugin()
+    plugin.set_watched_pairs([("map", "base_link"), ("base_link", "gps")])
+    plugin.on_tick(1.0)
+    plugin.on_message("/tf", _tf_message(_transform("map", "odom"), _transform("odom", "base_link")))
+    plugin.on_tick(1.5)
+    metrics = plugin.get_status().metrics
+    assert metrics["frames"] == 3 and metrics["dynamic_edges"] == 2
+    assert metrics["chain_connected_map_to_base_link"] is True
+    assert metrics["chain_connected_base_link_to_gps"] is False
+    assert metrics["edge_age_s_odom_to_base_link"] == 0.5

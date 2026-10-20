@@ -212,3 +212,13 @@ def test_default_thresholds_cover_expected_metrics() -> None:
         "jump_speed_mps",
         "fix_dropout_ratio",
     }
+
+
+def test_metrics_publish_full_precision_position_and_sigmas() -> None:
+    plugin = GnssPlugin()
+    plugin.on_message("/gps", _fix(lat=43.72440573, covariance=(0.09, 0, 0, 0, 0.16, 0, 0, 0, 0.25)))
+    metrics = plugin.get_status().metrics
+    assert metrics["latitude_deg"] == 43.72440573
+    assert metrics["fix_status"] == NavSatStatus.STATUS_FIX
+    assert metrics["sigma_horizontal_m"] == 0.5
+    assert metrics["sigma_vertical_m"] == 0.5

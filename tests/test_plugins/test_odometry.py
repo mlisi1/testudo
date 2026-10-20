@@ -254,3 +254,14 @@ def test_split_zone_divides_every_configured_boundary() -> None:
     assert zone.orange == pytest.approx(0.1)
     assert zone.red is None
     assert _split_zone(None, 3) is None
+
+
+def test_metrics_publish_raw_variances_speeds_and_frames() -> None:
+    plugin = OdometryPlugin()
+    plugin.on_message("/odom", _odometry(xx=0.04, yy=0.09, linear_x=0.5))
+    metrics = plugin.get_status().metrics
+    assert metrics["position_variance_x_m2"] == pytest.approx(0.04)
+    assert metrics["sigma_xy_m"] == pytest.approx(math.sqrt(0.13))
+    assert metrics["linear_x_m_per_s"] == 0.5
+    assert metrics["pose_psd_ok"] is True
+    assert "cmd_linear_x_m_per_s" not in metrics  # no cmd_vel seen

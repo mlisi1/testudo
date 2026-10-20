@@ -292,4 +292,21 @@ class PointStreamPlugin(CheckPlugin):
             topic_panel_column="Points",
             topic_panel_value=f"[{color}]{format_points(self._points)}[/{color}]",
             codes=codes,
+            metrics=self._metrics(),
         )
+
+    def _metrics(self) -> dict[str, float | str]:
+        """The published numbers: point count, the returns breakdown as 0..1 ratios, stuck/invalid, shape flags."""
+        valid, no_return, out_of_range, invalid = self._shares
+        return {
+            "points": self._points,
+            "valid_ratio": valid,
+            "no_return_ratio": no_return,
+            "out_of_range_ratio": out_of_range,
+            "invalid_ratio": invalid,
+            "stuck_count": self._stuck_count,
+            "plausible": self._plausibility_ok,
+            "empty": self._empty_payload,
+            "malformed": self._malformed,
+            "frame_id": self._last_frame_id or "",
+        }

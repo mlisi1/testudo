@@ -183,3 +183,12 @@ def test_both_wire_formats_default_to_presence_only() -> None:
     assert ImageStreamPlugin.presence_only_msg_types() == frozenset(
         {"sensor_msgs/msg/Image", "sensor_msgs/msg/CompressedImage"}
     )
+
+
+def test_metrics_publish_frame_size_and_flags() -> None:
+    plugin = ImageStreamPlugin()
+    plugin.on_message("/camera/image_raw", _image(width=4, height=2))
+    metrics = plugin.get_status().metrics
+    assert metrics["frame_bytes"] == 8
+    assert metrics["empty"] is False and metrics["malformed"] is False
+    assert metrics["frame_id"] == "camera"

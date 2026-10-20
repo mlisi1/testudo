@@ -288,4 +288,19 @@ class ImageStreamPlugin(CheckPlugin):
             topic_panel_column="Size",
             topic_panel_value=topic_panel_value,
             codes=codes,
+            metrics=self._metrics(),
         )
+
+    def _metrics(self) -> dict[str, float | str]:
+        """The published numbers: frame size, checked throughput, size vs average, stuck/empty/malformed."""
+        return {
+            "frame_bytes": self._last_size,
+            # Decimated: the checked frames' throughput, not the topic's (see the "stream" value).
+            "checked_bandwidth_bytes_per_s": self._bandwidth_bytes_per_second(),
+            "size_drop_ratio": self._size_drop_ratio,
+            "stuck_count": self._stuck_count,
+            "empty": self._empty_payload,
+            "malformed": self._malformed,
+            "format": self._kind,
+            "frame_id": self._last_frame_id or "",
+        }

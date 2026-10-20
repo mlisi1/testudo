@@ -29,6 +29,7 @@ from testudo.plugins.base import (
     evaluate_zone,
 )
 from testudo.plugins.builtin.odometry_layout import (
+    ORIENTATION_AXES,
     POSITION_AXES,
     motion_rows,
     pose_line,
@@ -308,7 +309,39 @@ class OdometryPlugin(CheckPlugin):
             topic_panel_column="σxy",
             topic_panel_value=self._sigma_xy_cell(trace_severity, growth_zone),
             codes=codes,
+            metrics=self._metrics(),
         )
+
+    def _metrics(self) -> dict[str, float | str]:
+        """The published numbers: pose, per-axis variances, covariance trace and growth, speeds vs cmd_vel, PSD flags."""
+        frame, child = self._frames
+        metrics: dict[str, float | str] = {}
+        for axis, position, variance in zip(POSITION_AXES, self._position, self._position_variance):
+            metrics[f"position_{axis}_m"] = position
+            metrics[f"position_variance_{axis}_m2"] = variance
+        for axis, angle, variance in zip(ORIENTATION_AXES, self._orientation_rpy, self._orientation_variance):
+            metrics[f"{axis}_rad"] = angle
+            metrics[f"{axis}_variance_rad2"] = variance
+        metrics.update(
+            {
+                "position_covariance_trace_m2": self._position_covariance_trace,
+                "sigma_xy_m": self._sigma_xy(),
+                "covariance_growth_rate_m2_per_s": self._growth_rate,
+                "linear_x_m_per_s": self._last_linear_x,
+                "angular_z_rad_per_s": self._last_angular_z,
+                "linear_variance_m2_per_s2": self._twist_variance[0],
+                "angular_variance_rad2_per_s2": self._twist_variance[1],
+                "pose_psd_ok": self._pose_psd_ok,
+                "twist_psd_ok": self._twist_psd_ok,
+                "frame_id": frame,
+                "child_frame_id": child,
+            }
+        )
+        if self._last_cmd_vel is not None:
+            metrics["cmd_linear_x_m_per_s"], metrics["cmd_angular_z_rad_per_s"] = self._last_cmd_vel
+        if self._stamp_lag is not None:
+            metrics["stamp_lag_s"] = self._stamp_lag
+        return metrics
 
     def _sigma_xy_cell(self, severity: int, growth_zone: ThresholdZone | None) -> str:
         """The Topic Panel cell: horizontal σ colored by the trace's zone, with a trend arrow from the growth check."""

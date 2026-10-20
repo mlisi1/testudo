@@ -325,4 +325,32 @@ class GnssPlugin(CheckPlugin):
             topic_panel_column="Fix",
             topic_panel_value=topic_panel_value,
             codes=codes,
+            metrics=self._metrics(fix_label, covariance_label, covariance_known),
         )
+
+    def _metrics(self, fix_label: str, covariance_label: str, covariance_known: bool) -> dict[str, float | str]:
+        """The published numbers: fix status, position, σ (when the receiver reports it), dropout/jump/stuck/invalid."""
+        latitude, longitude, altitude = self._position
+        metrics: dict[str, float | str] = {
+            # The NavSatStatus code (-1 no fix, 0 fix, 1 SBAS, 2 GBAS): plottable as a step line.
+            "fix_status": self._status,
+            "fix": fix_label,
+            "service": self._service,
+            "latitude_deg": latitude,
+            "longitude_deg": longitude,
+            "altitude_m": altitude,
+            "covariance_type": covariance_label,
+            "fix_dropout_ratio": self._dropout_ratio,
+            "stuck_count": self._stuck_count,
+            "invalid_ratio": self._invalid_ratio,
+            "frame_id": self._last_frame_id or "",
+        }
+        if covariance_known:
+            var_h, var_v = horizontal_vertical(self._position_covariance)
+            metrics["sigma_horizontal_m"] = math.sqrt(max(0.0, var_h))
+            metrics["sigma_vertical_m"] = math.sqrt(max(0.0, var_v))
+            for axis, variance in zip(_POSITION_AXES, self._position_covariance):
+                metrics[f"position_variance_{axis}_m2"] = variance
+        if self._jump_speed_mps is not None:
+            metrics["jump_speed_m_per_s"] = self._jump_speed_mps
+        return metrics

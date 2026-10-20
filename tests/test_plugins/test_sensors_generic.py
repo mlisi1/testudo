@@ -91,3 +91,13 @@ def test_imu_gyro_trend_samples_once_a_second() -> None:
     for t in (1.0, 1.4, 2.0):
         plugin.on_tick(t)
     assert plugin.get_status().values["|ω|"].endswith("(2 s)[/dim]")
+
+
+def test_metrics_publish_per_axis_readings_and_magnitudes() -> None:
+    plugin = GenericSensorPlugin()
+    plugin.on_message("/imu", _imu(linear_accel=(0.0, 0.0, 9.81), angular_vel=(0.0, 0.0, 0.5)))
+    metrics = plugin.get_status().metrics
+    assert metrics["accel_z_m_per_s2"] == 9.81
+    assert metrics["accel_magnitude_m_per_s2"] == 9.81
+    assert metrics["gyro_magnitude_rad_per_s"] == 0.5
+    assert metrics["frame_id"] == "imu"

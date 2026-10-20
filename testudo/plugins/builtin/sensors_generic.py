@@ -205,4 +205,25 @@ class GenericSensorPlugin(CheckPlugin):
             topic_panel_column="|a|",
             topic_panel_value=f"{accel_magnitude:.2f}",
             codes=codes,
+            metrics=self._metrics(accel_magnitude),
         )
+
+    def _metrics(self, accel_magnitude: float) -> dict[str, float | str]:
+        """The published numbers: accel/gyro per axis and magnitude, stuck/invalid, plausibility, stamp lag."""
+        metrics: dict[str, float | str] = {}
+        for axis, accel, gyro in zip(_AXES, self._accel, self._gyro):
+            metrics[f"accel_{axis}_m_per_s2"] = accel
+            metrics[f"gyro_{axis}_rad_per_s"] = gyro
+        metrics.update(
+            {
+                "accel_magnitude_m_per_s2": accel_magnitude,
+                "gyro_magnitude_rad_per_s": math.sqrt(sum(v * v for v in self._gyro)),
+                "stuck_count": self._stuck_count,
+                "invalid_ratio": self._invalid_ratio,
+                "plausible": self._plausibility_ok,
+                "frame_id": self._last_frame_id or "",
+            }
+        )
+        if self._stamp_lag is not None:
+            metrics["stamp_lag_s"] = self._stamp_lag
+        return metrics
