@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from testudo.core.config import ExcludeMatchType, ExcludeRule, SeverityMode, load_config
+from testudo.core.config import ExcludeMatchType, ExcludeRule, SeverityMode
+from testudo.core.config_loader import load_config
 from testudo.core.node_profiling.report import NodeStat
 from testudo.core.topic_report import TopicReport
 from testudo.plugins.base import CheckStatus, Severity

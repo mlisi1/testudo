@@ -7,7 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from testudo.core.config import ExcludeRule, SeverityMode, write_exclude_rules
+from testudo.core.config import ExcludeRule, SeverityMode
+from testudo.core.config_writer import write_exclude_rules
 from testudo.core.node_profiling.profiler import NodeProfiler
 from testudo.core.node_profiling.report import node_stat_to_topic_report
 from testudo.core.subscription_manager import SubscriptionManager, TopicReport

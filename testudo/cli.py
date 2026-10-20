@@ -19,7 +19,8 @@ from rich.console import Console
 from rich.text import Text
 
 from testudo.core.clock import TestudoClock
-from testudo.core.config import ConfigError, TestudoConfig, default_config_path, load_config
+from testudo.core.config import ConfigError, TestudoConfig, default_config_path
+from testudo.core.config_loader import load_config
 from testudo.core.node_profiling.profiler import NodeProfiler
 from testudo.core.node_profiling.publisher import NodeDiagnosticPublisher
 from testudo.core.plain_values import plain_values, strip_markup
