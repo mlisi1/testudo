@@ -49,7 +49,7 @@ covariance sanity, TF tree health) those tools don't cover out of the box.
   | Generic sensor | `sensor_msgs/msg/Imu` | NaN/Inf, stuck values, magnitude plausibility, `frame_id` consistency |
   | Point stream | `sensor_msgs/msg/LaserScan` (2D, full tier), `sensor_msgs/msg/PointCloud2` (3D, presence-only by default) | NaN/Inf/out-of-range ratio, stuck reading, `frame_id` consistency, malformed/empty payload (3D only) |
   | Image stream | `sensor_msgs/msg/Image`, `sensor_msgs/msg/CompressedImage` (both presence-only by default) | stuck/empty frame, malformed payload, size-drop, `frame_id` consistency, rolling bandwidth |
-  | GNSS | `sensor_msgs/msg/NavSatFix` | fix status and dropout ratio, per-axis covariance zones (skipped when the driver reports unknown covariance), NaN/Inf, stuck fix, implausible position jumps, `frame_id` consistency |
+  | GNSS | `sensor_msgs/msg/NavSatFix` | fix status and dropout ratio, per-axis covariance zones, shown as σ in metres (skipped when the driver reports unknown covariance; a sub-millimetre placeholder σ is dimmed rather than shown as perfect), NaN/Inf, stuck fix, implausible position jumps, `frame_id` consistency |
   | Nav2 goals | `action_msgs/msg/GoalStatusArray` | goal lifecycle, success rate, mean duration, invocation frequency — covers both navigation goals and recovery behaviors |
   | BT log | `nav2_msgs/msg/BehaviorTreeLog` | currently running nodes, recovery-node trigger frequency (including recoveries wired into the tree as plain service calls) |
   | TF watch | `tf2_msgs/msg/TFMessage` | missing chains, multi-parent frames, stale-edge (extrapolation-risk) detection |
@@ -71,7 +71,8 @@ covariance sanity, TF tree health) those tools don't cover out of the box.
 - **A live TUI** (`testudo watch`) — four panes visible at once (status
   bar, plugin panel, topic panel, detail panel), all updating as you move
   the cursor rather than a list you drill into one entry at a time —
-  filter, sort, pause, reset stats — and the same view for a finished
+  search topics across categories, sort, copy a topic name, pause, reset
+  stats — and the same view for a finished
   bag (`testudo replay --watch`).
 - **Standard output.** Publishes `diagnostic_msgs/DiagnosticArray`, one
   topic per plugin by default, carrying raw numbers you can plot in
@@ -100,15 +101,18 @@ verdict with per-severity counts), a **plugin
 panel** (one row per category with a per-severity icon+count breakdown),
 a **topic panel** (every topic in the highlighted category, with its
 status, publish rate in Hz, and one plugin-specific column such as
-odometry's covariance or, for Other Topics, the message type), and a **detail panel** (the highlighted
-topic's full status). Moving the cursor — not pressing `Enter` — is what
-drives the other panes live; `Enter`, `Tab`/`Shift+Tab`, or `←`/`→`
-switch focus between the plugin and topic panels, `Esc` refocuses the
-plugin panel (or clears an active filter), `/` to search (from the
-plugin panel it matches topic names too, so you can find a topic without
-knowing its category), `s` to toggle the focused panel's sort (worst first ▼
-or by name ▲), `y` to copy the highlighted topic's name, `p` to pause, `r` to reset accumulated stats, `o` for the options menu
-(currently: manage `exclude_topics` rules live), `?` for help. Any
+odometry's covariance or, for Other Topics, the message type), and a
+**detail panel** (the highlighted topic's full status, as tall as that
+status needs, with the panes above taking the rest). Moving the cursor —
+not pressing `Enter` — is what drives the other panes live; `Enter`,
+`Tab`/`Shift+Tab`, or `←`/`→` switch focus between the plugin and topic
+panels, `Esc` refocuses the plugin panel (or clears an active search).
+`/` searches: from the plugin panel it matches topic names too, so you
+can find a topic without knowing its category; from the topic panel it
+filters that category. `s` toggles the focused panel's sort (worst first
+▼ or by name ▲), `y` copies the highlighted topic's name, `p` pauses,
+`r` resets accumulated stats, `o` opens the options menu (currently:
+manage `exclude_topics` rules live), and `?` shows help. Any
 warning/error logged while the TUI has the terminal (most commonly a
 message type whose interface package isn't installed) is buffered rather
 than printed live — a stray write to the terminal while Textual is
