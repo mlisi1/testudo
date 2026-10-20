@@ -161,3 +161,27 @@ def test_display_name_strips_prefix_and_action_status_suffix() -> None:
     assert display_name("/robot/spin/_action/status", "/robot/") == "spin"
     assert display_name("/robot/scan", "/robot/") == "scan"
     assert display_name("/_action/status", "") == "/_action/status"
+
+
+def test_type_cell_drops_msg_and_shortens_to_fit() -> None:
+    from rich.text import Text
+
+    from testudo.tui.widgets.topic_panel import type_cell
+
+    assert type_cell("sensor_msgs/msg/Temperature", 24) == "[dim]sensor_msgs/[/dim]Temperature"
+    assert type_cell("rcl_interfaces/msg/ParameterEvent", 24) == "ParameterEvent"
+    assert type_cell("rcl_interfaces/msg/ParameterEvent", 10) == "Parameter…"
+    assert len(Text.from_markup(type_cell("rcl_interfaces/msg/ParameterEvent", 10)).plain) == 10
+
+
+def test_other_topics_get_a_type_column_and_plugin_categories_keep_theirs() -> None:
+    from testudo.tui.widgets.topic_panel import TYPE_COLUMN_HEADER, TopicDetailTable
+
+    other = TopicReport("/temp", "sensor_msgs/msg/Temperature", "vitals", CheckStatus(Severity.OK, "alive", ""))
+    assert TopicDetailTable._extra_column_header_for([other]) == TYPE_COLUMN_HEADER
+    odom = TopicReport(
+        "/odom", "nav_msgs/msg/Odometry", "full", CheckStatus(Severity.OK, "ok", "", topic_panel_column="σxy")
+    )
+    assert TopicDetailTable._extra_column_header_for([odom]) == "σxy"
+    excluded = TopicReport("/x", "std_msgs/msg/Empty", "excluded", CheckStatus(Severity.OK, "excluded", ""))
+    assert TopicDetailTable._extra_column_header_for([excluded]) is None
