@@ -117,6 +117,17 @@ class CheckStatus:
     no plugin-specific problem is currently active; a liveness problem
     (no publishers, stale, ...) gets its own LIVE-* codes independently, in
     `topic_report.py`, since liveness is checked outside any plugin.
+
+    `values` is for people (the Detail Panel: markup, meters, sparklines);
+    `metrics` is for machines: what the published DiagnosticStatus carries,
+    so PlotJuggler/Foxglove can plot it. Each entry is a raw number
+    (`{"success_rate": 0.5}`, a ratio as 0..1, units in the key's suffix as
+    with `values`) or, sparingly, a short plain identifier
+    (`{"frame_id": "base_link"}`). When `metrics` is non-empty it replaces
+    `values` in published output; left empty (the default), the published
+    status falls back to `values` as plain text (see
+    `core.plain_values.published_values`), so a plugin that never sets it
+    still publishes something readable.
     """
 
     severity: int
@@ -126,6 +137,7 @@ class CheckStatus:
     topic_panel_column: str = ""
     topic_panel_value: str = ""
     codes: dict[str, str] = field(default_factory=dict)
+    metrics: dict[str, float | str] = field(default_factory=dict)
 
 
 def colorize(text: str, severity: int) -> str:

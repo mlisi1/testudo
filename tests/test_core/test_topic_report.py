@@ -238,3 +238,29 @@ def test_full_tier_report_stale_keeps_last_known_content_values_and_column() -> 
     assert report.status.values["trace"] == "0.01"
     assert report.status.topic_panel_column == "Cov"
     assert report.status.topic_panel_value == "0.01"
+
+
+def test_full_tier_report_adds_vitals_and_quiet_time_to_plugin_metrics() -> None:
+    vitals = _vitals_with_messages(2, [0.0, 0.5])
+    content = CheckStatus(severity=Severity.OK, label="plugin", message="fine", metrics={"success_rate": 1.0})
+    idle = full_tier_report(
+        "/x", "t", vitals, debounced_status=content, fallback_status=content, now=10.5, stale_after_seconds=2.0,
+        event_driven=True,
+    )
+    assert idle.status.metrics["success_rate"] == 1.0
+    assert idle.status.metrics["message_count"] == 2
+    assert idle.status.metrics["idle_for_s"] == 10.0
+    stale = full_tier_report(
+        "/x", "t", vitals, debounced_status=content, fallback_status=content, now=10.5, stale_after_seconds=2.0
+    )
+    assert stale.status.severity == Severity.STALE
+    assert stale.status.metrics["success_rate"] == 1.0 and stale.status.metrics["age_s"] == 10.0
+
+
+def test_full_tier_report_leaves_metrics_empty_for_a_plugin_without_any() -> None:
+    vitals = _vitals_with_messages(2, [0.0, 0.5])
+    content = CheckStatus(severity=Severity.OK, label="plugin", message="fine", values={"a": "1"})
+    report = full_tier_report(
+        "/x", "t", vitals, debounced_status=content, fallback_status=content, now=1.0, stale_after_seconds=2.0
+    )
+    assert report.status.metrics == {}

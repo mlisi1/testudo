@@ -1,5 +1,8 @@
 """Plain-text projection of a CheckStatus's values, for every output that isn't the TUI.
 
+A published DiagnosticStatus takes a plugin's `metrics` (raw numbers) when
+it has any, and only falls back to `values` otherwise (`published_values`).
+
 Plugins format `CheckStatus.values` for the Detail Panel: Rich markup for
 color, and `_compact` narrow-terminal duplicates of wide values (see
 `COMPACT_VALUE_SUFFIX`). A published DiagnosticStatus (read by
@@ -11,7 +14,7 @@ from __future__ import annotations
 from rich.errors import MarkupError
 from rich.text import Text
 
-from testudo.plugins.base import COMPACT_VALUE_SUFFIX, MORE_VALUE_SUFFIX
+from testudo.plugins.base import COMPACT_VALUE_SUFFIX, MORE_VALUE_SUFFIX, CheckStatus
 
 
 def strip_markup(value: str) -> str:
@@ -40,3 +43,22 @@ def plain_values(values: dict[str, str], single_line: bool = False) -> dict[str,
             continue
         plain[key] = text
     return plain
+
+
+def format_metric(value: float | str) -> str:
+    """A metric as DiagnosticStatus text: a number parseable as-is (`0.5`, `12`, `1.23e-05`), or the string."""
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        # 10 significant digits: a latitude keeps ~1 mm, without float repr noise.
+        return f"{value:.10g}"
+    return value
+
+
+def published_values(status: CheckStatus) -> dict[str, str]:
+    """What a published DiagnosticStatus carries for `status`: its metrics, else its plain single-line values."""
+    if status.metrics:
+        return {key: format_metric(value) for key, value in status.metrics.items()}
+    return plain_values(status.values, single_line=True)

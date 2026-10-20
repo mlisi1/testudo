@@ -146,6 +146,17 @@ def vitals_values(vitals: TopicVitals, age: float | None, monitor_hz: bool = Tru
     }
 
 
+def vitals_metrics(vitals: TopicVitals, age: float | None, monitor_hz: bool = True) -> dict[str, float]:
+    """`vitals_values` as raw numbers, for a full-tier status's published `metrics`; unknowns left out."""
+    metrics: dict[str, float] = {"message_count": vitals.message_count}
+    rate = vitals.rate_hz() if monitor_hz else None
+    if rate is not None:
+        metrics["rate_hz"] = rate
+    if age is not None:
+        metrics["age_s"] = age
+    return metrics
+
+
 def vitals_report(
     topic_name: str,
     msg_type: str,
@@ -219,24 +230,31 @@ def full_tier_report(
     plugin's last-known values (and Topic Panel column) underneath it:
     what the topic last reported is exactly what's worth seeing when it
     stops reporting.
+
+    A plugin that publishes `metrics` gets the topic's own rate/count/age
+    (and how long it's been quiet) added to them, so they're plottable
+    beside the plugin's numbers.
     """
     liveness = liveness_status(
         vitals, now, stale_after_seconds, monitor_hz, latched=latched, event_driven=event_driven
     )
     reported_rate = vitals.rate_hz() if monitor_hz else None
     content = debounced_status if debounced_status is not None else fallback_status
+    age = vitals.age_seconds(now)
+    metrics = {**vitals_metrics(vitals, age, monitor_hz), **content.metrics} if content.metrics else {}
     if liveness is None:
-        status = content
+        status = replace(content, metrics=metrics) if metrics else content
     elif liveness.label in QUIET_LABELS:
-        age = vitals.age_seconds(now)
         quiet = {f"{liveness.label}_for_s": f"{age:.1f}"} if age is not None else {}
-        status = replace(content, values={**content.values, **quiet})
+        quiet_metrics = {f"{liveness.label}_for_s": age} if metrics and age is not None else {}
+        status = replace(content, values={**content.values, **quiet}, metrics={**metrics, **quiet_metrics})
     else:
         status = replace(
             liveness,
             values={**liveness.values, **content.values},
             topic_panel_column=content.topic_panel_column,
             topic_panel_value=content.topic_panel_value,
+            metrics=metrics,
         )
     return TopicReport(topic=topic_name, msg_type=msg_type, tier="full", status=status, rate_hz=reported_rate)
 
