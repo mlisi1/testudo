@@ -399,6 +399,16 @@ def test_node_profiling_defaults(tmp_path: Path) -> None:
     assert config.node_profiling == NodeProfilingConfig()
 
 
+def test_node_profiling_topic_follows_publish_settings_unless_set(tmp_path: Path) -> None:
+    assert load_config(_write(tmp_path, "")).node_profiling.publish_topic == "/testudo/nodes"
+    path = _write(tmp_path, "publish:\n  namespace: /robot1/testudo\n")
+    assert load_config(path).node_profiling.publish_topic == "/robot1/testudo/nodes"
+    path = _write(tmp_path, "publish:\n  per_plugin: false\n")
+    assert load_config(path).node_profiling.publish_topic == "/diagnostics/nodes"
+    path = _write(tmp_path, "publish:\n  per_plugin: false\nnode_profiling:\n  publish_topic: /my_nodes\n")
+    assert load_config(path).node_profiling.publish_topic == "/my_nodes"
+
+
 def test_node_profiling_full(tmp_path: Path) -> None:
     path = _write(
         tmp_path,

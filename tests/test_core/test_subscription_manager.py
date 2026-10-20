@@ -1402,7 +1402,7 @@ def test_per_plugin_publish_topics_and_node_profiling_topic_are_self_excluded() 
         _FakeNode(topics=[], publishers_by_topic={}), TestudoConfig(), [], clock=_fixed_clock(0.0), **_FAST_SETTLE
     )
     assert manager.is_default_excluded("/testudo/odometry")
-    assert manager.is_default_excluded("/diagnostics/nodes")
+    assert manager.is_default_excluded("/testudo/nodes")
     assert not manager.is_default_excluded("/testudo_other")  # a namespace match is by whole segment
     combined = SubscriptionManager(
         _FakeNode(topics=[], publishers_by_topic={}),

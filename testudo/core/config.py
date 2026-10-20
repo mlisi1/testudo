@@ -194,7 +194,9 @@ class NodeProfilingConfig:
     memory_mb: ThresholdZone = field(default_factory=lambda: ThresholdZone(green=500.0, orange=1500.0))
     ctx_switches_per_sec: ThresholdZone = field(default_factory=lambda: ThresholdZone(green=50.0, orange=200.0))
     memory_slope_mb_per_min: ThresholdZone = field(default_factory=lambda: ThresholdZone(green=10.0, orange=50.0))
-    publish_topic: str = "/diagnostics/nodes"
+    #: Defaults to `<publish.namespace>/nodes`, or `<publish.topic>/nodes` with
+    #: `publish.per_plugin: false` (see `config_loader.default_node_profiling_topic`).
+    publish_topic: str = "/testudo/nodes"
     publish_rate_hz: float = 1.0
 
 

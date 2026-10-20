@@ -67,15 +67,16 @@ def _parse_config(raw: dict[str, Any], source: str) -> TestudoConfig:
     if plugins_dir is not None and not isinstance(plugins_dir, str):
         raise ConfigError(f"{source}: 'plugins_dir' must be a string")
 
+    publish = _parse_publish(raw.get("publish", {}), source)
     return TestudoConfig(
         topics=_parse_topics(raw.get("topics", {}), source),
         actions=_parse_actions(raw.get("actions", []), source),
         tf=_parse_tf(raw.get("tf", []), source),
         severity_mode=_parse_severity_mode(raw.get("severity_mode", "worst"), source),
-        publish=_parse_publish(raw.get("publish", {}), source),
+        publish=publish,
         plugins_dir=plugins_dir,
         exclude_topics=_parse_exclude_topics(raw.get("exclude_topics", []), source),
-        node_profiling=_parse_node_profiling(raw.get("node_profiling", {}), source),
+        node_profiling=_parse_node_profiling(raw.get("node_profiling", {}), source, publish),
     )
 
 
@@ -307,7 +308,16 @@ _NODE_PROFILING_KEYS = {
 }
 
 
-def _parse_node_profiling(raw: Any, source: str) -> NodeProfilingConfig:
+def default_node_profiling_topic(publish: PublishConfig) -> str:
+    """Where node profiling publishes unless `publish_topic` is set: next to the rest of the output.
+
+    `<namespace>/nodes` in per-plugin mode, `<publish.topic>/nodes` (e.g.
+    `/diagnostics/nodes`) when everything goes on one combined topic.
+    """
+    return f"{publish.namespace}/nodes" if publish.per_plugin else f"{publish.topic.rstrip('/')}/nodes"
+
+
+def _parse_node_profiling(raw: Any, source: str, publish: PublishConfig) -> NodeProfilingConfig:
     if not isinstance(raw, dict):
         raise ConfigError(f"{source}: 'node_profiling' must be a mapping")
     unknown = set(raw) - _NODE_PROFILING_KEYS
@@ -349,7 +359,7 @@ def _parse_node_profiling(raw: Any, source: str) -> NodeProfilingConfig:
         if "memory_slope_mb_per_min" in raw
         else default.memory_slope_mb_per_min,
         publish_topic=_parse_non_empty_string(
-            raw.get("publish_topic", default.publish_topic), "node_profiling.publish_topic", source
+            raw.get("publish_topic", default_node_profiling_topic(publish)), "node_profiling.publish_topic", source
         ),
         publish_rate_hz=_parse_positive_number(
             raw.get("publish_rate_hz", default.publish_rate_hz), "node_profiling.publish_rate_hz", source

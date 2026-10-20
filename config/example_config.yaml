@@ -186,7 +186,7 @@ tf:
 #   enabled: true
 #   poll_interval_seconds: 2.0   # how often `watch` samples each process
 #   gpu_enabled: true   # NVIDIA + pynvml only; silently unavailable otherwise
-#   publish_topic: /diagnostics/nodes
+#   publish_topic: /testudo/nodes   # default; /diagnostics/nodes with publish.per_plugin: false
 #   publish_rate_hz: 1.0
 #   cpu_percent:
 #     # psutil's cpu_percent can exceed 100% for a multi-threaded process
