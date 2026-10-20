@@ -99,12 +99,14 @@ def test_known_covariance_above_threshold_is_flagged() -> None:
     assert _plain(status.codes["GNSS-002"]) == "position σ high (σx ±0.32m, σy ±0.32m, σz ±0.32m; per-axis limit ±0.10m)"
 
 
-def test_zero_variance_axis_is_not_reported_rather_than_perfect() -> None:
-    plugin = GnssPlugin()
-    plugin.on_message("/gps/fix", _fix(covariance=(0.0001, 0, 0, 0, 0.0001, 0, 0, 0, 0.0)))
-    fix = _plain(plugin.get_status().values["fix"])
-    assert "σ vert ±0 (not reported)" in fix
-    assert "σ horiz ±0.01m ▮▮▮▮▮▮" in fix
+def test_placeholder_variance_axis_is_dimmed_rather_than_perfect() -> None:
+    # 0 (unset) or a 2D filter's ~5e-7 for altitude: neither is a real σ.
+    for placeholder in (0.0, 5e-7):
+        plugin = GnssPlugin()
+        plugin.on_message("/gps/fix", _fix(covariance=(0.0001, 0, 0, 0, 0.0001, 0, 0, 0, placeholder)))
+        fix = _plain(plugin.get_status().values["fix"])
+        assert "σ vert ≈0 (placeholder)" in fix
+        assert "σ horiz ±0.01m ▮▮▮▮▮▮" in fix
 
 
 def test_covariance_flags_the_specific_bad_axis() -> None:

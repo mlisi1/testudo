@@ -3,7 +3,7 @@
 Split out of gnss.py so the plugin module keeps to its checks:
 
 ```
-● GBAS_FIX   σ horiz ±0.26m ▮▮▯▯▯▯   σ vert ±0 (not reported)   cov known
+● GBAS_FIX   σ horiz ±0.26m ▮▮▯▯▯▯   σ vert ≈0 (placeholder)   cov known
 fixes  ▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▯▮▮▮  1/20 dropped   jump 0.03 m/s ▮▮▮▮▮▮
 ```
 """
@@ -31,19 +31,24 @@ def short_fix_label(fix_label: str) -> str:
     return fix_label[: -len("_FIX")] if fix_label.endswith("_FIX") and fix_label != "NO_FIX" else fix_label
 
 
+#: A variance this small (σ under 1 mm) is no receiver's real uncertainty,
+#: RTK included: it's a placeholder -- an unset 0, or a 2D filter's ~1e-7
+#: for an altitude it doesn't estimate (robot_localization's 2D mode).
+PLACEHOLDER_VARIANCE = 1e-6
+
+
 def sigma_cell(label: str, variance: float | None, zone: ThresholdZone | None, judged: float | None) -> str:
     """`label ±σ meter`; the meter judges `judged` (the worst single axis it summarizes) against `zone`.
 
     `variance=None` means the driver doesn't report a covariance at all:
-    shown dim as "n/a", never as a reassuring green meter. An exactly-zero
-    variance is the same thing in practice (no real receiver is certain to
-    the millimetre; the driver just left that entry unset), so it's shown
-    dim as "not reported" rather than as the best possible reading.
+    shown dim as "n/a", never as a reassuring green meter. A variance
+    under `PLACEHOLDER_VARIANCE` is the same thing in practice, so it's
+    shown dim as a placeholder rather than as the best possible reading.
     """
     if variance is None:
         return f"{label} [dim]n/a (unknown)[/dim]"
-    if variance == 0.0:
-        return f"{label} [dim]±0 (not reported)[/dim]"
+    if variance < PLACEHOLDER_VARIANCE:
+        return f"{label} [dim]≈0 (placeholder)[/dim]"
     bar = meter(judged if judged is not None else variance, zone, 6)
     return f"{label} {fmt_sigma(variance)} {bar}".rstrip()
 
