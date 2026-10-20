@@ -603,3 +603,19 @@ def test_event_driven_must_be_a_bool(tmp_path: Path) -> None:
     path = _write(tmp_path, "topics:\n  geometry_msgs/msg/Twist:\n    - name: /cmd_vel\n      event_driven: yes please\n")
     with pytest.raises(ConfigError, match="event_driven"):
         load_config(path)
+
+
+def test_publish_defaults_to_per_plugin_topics_under_testudo(tmp_path: Path) -> None:
+    config = load_config(_write(tmp_path, "publish:\n  rate_hz: 5.0\n"))
+    assert config.publish.per_plugin is True
+    assert config.publish.namespace == "/testudo"
+
+
+def test_publish_per_plugin_and_namespace_parse_and_validate(tmp_path: Path) -> None:
+    config = load_config(_write(tmp_path, "publish:\n  per_plugin: false\n  namespace: /robot/testudo/\n"))
+    assert config.publish.per_plugin is False
+    assert config.publish.namespace == "/robot/testudo"
+    with pytest.raises(ConfigError, match="per_plugin"):
+        load_config(_write(tmp_path, "publish:\n  per_plugin: yes please\n"))
+    with pytest.raises(ConfigError, match="namespace"):
+        load_config(_write(tmp_path, "publish:\n  namespace: testudo\n"))

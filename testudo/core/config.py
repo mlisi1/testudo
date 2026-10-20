@@ -143,10 +143,21 @@ class TFPairConfig:
 
 @dataclass(frozen=True)
 class PublishConfig:
-    """DiagnosticArray publish settings, decoupled from each plugin's sampling rate."""
+    """DiagnosticArray publish settings, decoupled from each plugin's sampling rate.
+
+    `per_plugin` (the default) publishes one DiagnosticArray topic per
+    plugin, `<namespace>/<plugin name>` (e.g. `/testudo/odometry`), plus
+    `<namespace>/vitals` for topics no plugin checks and
+    `<namespace>/overall` for the roll-up -- so a consumer subscribes to
+    just the data it cares about. `per_plugin: false` publishes everything
+    as one array on `topic` instead, which is what rqt_robot_monitor and
+    diagnostic_aggregator listen to.
+    """
 
     rate_hz: float = 5.0
     topic: str = "/diagnostics"
+    per_plugin: bool = True
+    namespace: str = "/testudo"
 
 
 @dataclass(frozen=True)
@@ -524,7 +535,7 @@ def _parse_severity_mode(raw: Any, source: str) -> SeverityMode:
 def _parse_publish(raw: Any, source: str) -> PublishConfig:
     if not isinstance(raw, dict):
         raise ConfigError(f"{source}: 'publish' must be a mapping")
-    unknown = set(raw) - {"rate_hz", "topic"}
+    unknown = set(raw) - {"rate_hz", "topic", "per_plugin", "namespace"}
     if unknown:
         raise ConfigError(f"{source}: publish has unknown key(s): {', '.join(sorted(unknown))}")
     rate_hz = raw.get("rate_hz", 5.0)
@@ -533,7 +544,13 @@ def _parse_publish(raw: Any, source: str) -> PublishConfig:
     topic = raw.get("topic", "/diagnostics")
     if not isinstance(topic, str) or not topic:
         raise ConfigError(f"{source}: publish.topic must be a non-empty string")
-    return PublishConfig(rate_hz=float(rate_hz), topic=topic)
+    per_plugin = raw.get("per_plugin", True)
+    if not isinstance(per_plugin, bool):
+        raise ConfigError(f"{source}: publish.per_plugin must be true or false")
+    namespace = raw.get("namespace", "/testudo")
+    if not isinstance(namespace, str) or not namespace.startswith("/") or namespace.rstrip("/") == "":
+        raise ConfigError(f"{source}: publish.namespace must be an absolute topic namespace like /testudo")
+    return PublishConfig(rate_hz=float(rate_hz), topic=topic, per_plugin=per_plugin, namespace=namespace.rstrip("/"))
 
 
 _NODE_PROFILING_KEYS = {

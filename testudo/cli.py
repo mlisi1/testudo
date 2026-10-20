@@ -148,7 +148,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
 
     # Imported lazily: the TUI's dependency (textual) is only needed here.
     from testudo.core.node_profiling.report import build_node_diagnostic_array
-    from testudo.core.publisher import build_diagnostic_array
+    from testudo.core.publisher import DiagnosticOutput
     from testudo.tui.app import TestudoApp
     from testudo.tui.data_source import LiveDataSource
     from testudo.tui.log_summary import suppressed_terminal_logging
@@ -177,7 +177,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
             spin_thread = threading.Thread(target=_spin_until_stopped, args=(node, stop_spinning, manager), daemon=True)
             spin_thread.start()
 
-            diagnostics_publisher = node.create_publisher(DiagnosticArray, config.publish.topic, 10)
+            diagnostics_output = DiagnosticOutput(node, config.publish, plugins)
 
             node_diagnostics_publisher = None
             if config.node_profiling.enabled:
@@ -195,11 +195,10 @@ def cmd_watch(args: argparse.Namespace) -> int:
                 # `snapshot.reports` includes node-profiling rows merged in
                 # for the TUI's Plugin/Topic/Detail Panels (see
                 # LiveDataSource.poll()) -- filtered back out here so the
-                # main /diagnostics array stays topic-only, matching its
+                # topic diagnostics stay topic-only, matching their
                 # existing scope; node rows publish separately below.
                 topic_reports = [r for r in snapshot.reports if r.tier != "node"]
-                array = build_diagnostic_array(node.get_clock().now().to_msg(), topic_reports, snapshot.overall)
-                diagnostics_publisher.publish(array)
+                diagnostics_output.publish(node.get_clock().now().to_msg(), topic_reports, snapshot.overall)
                 # `node_profiler` was already ticked (if due) this same poll
                 # by LiveDataSource.poll() -- publishing here (not via a
                 # second, self-driving NodeDiagnosticPublisher timer) keeps
@@ -270,7 +269,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         # observation window, decoupled from any single check's sampling
         # rate -- this is what makes `check`'s output bag-recordable, not
         # just printed at the end.
-        publisher = DiagnosticPublisher(node, manager, config.severity_mode, config.publish.topic, config.publish.rate_hz)
+        publisher = DiagnosticPublisher(node, manager, config.severity_mode, config.publish, plugins)
         node_profiler = None
         node_publisher = None
         if config.node_profiling.enabled:

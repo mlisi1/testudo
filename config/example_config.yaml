@@ -22,7 +22,13 @@ severity_mode: worst  # worst | weighted | both
 
 publish:
   rate_hz: 5.0
-  topic: /diagnostics
+  # One DiagnosticArray topic per plugin: /testudo/odometry, /testudo/gnss,
+  # ..., /testudo/vitals (topics no plugin checks), /testudo/overall (the
+  # roll-up). Set false to publish everything as one array on `topic`
+  # instead -- what rqt_robot_monitor / diagnostic_aggregator listen to.
+  per_plugin: true
+  namespace: /testudo
+  topic: /diagnostics  # used only when per_plugin is false
 
 # Optional: a directory of light-path plugin files (see plugins/base.py and
 # the plugin-authoring guide once it exists). Relative paths are resolved

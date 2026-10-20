@@ -1395,3 +1395,21 @@ def test_maintain_does_not_clear_for_a_content_check_error_on_an_actively_receiv
     manager.maintain()
 
     assert len(node.subscriptions) == 2
+
+
+def test_per_plugin_publish_topics_and_node_profiling_topic_are_self_excluded() -> None:
+    manager = SubscriptionManager(
+        _FakeNode(topics=[], publishers_by_topic={}), TestudoConfig(), [], clock=_fixed_clock(0.0), **_FAST_SETTLE
+    )
+    assert manager.is_default_excluded("/testudo/odometry")
+    assert manager.is_default_excluded("/diagnostics/nodes")
+    assert not manager.is_default_excluded("/testudo_other")  # a namespace match is by whole segment
+    combined = SubscriptionManager(
+        _FakeNode(topics=[], publishers_by_topic={}),
+        TestudoConfig(publish=PublishConfig(per_plugin=False)),
+        [],
+        clock=_fixed_clock(0.0),
+        **_FAST_SETTLE,
+    )
+    assert not combined.is_default_excluded("/testudo/odometry")
+    assert combined.is_default_excluded("/diagnostics")
