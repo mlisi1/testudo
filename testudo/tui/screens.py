@@ -16,7 +16,14 @@ from textual.widgets import DataTable, Input, Static
 from testudo.tui.categorize import category_for
 from testudo.tui.data_source import WatchSnapshot
 from testudo.tui.detail_render import render_detail
-from testudo.tui.keybinds import FILTER_BINDING, HELP_TEXT, PANE_LEFT_BINDING, PANE_RIGHT_BINDING, SORT_BINDING
+from testudo.tui.keybinds import (
+    COPY_BINDING,
+    FILTER_BINDING,
+    HELP_TEXT,
+    PANE_LEFT_BINDING,
+    PANE_RIGHT_BINDING,
+    SORT_BINDING,
+)
 from testudo.tui.widgets.attention import attention_text
 from testudo.tui.widgets.category_summary import CategorySummaryTable
 from testudo.tui.widgets.header import TestudoHeader
@@ -42,6 +49,7 @@ class DashboardScreen(Screen):
     BINDINGS = [
         FILTER_BINDING,
         SORT_BINDING,
+        COPY_BINDING,
         PANE_LEFT_BINDING,
         PANE_RIGHT_BINDING,
         ("escape", "handle_escape", "Categories"),
@@ -213,6 +221,13 @@ class DashboardScreen(Screen):
             return
         table.set_sort_by_severity(not table.sort_by_severity)
         self._refresh_from(table)
+
+    def action_copy_topic(self) -> None:
+        report = self.query_one(TopicDetailTable).selected_report
+        if report is None:
+            return
+        self.app.copy_to_clipboard(report.topic)
+        self.notify(f"copied {report.topic}", timeout=2)
 
     def _refresh_from(self, table: DataTable) -> None:
         if isinstance(table, CategorySummaryTable):

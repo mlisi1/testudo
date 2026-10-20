@@ -271,6 +271,19 @@ def test_sorted_column_header_carries_the_sort_marker() -> None:
     run(body())
 
 
+def test_y_copies_the_highlighted_topic_name() -> None:
+    async def body():
+        app = _make_app()
+        copied: list[str] = []
+        app.copy_to_clipboard = copied.append
+        async with app.run_test() as pilot:
+            topic = app.screen.query_one(TopicDetailTable).selected_topic
+            await pilot.press("y")
+            assert copied == [topic]
+
+    run(body())
+
+
 def test_pause_is_a_no_op_for_a_static_replay_source() -> None:
     async def body():
         app = _make_app()

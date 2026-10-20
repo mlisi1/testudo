@@ -4,7 +4,7 @@ Textual's DataTable already binds the arrow keys to cursor movement; this
 module only adds the vim-style aliases and documents the rest of the
 project's keybind set (`q` quit, `p` pause, `/` filter, `j`/`k`/arrows/Tab/
 Left/Right navigate, `Enter` switch pane, `Esc` back to categories (or
-clear the filter), `s` toggle sort, `r` reset stats, `o` options menu, `?`
+clear the filter), `s` toggle sort, `y` copy topic name, `r` reset stats, `o` options menu, `?`
 help overlay) in one place other modules can point at.
 """
 from __future__ import annotations
@@ -24,6 +24,10 @@ APP_BINDINGS = [
 #: Screen-level bindings (only meaningful where there's a table to filter/sort).
 FILTER_BINDING = Binding("slash", "start_filter", "Filter", key_display="/")
 SORT_BINDING = Binding("s", "toggle_sort", "Sort")
+#: Copies the highlighted topic's full name (the real topic, e.g. an
+#: action's `/_action/status`, not its shortened display name), ready to
+#: paste into `ros2 topic echo`. Via OSC 52, so it works over SSH too.
+COPY_BINDING = Binding("y", "copy_topic", "Copy topic")
 
 #: Left/Right switch between the Plugin Panel and Topic Panel, alongside
 #: Tab/Shift+Tab (Textual's own default focus-cycling) and Enter (this
@@ -54,6 +58,7 @@ HELP_TEXT = """\
   enter            switch focus (categories <-> topics)
   esc              focus categories (or clear the filter)
   s                sort the focused table: worst first ▼ / by name ▲
+  y                copy the highlighted topic's name to the clipboard
   ?                this help
 
 Press any key to close.
