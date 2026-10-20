@@ -3,7 +3,7 @@
 Split out of gnss.py so the plugin module keeps to its checks:
 
 ```
-● GBAS_FIX   σ horiz ±0.26m ▮▮▯▯▯▯   σ vert ±0.00m ▮▮▮▮▮▮   cov known
+● GBAS_FIX   σ horiz ±0.26m ▮▮▯▯▯▯   σ vert ±0 (not reported)   cov known
 fixes  ▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▯▮▮▮  1/20 dropped   jump 0.03 m/s ▮▮▮▮▮▮
 ```
 """
@@ -35,10 +35,15 @@ def sigma_cell(label: str, variance: float | None, zone: ThresholdZone | None, j
     """`label ±σ meter`; the meter judges `judged` (the worst single axis it summarizes) against `zone`.
 
     `variance=None` means the driver doesn't report a covariance at all:
-    shown dim as "n/a", never as a reassuring green meter.
+    shown dim as "n/a", never as a reassuring green meter. An exactly-zero
+    variance is the same thing in practice (no real receiver is certain to
+    the millimetre; the driver just left that entry unset), so it's shown
+    dim as "not reported" rather than as the best possible reading.
     """
     if variance is None:
         return f"{label} [dim]n/a (unknown)[/dim]"
+    if variance == 0.0:
+        return f"{label} [dim]±0 (not reported)[/dim]"
     bar = meter(judged if judged is not None else variance, zone, 6)
     return f"{label} {fmt_sigma(variance)} {bar}".rstrip()
 

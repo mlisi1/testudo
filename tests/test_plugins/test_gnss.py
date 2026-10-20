@@ -95,6 +95,16 @@ def test_known_covariance_above_threshold_is_flagged() -> None:
     assert status.severity == Severity.ERROR
     assert "position covariance out of bounds" in status.message
     assert "GNSS-002" in status.codes
+    # The code speaks σ like the meters above it, not the raw m² variance.
+    assert _plain(status.codes["GNSS-002"]) == "position σ high (σx ±0.32m, σy ±0.32m, σz ±0.32m; per-axis limit ±0.10m)"
+
+
+def test_zero_variance_axis_is_not_reported_rather_than_perfect() -> None:
+    plugin = GnssPlugin()
+    plugin.on_message("/gps/fix", _fix(covariance=(0.0001, 0, 0, 0, 0.0001, 0, 0, 0, 0.0)))
+    fix = _plain(plugin.get_status().values["fix"])
+    assert "σ vert ±0 (not reported)" in fix
+    assert "σ horiz ±0.01m ▮▮▮▮▮▮" in fix
 
 
 def test_covariance_flags_the_specific_bad_axis() -> None:

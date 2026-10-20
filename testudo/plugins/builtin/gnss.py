@@ -43,7 +43,7 @@ from testudo.plugins.builtin.gnss_layout import (
     sigma_cell,
     sigma_h,
 )
-from testudo.plugins.render import downsample, meter, sparkline
+from testudo.plugins.render import downsample, fmt_sigma, meter, sparkline
 
 _NAVSATFIX_TYPE = "sensor_msgs/msg/NavSatFix"
 
@@ -265,10 +265,16 @@ class GnssPlugin(CheckPlugin):
         if fix_severity != Severity.OK:
             codes["GNSS-001"] = colorize("no fix", fix_severity)
         if covariance_severity != Severity.OK:
+            # σ, not the raw m² variance: the same unit as the meters above.
+            bad_sigmas = [
+                f"σ{axis} {fmt_sigma(value)}"
+                for axis, value, severity in zip(_POSITION_AXES, self._position_covariance, axis_severities)
+                if severity != Severity.OK
+            ]
             codes["GNSS-002"] = colorize(
-                f"position σ high ({', '.join(bad_axes)} m²; per-axis limit {covariance_zone.orange:g})"
+                f"position σ high ({', '.join(bad_sigmas)}; per-axis limit {fmt_sigma(covariance_zone.orange)})"
                 if covariance_zone is not None and covariance_zone.orange is not None
-                else f"position σ high ({', '.join(bad_axes)} m²)",
+                else f"position σ high ({', '.join(bad_sigmas)})",
                 covariance_severity,
             )
         if dropout_severity != Severity.OK:
