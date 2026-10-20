@@ -9,7 +9,7 @@ from rich.text import Text
 from textual.reactive import reactive
 from textual.widgets import Static
 
-from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_ICONS, CheckStatus, Severity
+from testudo.plugins.base import SEVERITY_ICONS, CheckStatus, Severity
 
 
 _SEGMENT_SEPARATOR = " [dim]│[/dim] "
@@ -20,6 +20,15 @@ _VERDICT_WORDS = {
     Severity.WARN: "DEGRADED",
     Severity.ERROR: "FAULT",
     Severity.STALE: "STALE",
+}
+
+#: The chip is a filled badge rather than severity-colored text: red and
+#: magenta text on the maroon bar is barely legible, a solid block isn't.
+_CHIP_STYLES = {
+    Severity.OK: "bold black on green",
+    Severity.WARN: "bold black on yellow",
+    Severity.ERROR: "bold white on red",
+    Severity.STALE: "bold black on magenta",
 }
 
 #: Worst-first, matching the Plugin Panel's breakdown; OK is left out of
@@ -61,15 +70,29 @@ def health_gauge(fraction: float, segments: int = _GAUGE_SEGMENTS) -> str:
     return f"{bar}[dim]{track}[/dim]" if track else bar
 
 
+def chip_severity(overall: CheckStatus, counts: dict[int, int]) -> int:
+    """The severity the chip names: FAULT over STALE whenever any topic is in ERROR.
+
+    STALE outranks ERROR in the roll-up, but a silent topic is a missing
+    answer while an ERROR is a positive finding -- the chip shouldn't hide
+    the latter behind the former. The stale count still shows beside it.
+    """
+    if overall.severity == Severity.STALE and counts.get(Severity.ERROR, 0):
+        return Severity.ERROR
+    return overall.severity
+
+
 def verdict_markup(overall: CheckStatus, counts: dict[int, int], wide: bool) -> str:
     """The right-aligned verdict: severity chip, non-OK counts, and the weighted gauge when reported."""
-    color = SEVERITY_COLORS.get(overall.severity, "white")
-    word = _VERDICT_WORDS.get(overall.severity, str(overall.severity))
-    parts = [f"[b {color}]{SEVERITY_ICONS.get(overall.severity, '?')} {word}[/b {color}]"]
-    for severity in _COUNT_ORDER:
-        if counts.get(severity, 0):
-            severity_color = SEVERITY_COLORS[severity]
-            parts.append(f"[{severity_color}]{SEVERITY_ICONS[severity]}{counts[severity]}[/{severity_color}]")
+    severity = chip_severity(overall, counts)
+    style = _CHIP_STYLES.get(severity, "bold reverse")
+    word = _VERDICT_WORDS.get(severity, str(severity))
+    parts = [f"[{style}] {SEVERITY_ICONS.get(severity, '?')} {word} [/{style}]"]
+    # Counts in the bar's own foreground: the glyph already says which
+    # severity each is, and colored text has the chip's contrast problem.
+    for count_severity in _COUNT_ORDER:
+        if counts.get(count_severity, 0):
+            parts.append(f"{SEVERITY_ICONS[count_severity]}{counts[count_severity]}")
     health = weighted_health(overall)
     if health is not None:
         gauge = f"[dim]weighted[/dim] {health_gauge(health)} " if wide else ""

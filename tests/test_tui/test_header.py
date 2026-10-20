@@ -79,7 +79,29 @@ def test_verdict_markup_lists_non_ok_counts_and_gauge_only_when_weighted() -> No
 
     counts = {Severity.OK: 30, Severity.ERROR: 6, Severity.WARN: 3}
     worst = CheckStatus(Severity.ERROR, "overall", "")
-    assert Text.from_markup(verdict_markup(worst, counts, wide=True)).plain == "✗ FAULT ✗6 ▲3"
+    assert Text.from_markup(verdict_markup(worst, counts, wide=True)).plain == " ✗ FAULT  ✗6 ▲3"
     both = CheckStatus(Severity.ERROR, "overall", "", values={"weighted_score": "0.38"})
-    assert Text.from_markup(verdict_markup(both, counts, wide=False)).plain == "✗ FAULT ✗6 ▲3  81%"
+    assert Text.from_markup(verdict_markup(both, counts, wide=False)).plain == " ✗ FAULT  ✗6 ▲3  81%"
     assert "weighted ████████▏░ 81%" in Text.from_markup(verdict_markup(both, counts, wide=True)).plain
+
+
+def test_verdict_chip_is_a_filled_badge_and_counts_are_uncolored() -> None:
+    from testudo.plugins.base import CheckStatus, Severity
+    from testudo.tui.widgets.header import verdict_markup
+
+    markup = verdict_markup(CheckStatus(Severity.ERROR, "overall", ""), {Severity.ERROR: 2}, wide=True)
+    assert markup.startswith("[bold white on red] ✗ FAULT [/bold white on red]")
+    assert markup.endswith(" ✗2")
+
+
+def test_verdict_chip_names_fault_over_stale_when_any_topic_errors() -> None:
+    from rich.text import Text
+
+    from testudo.plugins.base import CheckStatus, Severity
+    from testudo.tui.widgets.header import chip_severity, verdict_markup
+
+    stale = CheckStatus(Severity.STALE, "overall", "")
+    assert chip_severity(stale, {Severity.STALE: 6, Severity.WARN: 1}) == Severity.STALE
+    assert chip_severity(stale, {Severity.STALE: 6, Severity.ERROR: 4}) == Severity.ERROR
+    counts = {Severity.STALE: 6, Severity.ERROR: 4, Severity.WARN: 2}
+    assert Text.from_markup(verdict_markup(stale, counts, wide=True)).plain == " ✗ FAULT  ■6 ✗4 ▲2"
