@@ -67,9 +67,11 @@ covariance sanity, TF tree health) those tools don't cover out of the box.
   the cursor rather than a list you drill into one entry at a time —
   filter, sort, pause, reset stats — and the same view for a finished
   bag (`testudo replay --watch`).
-- **Standard output.** Publishes `diagnostic_msgs/DiagnosticArray`,
-  decoupled from each check's own sampling rate — interoperable with
-  rqt_robot_monitor, Foxglove, PlotJuggler, and bag-recordable for free.
+- **Standard output.** Publishes `diagnostic_msgs/DiagnosticArray`, one
+  topic per plugin by default, carrying raw numbers you can plot in
+  PlotJuggler or Foxglove. Publishing runs at its own rate, separate from
+  each check's sampling, and the output is bag-recordable for free (see
+  [Output](#output)).
 - **Extensible.** Drop a `.py` file with a decorated class into a
   configured directory (no packaging needed), or ship a plugin as its own
   installable package via a `testudo.checks` entry point. Built-in
@@ -211,6 +213,33 @@ exclude_topics:
 See [`config/example_config.yaml`](config/example_config.yaml) for a
 complete, commented example.
 
+## Output
+
+By default each plugin publishes its own `DiagnosticArray` under
+`/testudo`, so a consumer subscribes only to what it needs:
+
+| Topic | Contents |
+|---|---|
+| `/testudo/<plugin>` | one row per topic that plugin checks, e.g. `/testudo/odometry`, `/testudo/nav2_goals` |
+| `/testudo/vitals` | topics no plugin checks (rate, age, liveness) |
+| `/testudo/overall` | the roll-up verdict |
+| `/testudo/nodes` | node profiling (CPU, memory, GPU per node) |
+
+A plugin's topic appears once it has something to report. Each row's
+key/values are machine-readable: plain numbers with the unit in the key
+(`rate_hz`, `distance_remaining_m`), ratios as 0..1, booleans as 1/0.
+
+rqt_robot_monitor and diagnostic_aggregator listen only on `/diagnostics`.
+To use them, publish everything as one array there instead:
+
+```yaml
+publish:
+  per_plugin: false   # everything on `topic`; node profiling on /diagnostics/nodes
+  topic: /diagnostics
+```
+
+Testudo never monitors its own output topics.
+
 ## Extending Testudo
 
 A check plugin is a small, stable interface:
@@ -235,7 +264,7 @@ representative examples to build from.
 ## Status
 
 Testudo is under active development. Discovery, the two-tier subscription
-core, all four built-in content plugins, `DiagnosticArray` publishing,
+core, the built-in content plugins, `DiagnosticArray` publishing,
 severity aggregation, bag replay, and the TUI are implemented and tested.
 See [`CLAUDE.md`](CLAUDE.md) for the full milestone plan and architecture
 notes.
