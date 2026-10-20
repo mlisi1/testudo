@@ -15,18 +15,15 @@ import time
 import rclpy
 import rclpy.node
 from diagnostic_msgs.msg import DiagnosticArray
-from rich.console import Console
-from rich.text import Text
 
 from testudo.core.clock import TestudoClock
 from testudo.core.config import ConfigError, TestudoConfig, default_config_path
 from testudo.core.config_loader import load_config
 from testudo.core.node_profiling.profiler import NodeProfiler
 from testudo.core.node_profiling.publisher import NodeDiagnosticPublisher
-from testudo.core.plain_values import plain_values, strip_markup
 from testudo.core.publisher import DiagnosticPublisher
-from testudo.core.subscription_manager import SubscriptionManager, TopicReport
-from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_LABELS, CheckStatus, Severity
+from testudo.core.subscription_manager import SubscriptionManager
+from testudo.core.text_report import print_report
 from testudo.plugins.registry import discover_all_plugins
 
 _logger = logging.getLogger("testudo")
@@ -297,7 +294,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         node.destroy_node()
         rclpy.shutdown()
 
-    return _print_report(reports, overall)
+    return print_report(reports, overall)
 
 
 def _spin_for(node: rclpy.node.Node, duration_seconds: float) -> None:
@@ -308,66 +305,6 @@ def _spin_for(node: rclpy.node.Node, duration_seconds: float) -> None:
         if remaining <= 0:
             return
         rclpy.spin_once(node, timeout_sec=remaining)
-
-
-def _print_report(reports: list[TopicReport], overall: CheckStatus) -> int:
-    """Print one line per topic plus the aggregated summary; return the exit code it implies.
-
-    Exit codes follow the common CI convention: 0 OK, 1 WARN, 2 ERROR/STALE.
-    Which severity drives `overall` (worst vs. weighted) is decided by
-    `SubscriptionManager.overall_status` per `config.severity_mode` --
-    printing/exit-coding here just reads the result, so both always agree
-    with what got published to `/diagnostics`. Colored via `rich.Text`
-    (content is always literal there, never markup, so a status message
-    that happens to contain square brackets can't be misread as
-    formatting); `Console` auto-disables color when stdout isn't a terminal.
-    """
-    console = Console()
-    if not reports:
-        _logger.info("no topics discovered")
-        return 0
-
-    for report in sorted(reports, key=lambda r: (-r.status.severity, r.topic)):
-        console.print(_topic_line(report))
-
-    console.print()
-    console.print(_status_line(overall))
-
-    if overall.severity == Severity.OK:
-        return 0
-    if overall.severity == Severity.WARN:
-        return 1
-    return 2
-
-
-def _topic_line(report: TopicReport) -> Text:
-    color = SEVERITY_COLORS.get(report.status.severity, "white")
-    label = SEVERITY_LABELS.get(report.status.severity, str(report.status.severity))
-    suffix = _values_suffix(report.status)
-
-    line = Text()
-    line.append(f"{label:5s} ", style=color)
-    line.append(f"{report.topic:30s} ")
-    line.append(f"[{report.tier:8s}] ", style="dim")
-    line.append(f"{report.msg_type:35s} ")
-    line.append(f"{strip_markup(report.status.message)}{suffix}")
-    return line
-
-
-def _status_line(status: CheckStatus) -> Text:
-    color = SEVERITY_COLORS.get(status.severity, "white")
-    label = SEVERITY_LABELS.get(status.severity, str(status.severity))
-    suffix = _values_suffix(status)
-
-    line = Text()
-    line.append(f"[{label}]", style=color)
-    line.append(f" {strip_markup(status.message)}{suffix}")
-    return line
-
-
-def _values_suffix(status: CheckStatus) -> str:
-    detail = ", ".join(f"{key}={value}" for key, value in plain_values(status.values, single_line=True).items())
-    return f" ({detail})" if detail else ""
 
 
 def cmd_replay(args: argparse.Namespace) -> int:
@@ -421,7 +358,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
         node.destroy_node()
         rclpy.shutdown()
 
-    return _print_report(reports, overall)
+    return print_report(reports, overall)
 
 
 def cmd_plugins(args: argparse.Namespace) -> int:
