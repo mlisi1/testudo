@@ -246,6 +246,31 @@ def test_sort_toggle_changes_focused_table_row_order() -> None:
     run(body())
 
 
+def test_sorted_column_header_carries_the_sort_marker() -> None:
+    async def body():
+        app = _make_app()
+        async with app.run_test() as pilot:
+            categories = app.screen.query_one(CategorySummaryTable)
+            topics = app.screen.query_one(TopicDetailTable)
+
+            def labels(table) -> list[str]:
+                return [column.label.plain for column in table.columns.values()]
+
+            assert labels(categories)[:2] == ["Category", "Status ▼"]
+            assert labels(topics)[1] == "Status ▼"
+
+            await pilot.press("s")
+            assert labels(categories)[:2] == ["Category ▲", "Status"]
+
+            topics.focus()
+            await pilot.press("s")
+            await pilot.pause()
+            assert labels(topics)[0].startswith("Topic ▲")
+            assert labels(topics)[1] == "Status"
+
+    run(body())
+
+
 def test_pause_is_a_no_op_for_a_static_replay_source() -> None:
     async def body():
         app = _make_app()

@@ -4,7 +4,7 @@ Textual's DataTable already binds the arrow keys to cursor movement; this
 module only adds the vim-style aliases and documents the rest of the
 project's keybind set (`q` quit, `p` pause, `/` filter, `j`/`k`/arrows/Tab/
 Left/Right navigate, `Enter` switch pane, `Esc` back to categories (or
-clear the filter), `s` cycle sort, `r` reset stats, `o` options menu, `?`
+clear the filter), `s` toggle sort, `r` reset stats, `o` options menu, `?`
 help overlay) in one place other modules can point at.
 """
 from __future__ import annotations
@@ -23,7 +23,7 @@ APP_BINDINGS = [
 
 #: Screen-level bindings (only meaningful where there's a table to filter/sort).
 FILTER_BINDING = Binding("slash", "start_filter", "Filter", key_display="/")
-SORT_BINDING = Binding("s", "cycle_sort", "Sort")
+SORT_BINDING = Binding("s", "toggle_sort", "Sort")
 
 #: Left/Right switch between the Plugin Panel and Topic Panel, alongside
 #: Tab/Shift+Tab (Textual's own default focus-cycling) and Enter (this
@@ -53,7 +53,7 @@ HELP_TEXT = """\
   left / right     switch focus between the categories and topics tables
   enter            switch focus (categories <-> topics)
   esc              focus categories (or clear the filter)
-  s                cycle the focused table's sort order
+  s                sort the focused table: worst first ▼ / by name ▲
   ?                this help
 
 Press any key to close.

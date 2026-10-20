@@ -11,6 +11,7 @@ from testudo.tui.widgets.topic_cells import (
     next_marquee_offset,
     rate_cell,
     rate_column_header,
+    sort_markers,
     status_cell,
     tail_first,
     topic_header,
@@ -106,6 +107,7 @@ class TopicDetailTable(NavDataTable):
         self._filter_text = ""
         self._sort_by_severity = True
         self._needs_rebuild = True
+        self._columns_stale = False
         self._marquee_offset: dict[str, int] = {}
         self._marquee_direction: dict[str, int] = {}
         self._extra_column_header: str | None = None
@@ -127,8 +129,11 @@ class TopicDetailTable(NavDataTable):
         # free to dominate the row and push the other columns off-screen
         # (needing a horizontal scroll to see them at all). The full,
         # untruncated message is always available in the detail pane below.
-        self.add_column(topic_header(self._topic_prefix, self._topic_width), key="topic", width=self._topic_width)
-        self.add_column("Status", key="status", width=STATUS_COLUMN_WIDTH)
+        name_marker, status_marker = sort_markers(self._sort_by_severity)
+        self.add_column(
+            topic_header(self._topic_prefix, self._topic_width, name_marker), key="topic", width=self._topic_width
+        )
+        self.add_column(f"Status{status_marker}", key="status", width=STATUS_COLUMN_WIDTH)
         self.add_column(self._rate_column_header, key="rate", width=RATE_COLUMN_WIDTH)
         if self._extra_column_header is not None:
             self.add_column(self._extra_column_header, key=EXTRA_COLUMN_KEY, width=self._extra_width)
@@ -185,6 +190,8 @@ class TopicDetailTable(NavDataTable):
         if sort_by_severity != self._sort_by_severity:
             self._sort_by_severity = sort_by_severity
             self._needs_rebuild = True
+            # The headers carry the sort marker, so they're re-added too.
+            self._columns_stale = True
 
     def update_topics(self, reports: list[TopicReport]) -> None:
         """Refresh from `reports` (already filtered to one category), preserving scroll/selection."""
@@ -197,7 +204,12 @@ class TopicDetailTable(NavDataTable):
         extra_header = self._extra_column_header_for(visible.values())
         rate_header = next((rate_column_header(report) for report in visible.values()), "Hz")
         prefix = common_topic_prefix(sorted(visible))
-        if (extra_header, rate_header, prefix) != (self._extra_column_header, self._rate_column_header, self._topic_prefix):
+        if self._columns_stale or (extra_header, rate_header, prefix) != (
+            self._extra_column_header,
+            self._rate_column_header,
+            self._topic_prefix,
+        ):
+            self._columns_stale = False
             self._extra_column_header = extra_header
             self._rate_column_header = rate_header
             self._topic_prefix = prefix

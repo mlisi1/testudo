@@ -119,6 +119,7 @@ def test_topic_header_shows_prefix_or_its_tail() -> None:
     assert topic_header("", 30) == "Topic"
     assert topic_header("/front_camera/camera/", 40) == "Topic  /front_camera/camera/"
     assert topic_header("/front_camera/camera/", 20) == "Topic  …mera/camera/"
+    assert topic_header("/front_camera/camera/", 22, " ▲") == "Topic ▲  …mera/camera/"
 
 
 def test_format_memory_fits_five_chars() -> None:

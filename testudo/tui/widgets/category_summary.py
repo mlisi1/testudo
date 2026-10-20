@@ -10,6 +10,7 @@ from testudo.core.topic_report import TopicReport
 from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_ICONS, Severity
 from testudo.tui.categorize import EXCLUDED_CATEGORY, OTHER_CATEGORY, category_for
 from testudo.tui.keybinds import NavDataTable
+from testudo.tui.widgets.topic_cells import sort_markers
 
 #: Trailing categories that always sort last, in this order, regardless of
 #: sort mode -- neither is a check competing for the top slot: OTHER_CATEGORY
@@ -76,8 +77,12 @@ class CategorySummaryTable(NavDataTable):
         # its single widest cell ever seen, so one long category name would
         # otherwise be free to push the others -- or the whole table --
         # wider than the pane, forcing a horizontal scroll to see the rest.
-        self.add_column("Category", key="category", width=15)
-        self.add_column("Status", key="status", width=12)
+        self._add_columns()
+
+    def _add_columns(self) -> None:
+        name_marker, status_marker = sort_markers(self._sort_by_severity)
+        self.add_column(f"Category{name_marker}", key="category", width=15)
+        self.add_column(f"Status{status_marker}", key="status", width=12)
 
     @property
     def sort_by_severity(self) -> bool:
@@ -123,7 +128,9 @@ class CategorySummaryTable(NavDataTable):
         previous_selection = self.selected_category
         self._category_order = self._sorted_categories(visible)
 
-        self.clear()
+        # Columns too: their headers carry the sort marker.
+        self.clear(columns=True)
+        self._add_columns()
         for category in self._category_order:
             self.add_row(category, "", key=category)
             self._write_row(category, visible[category])

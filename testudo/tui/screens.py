@@ -207,7 +207,7 @@ class DashboardScreen(Screen):
             return
         self.query_one(CategorySummaryTable).focus()
 
-    def action_cycle_sort(self) -> None:
+    def action_toggle_sort(self) -> None:
         table = self._focused_table()
         if table is None:
             return

@@ -72,15 +72,27 @@ def tail_first(name: str, width: int) -> str | None:
     return None
 
 
-def topic_header(prefix: str, width: int) -> str:
-    """The Topic column's header: "Topic", plus the stripped common prefix (its tail, if it must be cut)."""
+#: Header markers for the column a table is currently sorted by (`s`
+#: toggles between the two): severity is worst first, a name is A to Z.
+SEVERITY_SORT_MARKER = " ▼"
+NAME_SORT_MARKER = " ▲"
+
+
+def sort_markers(sort_by_severity: bool) -> tuple[str, str]:
+    """(name column marker, Status column marker): exactly one of them is set."""
+    return ("", SEVERITY_SORT_MARKER) if sort_by_severity else (NAME_SORT_MARKER, "")
+
+
+def topic_header(prefix: str, width: int, marker: str = "") -> str:
+    """The Topic column's header: "Topic" (+ sort `marker`), plus the stripped common prefix (its tail, if it must be cut)."""
+    title = f"Topic{marker}"
     if not prefix:
-        return "Topic"
-    label = f"Topic  {prefix}"
+        return title
+    label = f"{title}  {prefix}"
     if len(label) <= width:
         return label
-    room = width - len("Topic  …")
-    return f"Topic  …{prefix[-room:]}" if room > 0 else "Topic"
+    room = width - len(f"{title}  …")
+    return f"{title}  …{prefix[-room:]}" if room > 0 else title
 
 
 def marquee_window(text: str, width: int, offset: int) -> str:

@@ -105,7 +105,7 @@ topic's full status). Moving the cursor — not pressing `Enter` — is what
 drives the other panes live; `Enter`, `Tab`/`Shift+Tab`, or `←`/`→`
 switch focus between the plugin and topic panels, `Esc` refocuses the
 plugin panel (or clears an active filter), `/` to filter the focused
-panel, `s` to cycle its sort order,
+panel, `s` to toggle its sort (worst first ▼ or by name ▲),
 `p` to pause, `r` to reset accumulated stats, `o` for the options menu
 (currently: manage `exclude_topics` rules live), `?` for help. Any
 warning/error logged while the TUI has the terminal (most commonly a
