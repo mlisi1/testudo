@@ -1,0 +1,106 @@
+"""`SubscriptionManager.reports()`: one TopicReport per tracked topic, whatever its tier.
+
+A companion module like maintenance.py and tier_subscription.py: it reads
+the manager's per-tier state, and turns each topic into a report with the
+`topic_report` builders -- liveness, quiet-by-design flags (latched,
+event-driven), idle inputs, publishers, and lifecycle suppression.
+"""
+from __future__ import annotations
+
+from dataclasses import replace
+from typing import TYPE_CHECKING
+
+from testudo.core.exclusion import matching_rule
+from testudo.core.global_watches import TF_TOPIC
+from testudo.core.topic_report import (
+    TopicReport,
+    excluded_report,
+    full_tier_report,
+    is_event_driven,
+    no_publishers_report,
+    presence_report,
+    suppress_if_inactive,
+    vitals_report,
+)
+
+if TYPE_CHECKING:
+    from testudo.core.subscription_manager import SubscriptionManager
+
+
+def build_reports(manager: "SubscriptionManager") -> list[TopicReport]:
+    """Current health of every subscribed (or publisher-less) topic, sorted by name."""
+    now = manager._clock.now_seconds()
+    reports: list[TopicReport] = []
+
+    for topic_name in manager._no_publishers:
+        idle_input = topic_name not in manager._had_publishers and not is_declared(manager, topic_name)
+        reports.append(
+            no_publishers_report(
+                topic_name,
+                manager._msg_type_by_topic[topic_name],
+                idle_input,
+                manager._subscribers_by_topic.get(topic_name, ()),
+            )
+        )
+    for topic_name, msg_type in manager._presence_only.items():
+        reports.append(_suppress(manager, topic_name, presence_report(topic_name, msg_type)))
+    for topic_name, msg_type in manager._excluded.items():
+        # No `_suppress`: an excluded topic never resolves an owning
+        # node (no publisher-info query -- that's the whole point), so
+        # lifecycle-aware suppression would always be a no-op for it.
+        rule = matching_rule(manager, topic_name)
+        rule_text = f"{rule.match_type.value} {rule.pattern}" if rule is not None else ""
+        reports.append(excluded_report(topic_name, msg_type, rule_text))
+    for topic_name, vitals in manager._vitals.items():
+        topic_config = manager._topic_config_by_name.get(topic_name)
+        rate_threshold = topic_config.thresholds.get("rate_hz") if topic_config is not None else None
+        report = vitals_report(
+            topic_name,
+            manager._msg_type_by_topic[topic_name],
+            vitals,
+            now,
+            manager._stale_after_seconds,
+            rate_threshold,
+            manager._monitor_hz,
+            **_quiet_flags(manager, topic_name),
+        )
+        reports.append(_suppress(manager, topic_name, report))
+    for topic_name, state in manager._full_tier.items():
+        report = full_tier_report(
+            topic_name,
+            manager._msg_type_by_topic[topic_name],
+            state.vitals,
+            state.debouncer.current,
+            state.plugin.get_status(),
+            now,
+            manager._stale_after_seconds,
+            manager._monitor_hz,
+            **_quiet_flags(manager, topic_name),
+        )
+        reports.append(_suppress(manager, topic_name, report))
+
+    return sorted(reports, key=lambda report: report.topic)
+
+
+def is_declared(manager: "SubscriptionManager", topic_name: str) -> bool:
+    """True for a topic the config names: under `topics:`, an action's status, or /tf with `tf:` pairs."""
+    return (
+        topic_name in manager._topic_config_by_name
+        or topic_name in manager._action_config_by_status_topic
+        or (topic_name == TF_TOPIC and bool(manager._config.tf))
+    )
+
+
+def _quiet_flags(manager: "SubscriptionManager", topic_name: str) -> dict[str, bool]:
+    """`latched`/`event_driven` kwargs for a topic's liveness verdict (see `liveness_status`)."""
+    topic_config = manager._topic_config_by_name.get(topic_name)
+    event_driven = is_event_driven(topic_name, manager._msg_type_by_topic.get(topic_name)) or (
+        topic_config is not None and topic_config.event_driven
+    )
+    return {"latched": topic_name in manager._latched, "event_driven": event_driven}
+
+
+def _suppress(manager: "SubscriptionManager", topic_name: str, report: TopicReport) -> TopicReport:
+    """`report` with its publishers attached, and lifecycle-suppressed if its node is inactive."""
+    report = replace(report, publishers=manager._publishers_by_topic.get(topic_name, ()))
+    return suppress_if_inactive(report, manager._owning_node_by_topic.get(topic_name), manager._lifecycle_tracker)

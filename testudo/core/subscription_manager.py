@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import replace
 from typing import Any, Callable
 
 import rclpy
@@ -41,7 +40,7 @@ from testudo.core.aggregator import DEFAULT_REQUIRED_CONSECUTIVE, HysteresisDebo
 from testudo.core.clock import TestudoClock
 from testudo.core.config import ActionConfig, ExcludeRule, SeverityMode, TestudoConfig, TopicConfig
 from testudo.core.exclusion import add_rule, matching_rule, remove_rule
-from testudo.core.global_watches import DEFAULT_GET_STATE_TIMEOUT_SECONDS, TF_TOPIC
+from testudo.core.global_watches import DEFAULT_GET_STATE_TIMEOUT_SECONDS
 from testudo.core.lifecycle import LifecycleTracker
 from testudo.core.maintenance import (
     DEFAULT_REDISCOVERY_INTERVAL_SECONDS,
@@ -51,16 +50,8 @@ from testudo.core.maintenance import (
 )
 from testudo.core.maintenance import discover_and_subscribe as _discover_and_subscribe
 from testudo.core.maintenance import maintain as _maintain
-from testudo.core.topic_report import (
-    is_event_driven,
-    no_publishers_report,
-    TopicReport,
-    excluded_report,
-    full_tier_report,
-    presence_report,
-    suppress_if_inactive,
-    vitals_report,
-)
+from testudo.core.report_builder import build_reports as _build_reports
+from testudo.core.topic_report import TopicReport
 from testudo.core.tier_subscription import FullTierState
 from testudo.core.vitals import DEFAULT_STALE_AFTER_SECONDS, TopicVitals
 from testudo.plugins.base import CheckPlugin, CheckStatus
@@ -320,79 +311,8 @@ class SubscriptionManager:
         _maintain(self)
 
     def reports(self) -> list[TopicReport]:
-        """Current health of every subscribed (or publisher-less) topic, sorted by name."""
-        now = self._clock.now_seconds()
-        reports: list[TopicReport] = []
-
-        for topic_name in self._no_publishers:
-            idle_input = topic_name not in self._had_publishers and not self._is_declared(topic_name)
-            reports.append(
-                no_publishers_report(
-                    topic_name,
-                    self._msg_type_by_topic[topic_name],
-                    idle_input,
-                    self._subscribers_by_topic.get(topic_name, ()),
-                )
-            )
-        for topic_name, msg_type in self._presence_only.items():
-            reports.append(self._suppress(topic_name, presence_report(topic_name, msg_type)))
-        for topic_name, msg_type in self._excluded.items():
-            # No `_suppress`: an excluded topic never resolves an owning
-            # node (no publisher-info query -- that's the whole point), so
-            # lifecycle-aware suppression would always be a no-op for it.
-            rule = matching_rule(self, topic_name)
-            rule_text = f"{rule.match_type.value} {rule.pattern}" if rule is not None else ""
-            reports.append(excluded_report(topic_name, msg_type, rule_text))
-        for topic_name, vitals in self._vitals.items():
-            topic_config = self._topic_config_by_name.get(topic_name)
-            rate_threshold = topic_config.thresholds.get("rate_hz") if topic_config is not None else None
-            report = vitals_report(
-                topic_name,
-                self._msg_type_by_topic[topic_name],
-                vitals,
-                now,
-                self._stale_after_seconds,
-                rate_threshold,
-                self._monitor_hz,
-                **self._quiet_flags(topic_name),
-            )
-            reports.append(self._suppress(topic_name, report))
-        for topic_name, state in self._full_tier.items():
-            report = full_tier_report(
-                topic_name,
-                self._msg_type_by_topic[topic_name],
-                state.vitals,
-                state.debouncer.current,
-                state.plugin.get_status(),
-                now,
-                self._stale_after_seconds,
-                self._monitor_hz,
-                **self._quiet_flags(topic_name),
-            )
-            reports.append(self._suppress(topic_name, report))
-
-        return sorted(reports, key=lambda report: report.topic)
-
-    def _is_declared(self, topic_name: str) -> bool:
-        """True for a topic the config names: under `topics:`, an action's status, or /tf with `tf:` pairs."""
-        return (
-            topic_name in self._topic_config_by_name
-            or topic_name in self._action_config_by_status_topic
-            or (topic_name == TF_TOPIC and bool(self._config.tf))
-        )
-
-    def _quiet_flags(self, topic_name: str) -> dict[str, bool]:
-        """`latched`/`event_driven` kwargs for a topic's liveness verdict (see `liveness_status`)."""
-        topic_config = self._topic_config_by_name.get(topic_name)
-        event_driven = is_event_driven(topic_name, self._msg_type_by_topic.get(topic_name)) or (
-            topic_config is not None and topic_config.event_driven
-        )
-        return {"latched": topic_name in self._latched, "event_driven": event_driven}
-
-    def _suppress(self, topic_name: str, report: TopicReport) -> TopicReport:
-        """`report` with its publishers attached, and lifecycle-suppressed if its node is inactive."""
-        report = replace(report, publishers=self._publishers_by_topic.get(topic_name, ()))
-        return suppress_if_inactive(report, self._owning_node_by_topic.get(topic_name), self._lifecycle_tracker)
+        """Current health of every subscribed (or publisher-less) topic, sorted by name (see report_builder.py)."""
+        return _build_reports(self)
 
     def _weight_for_topic(self, topic_name: str) -> float:
         """A topic's configured weight (declared topic or action status topic), default 1.0."""
