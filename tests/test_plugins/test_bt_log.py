@@ -153,3 +153,7 @@ def test_metrics_publish_recovery_rate_counts_and_running_leaf() -> None:
     assert metrics["recovery_count_Spin"] == 1
     assert metrics["running_leaf"] == "Spin"
     assert metrics["last_recovery"] == "Spin" and metrics["last_recovery_age_s"] == 3.0
+
+
+def test_needs_every_message_since_each_log_is_a_delta() -> None:
+    assert BehaviorTreeLogPlugin.needs_every_message()

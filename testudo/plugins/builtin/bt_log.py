@@ -92,6 +92,13 @@ class BehaviorTreeLogPlugin(CheckPlugin):
         return ("nav2_msgs/msg/BehaviorTreeLog",)
 
     @classmethod
+    def needs_every_message(cls) -> bool:
+        # Each log holds only the transitions since the previous one: a
+        # skipped message loses recoveries, and leaves a node that finished
+        # in it shown as running.
+        return True
+
+    @classmethod
     def default_thresholds(cls) -> dict[str, ThresholdZone]:
         # No sane universal default: how often recovery should legitimately
         # trigger depends entirely on the environment and BT design.
