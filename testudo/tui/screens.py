@@ -20,11 +20,14 @@ from testudo.tui.keybinds import (
     COPY_BINDING,
     FILTER_BINDING,
     HELP_TEXT,
+    NEXT_PROBLEM_BINDING,
     PANE_LEFT_BINDING,
     PANE_RIGHT_BINDING,
+    PREVIOUS_PROBLEM_BINDING,
     SORT_BINDING,
 )
-from testudo.tui.widgets.attention import attention_text
+from testudo.tui.categorize import category_for
+from testudo.tui.widgets.attention import attention_text, problem_topics
 from testudo.tui.widgets.category_summary import CategorySummaryTable
 from testudo.tui.widgets.header import TestudoHeader
 from testudo.tui.widgets.topic_panel import TopicDetailTable
@@ -50,6 +53,8 @@ class DashboardScreen(Screen):
         FILTER_BINDING,
         SORT_BINDING,
         COPY_BINDING,
+        NEXT_PROBLEM_BINDING,
+        PREVIOUS_PROBLEM_BINDING,
         PANE_LEFT_BINDING,
         PANE_RIGHT_BINDING,
         ("escape", "handle_escape", "Categories"),
@@ -86,7 +91,7 @@ class DashboardScreen(Screen):
         # One line even at 101 columns (the narrowest typical terminal):
         # `r` (reset) is left to the help overlay, the rest is what a
         # first-time user needs to find their way around.
-        return "j/k move · tab/←→ pane · / search · s sort · p pause · o options · ? help · q quit"
+        return "j/k move · tab/←→ pane · / search · n problem · s sort · p pause · o options · ? help · q quit"
 
     def sync_header(self) -> None:
         header = self.query_one(TestudoHeader)
@@ -262,6 +267,55 @@ class DashboardScreen(Screen):
             return
         self.app.copy_to_clipboard(report.topic)
         self.notify(f"copied {report.topic}", timeout=2)
+
+    def action_jump_problem(self, step: int) -> None:
+        """`n`/`N`: highlight the next/previous topic with an active code, whatever its category.
+
+        Walks `problem_topics` (the "Needs attention" order), wrapping
+        around, starting from the highlighted topic -- or from the first
+        (last, for `N`) when the highlighted topic isn't one of them. A
+        filter hiding the target is cleared rather than skipping it.
+        """
+        if self._filtering:
+            return
+        reports = self.app.latest_snapshot.reports
+        problems = problem_topics(reports)
+        if not problems:
+            self.notify("nothing needs attention", timeout=2)
+            return
+        categories = self.query_one(CategorySummaryTable)
+        topics = self.query_one(TopicDetailTable)
+        current = topics.selected_topic
+        if current in problems:
+            target = problems[(problems.index(current) + step) % len(problems)]
+        else:
+            target = problems[0] if step > 0 else problems[-1]
+        category = next(category_for(report) for report in reports if report.topic == target)
+
+        if not categories.select_category(category) or target not in [
+            report.topic for report in categories.reports_in(category, reports)
+        ]:
+            self._clear_filters()
+            categories.select_category(category)
+        # The category cursor's RowHighlighted only arrives later: refresh
+        # the Topic Panel for it now, so the target row exists to move onto.
+        self.refresh_topics()
+        if not topics.select_topic(target):
+            self._clear_filters()
+            self.refresh_topics()
+            topics.select_topic(target)
+        topics.focus()
+        self.refresh_detail()
+
+    def _clear_filters(self) -> None:
+        # Detached first: the Input.Changed this value change posts arrives
+        # after the jump, and would otherwise put the category cursor back
+        # on row 0 (`on_input_changed`).
+        self._filtered_table = None
+        self.query_one("#filter-input", Input).value = ""
+        for table in (self.query_one(CategorySummaryTable), self.query_one(TopicDetailTable)):
+            table.set_filter("")
+        self.refresh_categories()
 
     def _refresh_from(self, table: DataTable) -> None:
         if isinstance(table, CategorySummaryTable):

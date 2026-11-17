@@ -164,6 +164,13 @@ class CategorySummaryTable(NavDataTable):
             status = format_severity_breakdown(counts)
         self.update_cell(category, "status", status)
 
+    def select_category(self, category: str) -> bool:
+        """Move the cursor onto `category`; False when it isn't one of the visible rows."""
+        if category not in self._category_order:
+            return False
+        self.move_cursor(row=self._category_order.index(category))
+        return True
+
     @property
     def selected_category(self) -> str | None:
         # cursor_row is -1 (Textual's "no valid row" sentinel, e.g. an

@@ -584,3 +584,52 @@ def test_detail_pane_height_follows_its_content() -> None:
             assert app.screen.query_one(TopicDetailTable).size.height >= 21
 
     run(body())
+
+
+def _problem_app() -> TestudoApp:
+    def report(topic: str, msg_type: str, severity: int, code: str | None) -> TopicReport:
+        codes = {code: "bad"} if code else {}
+        return TopicReport(topic, msg_type, "full", CheckStatus(severity, "x", "", codes=codes))
+
+    reports = [
+        report("/odom", "nav_msgs/msg/Odometry", Severity.ERROR, "ODOM-001"),
+        report("/odom_ok", "nav_msgs/msg/Odometry", Severity.OK, None),
+        report("/imu", "sensor_msgs/msg/Imu", Severity.WARN, "SENS-001"),
+        report("/battery", "sensor_msgs/msg/BatteryState", Severity.OK, None),
+    ]
+    overall = CheckStatus(Severity.ERROR, "overall", "")
+    return TestudoApp(StaticDataSource(reports, overall), ros_distro="jazzy")
+
+
+def test_n_and_shift_n_walk_the_problem_topics_across_categories() -> None:
+    async def body():
+        app = _problem_app()
+        async with app.run_test() as pilot:
+            topics = app.screen.query_one(TopicDetailTable)
+            categories = app.screen.query_one(CategorySummaryTable)
+            # Odometry's first row is already /odom: n moves past it to /imu.
+            await pilot.press("n")
+            assert categories.selected_category == "IMU"
+            assert topics.selected_topic == "/imu"
+            assert app.screen.focused is topics
+            await pilot.press("n")  # wraps around
+            assert topics.selected_topic == "/odom"
+            await pilot.press("N")
+            assert topics.selected_topic == "/imu"
+            assert "/imu" in str(app.screen.query_one("#detail-pane").content)
+
+    run(body())
+
+
+def test_n_clears_a_filter_that_hides_the_next_problem() -> None:
+    async def body():
+        app = _problem_app()
+        async with app.run_test() as pilot:
+            await pilot.press("slash", "o", "d", "o", "m", "enter")
+            categories = app.screen.query_one(CategorySummaryTable)
+            assert categories.row_count == 1
+            await pilot.press("n")
+            assert app.screen.query_one(TopicDetailTable).selected_topic == "/imu"
+            assert categories.row_count == 3
+
+    run(body())

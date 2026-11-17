@@ -40,6 +40,19 @@ def attention_entries(reports: list[TopicReport]) -> list[tuple[int, str, list[s
     return entries
 
 
+def problem_topics(reports: list[TopicReport]) -> list[str]:
+    """Every topic with an active code, in the order the list shows them (`n`/`N` walk this).
+
+    A topic appears once, under its first (worst) code -- the same order the
+    "Needs attention" list reads top to bottom, extended past its five lines.
+    """
+    seen: dict[str, None] = {}
+    for _severity, _code, topics in attention_entries(reports):
+        for topic in topics:
+            seen.setdefault(topic, None)
+    return list(seen)
+
+
 def attention_line(severity: int, code: str, topics: list[str], width: int) -> str:
     """`✗ CODE topic` in `width` cells: icon and code in the severity's color, then the
     topic tail-first, or how many topics share the code when it's more than one."""

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from testudo.core.topic_report import TopicReport
 from testudo.plugins.base import CheckStatus, Severity
-from testudo.tui.widgets.attention import attention_entries, attention_line, attention_text
+from testudo.tui.widgets.attention import attention_entries, attention_line, attention_text, problem_topics
 
 
 def _report(topic: str, severity: int, codes: dict[str, str]) -> TopicReport:
@@ -53,3 +53,14 @@ def test_text_caps_entries_and_counts_the_rest() -> None:
     assert len(lines) == 1 + 5 + 1
     assert lines[-1] == "+3 more"
     assert len(_plain(attention_text(reports, 30, 3)).splitlines()) == 3
+
+
+def test_problem_topics_follow_the_list_order_once_each() -> None:
+    reports = [
+        _report("/odom", Severity.WARN, {"ODOM-002": "w"}),
+        _report("/gps", Severity.ERROR, {"GNSS-001": "e", "GNSS-003": "e"}),
+        _report("/fine", Severity.OK, {"X-001": "info"}),
+        _report("/b", Severity.STALE, {"LIVE-003": "s"}),
+        _report("/a", Severity.STALE, {"LIVE-003": "s"}),
+    ]
+    assert problem_topics(reports) == ["/a", "/b", "/gps", "/odom"]

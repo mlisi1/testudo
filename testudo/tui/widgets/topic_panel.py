@@ -324,6 +324,13 @@ class TopicDetailTable(NavDataTable):
             return None
         return self._topic_order[self.cursor_row]
 
+    def select_topic(self, topic: str) -> bool:
+        """Move the cursor onto `topic`; False when it isn't one of the visible rows."""
+        if topic not in self._topic_order:
+            return False
+        self.move_cursor(row=self._topic_order.index(topic))
+        return True
+
     @property
     def selected_report(self) -> TopicReport | None:
         topic = self.selected_topic
