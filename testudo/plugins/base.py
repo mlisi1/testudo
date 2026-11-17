@@ -118,6 +118,13 @@ class CheckStatus:
     (no publishers, stale, ...) gets its own LIVE-* codes independently, in
     `topic_report.py`, since liveness is checked outside any plugin.
 
+    `code_severities` is each code's own severity ({code: Severity}),
+    which can be lower than the status's: a GNSS topic in ERROR for no fix
+    can also carry a WARN for a changed frame_id. "Needs attention" and the
+    fault history rank and record each code by it. A code missing from it
+    counts at the status's severity (`code_severity`), so a plugin that
+    only fills `codes` still works. `ActiveCodes` builds both at once.
+
     `values` is for people (the Detail Panel: markup, meters, sparklines);
     `metrics` is for machines: what the published DiagnosticStatus carries,
     so PlotJuggler/Foxglove can plot it. Each entry is a raw number
@@ -138,6 +145,30 @@ class CheckStatus:
     topic_panel_value: str = ""
     codes: dict[str, str] = field(default_factory=dict)
     metrics: dict[str, float | str] = field(default_factory=dict)
+    code_severities: dict[str, int] = field(default_factory=dict)
+
+
+def code_severity(status: CheckStatus, code: str) -> int:
+    """`code`'s own severity in `status`, or the status's when the plugin didn't give one."""
+    return status.code_severities.get(code, status.severity)
+
+
+@dataclass
+class ActiveCodes:
+    """Builds a `CheckStatus`'s `codes` and `code_severities` together.
+
+    `active.add("ODOM-001", "position covariance high", Severity.WARN)`
+    colors the message by its severity and records both; then pass
+    `codes=active.messages, code_severities=active.severities`.
+    """
+
+    messages: dict[str, str] = field(default_factory=dict)
+    severities: dict[str, int] = field(default_factory=dict)
+
+    def add(self, code: str, message: str, severity: int) -> None:
+        """Record `code` as active, with `message` (colored by `severity`) and `severity`."""
+        self.messages[code] = colorize(message, severity)
+        self.severities[code] = severity
 
 
 def colorize(text: str, severity: int) -> str:

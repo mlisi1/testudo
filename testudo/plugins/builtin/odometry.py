@@ -21,6 +21,7 @@ from typing import Any
 import numpy as np
 
 from testudo.plugins.base import (
+    ActiveCodes,
     CheckPlugin,
     CheckStatus,
     Severity,
@@ -251,21 +252,23 @@ class OdometryPlugin(CheckPlugin):
             problems.append(cmd_vel_message)
         message = "; ".join(problems) if problems else "odometry nominal"
 
-        codes: dict[str, str] = {}
+        codes = ActiveCodes()
         if trace_severity != Severity.OK:
-            codes["ODOM-001"] = colorize(
-                f"position covariance high (trace {self._position_covariance_trace:.3g} m²)", trace_severity
+            codes.add(
+                "ODOM-001",
+                f"position covariance high (trace {self._position_covariance_trace:.3g} m²)",
+                trace_severity,
             )
         if yaw_severity != Severity.OK:
-            codes["ODOM-002"] = colorize(f"yaw variance high ({self._yaw_variance:.3g} rad²)", yaw_severity)
+            codes.add("ODOM-002", f"yaw variance high ({self._yaw_variance:.3g} rad²)", yaw_severity)
         if growth_severity != Severity.OK:
-            codes["ODOM-003"] = colorize(f"covariance growing {self._growth_rate:+.3g} m²/s", growth_severity)
+            codes.add("ODOM-003", f"covariance growing {self._growth_rate:+.3g} m²/s", growth_severity)
         if not self._pose_psd_ok:
-            codes["ODOM-004"] = colorize("pose covariance not positive semi-definite", Severity.ERROR)
+            codes.add("ODOM-004", "pose covariance not positive semi-definite", Severity.ERROR)
         if not self._twist_psd_ok:
-            codes["ODOM-005"] = colorize("twist covariance not positive semi-definite", Severity.ERROR)
+            codes.add("ODOM-005", "twist covariance not positive semi-definite", Severity.ERROR)
         if cmd_vel_severity != Severity.OK:
-            codes["ODOM-006"] = colorize("cmd_vel commands motion, odometry reports none", cmd_vel_severity)
+            codes.add("ODOM-006", "cmd_vel commands motion, odometry reports none", cmd_vel_severity)
 
         # Position axes are judged per axis, not against the trace (a sum of
         # three variances, so judging one axis by it reads every axis as
@@ -308,7 +311,8 @@ class OdometryPlugin(CheckPlugin):
             values=values,
             topic_panel_column="σxy",
             topic_panel_value=self._sigma_xy_cell(trace_severity, growth_zone),
-            codes=codes,
+            codes=codes.messages,
+            code_severities=codes.severities,
             metrics=self._metrics(),
         )
 

@@ -41,7 +41,15 @@ import numpy as np
 from sensor_msgs.msg import LaserScan, PointCloud2
 from sensor_msgs_py.point_cloud2 import read_points
 
-from testudo.plugins.base import SEVERITY_COLORS, CheckPlugin, CheckStatus, Severity, ThresholdZone, colorize, evaluate_zone
+from testudo.plugins.base import (
+    SEVERITY_COLORS,
+    ActiveCodes,
+    CheckPlugin,
+    CheckStatus,
+    Severity,
+    ThresholdZone,
+    evaluate_zone,
+)
 from testudo.plugins.builtin.point_stream_layout import (
     format_points,
     profile_line,
@@ -263,21 +271,21 @@ class PointStreamPlugin(CheckPlugin):
             problems.append(f"frame_id changed (now '{self._last_frame_id}')")
         message = "; ".join(problems) if problems else self._detail
 
-        codes: dict[str, str] = {}
+        codes = ActiveCodes()
         if invalid_severity != Severity.OK:
-            codes["SENS-001"] = colorize(f"invalid readings {self._invalid_ratio:.1%}", invalid_severity)
+            codes.add("SENS-001", f"invalid readings {self._invalid_ratio:.1%}", invalid_severity)
         if stuck_severity != Severity.OK:
-            codes["SENS-002"] = colorize(f"identical for {self._stuck_count} messages", stuck_severity)
+            codes.add("SENS-002", f"identical for {self._stuck_count} messages", stuck_severity)
         if all_zero_severity != Severity.OK:
-            codes["SENS-003"] = colorize("all-zero scan", all_zero_severity)
+            codes.add("SENS-003", "all-zero scan", all_zero_severity)
         if plausibility_severity != Severity.OK:
-            codes["SENS-004"] = colorize("ranges outside range_min..range_max", plausibility_severity)
+            codes.add("SENS-004", "ranges outside range_min..range_max", plausibility_severity)
         if frame_id_severity != Severity.OK:
-            codes["SENS-005"] = colorize(f"frame_id changed (now '{self._last_frame_id}')", frame_id_severity)
+            codes.add("SENS-005", f"frame_id changed (now '{self._last_frame_id}')", frame_id_severity)
         if empty_severity != Severity.OK:
-            codes["SENS-006"] = colorize("empty point cloud", empty_severity)
+            codes.add("SENS-006", "empty point cloud", empty_severity)
         if malformed_severity != Severity.OK:
-            codes["SENS-007"] = colorize(self._malformed_detail, malformed_severity)
+            codes.add("SENS-007", self._malformed_detail, malformed_severity)
 
         values: dict[str, str] = {}
         if self._cloud is not None:
@@ -299,7 +307,8 @@ class PointStreamPlugin(CheckPlugin):
             values=values,
             topic_panel_column="Points",
             topic_panel_value=f"[{color}]{format_points(self._points)}[/{color}]",
-            codes=codes,
+            codes=codes.messages,
+            code_severities=codes.severities,
             metrics=self._metrics(),
         )
 

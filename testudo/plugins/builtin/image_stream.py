@@ -33,6 +33,7 @@ from sensor_msgs.msg import CompressedImage, Image
 
 from testudo.plugins.base import (
     SEVERITY_COLORS,
+    ActiveCodes,
     CheckPlugin,
     CheckStatus,
     Severity,
@@ -242,17 +243,17 @@ class ImageStreamPlugin(CheckPlugin):
             problems.append(f"frame_id changed (now '{self._last_frame_id}')")
         message = "; ".join(problems) if problems else fmt_size(self._last_size)
 
-        codes: dict[str, str] = {}
+        codes = ActiveCodes()
         if empty_severity != Severity.OK:
-            codes["IMG-001"] = colorize("empty payload", empty_severity)
+            codes.add("IMG-001", "empty payload", empty_severity)
         if malformed_severity != Severity.OK:
-            codes["IMG-002"] = colorize(self._malformed_detail, malformed_severity)
+            codes.add("IMG-002", self._malformed_detail, malformed_severity)
         if stuck_severity != Severity.OK:
-            codes["IMG-003"] = colorize(f"frame identical for {self._stuck_count} messages", stuck_severity)
+            codes.add("IMG-003", f"frame identical for {self._stuck_count} messages", stuck_severity)
         if size_drop_severity != Severity.OK:
-            codes["IMG-004"] = colorize(f"frame size dropped to {self._size_drop_ratio:.0%} of average", size_drop_severity)
+            codes.add("IMG-004", f"frame size dropped to {self._size_drop_ratio:.0%} of average", size_drop_severity)
         if frame_id_severity != Severity.OK:
-            codes["IMG-005"] = colorize(f"frame_id changed (now '{self._last_frame_id}')", frame_id_severity)
+            codes.add("IMG-005", f"frame_id changed (now '{self._last_frame_id}')", frame_id_severity)
 
         size_zone = self.thresholds.get("size_drop_ratio")
         drop_meter = meter(1.0 - self._size_drop_ratio, _flipped(size_zone), 6)
@@ -287,7 +288,8 @@ class ImageStreamPlugin(CheckPlugin):
             values=values,
             topic_panel_column="Size",
             topic_panel_value=topic_panel_value,
-            codes=codes,
+            codes=codes.messages,
+            code_severities=codes.severities,
             metrics=self._metrics(),
         )
 

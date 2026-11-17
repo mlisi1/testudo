@@ -17,7 +17,15 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from testudo.plugins.base import SEVERITY_COLORS, CheckPlugin, CheckStatus, Severity, ThresholdZone, colorize
+from testudo.plugins.base import (
+    SEVERITY_COLORS,
+    ActiveCodes,
+    CheckPlugin,
+    CheckStatus,
+    Severity,
+    ThresholdZone,
+    colorize,
+)
 from testudo.plugins.builtin.tf_tree_layout import tree_lines
 
 #: tf2's default transform buffer duration; used here only as the
@@ -206,24 +214,26 @@ class TFWatchPlugin(CheckPlugin):
 
         severity = Severity.OK
         problems = []
-        codes: dict[str, str] = {}
+        codes = ActiveCodes()
         if multi_parent:
             severity = Severity.ERROR
             names = ", ".join(sorted(multi_parent))
             problems.append(f"multi-parent frame(s): {names}")
-            codes["TF-001"] = colorize(f"multi-parent frame(s): {names}", Severity.ERROR)
+            codes.add("TF-001", f"multi-parent frame(s): {names}", Severity.ERROR)
         if missing:
             severity = max(severity, Severity.ERROR)
             pairs = ", ".join(f"{parent}->{child}" for (parent, child), _reason in missing)
             problems.append(f"missing chain(s): {pairs}")
-            codes["TF-002"] = colorize(
+            codes.add(
+                "TF-002",
                 "; ".join(f"missing chain {parent} → {child} ({reason})" for (parent, child), reason in missing),
                 Severity.ERROR,
             )
         if stale:
             severity = max(severity, Severity.WARN)
             problems.append(f"{len(stale)} edge(s) not updated in >{self._buffer_window_seconds:.0f}s (extrapolation risk)")
-            codes["TF-003"] = colorize(
+            codes.add(
+                "TF-003",
                 f"{len(stale)} dynamic edge(s) not updated in >{self._buffer_window_seconds:.0f}s", Severity.WARN
             )
 
@@ -265,7 +275,8 @@ class TFWatchPlugin(CheckPlugin):
             values=values,
             topic_panel_column="Frames",
             topic_panel_value=column,
-            codes=codes,
+            codes=codes.messages,
+            code_severities=codes.severities,
             metrics=self._metrics(trees, multi_parent, stale, chains),
         )
 

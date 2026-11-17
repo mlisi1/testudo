@@ -11,7 +11,7 @@ from dataclasses import dataclass, replace
 
 from testudo.core.lifecycle import LifecycleTracker
 from testudo.core.vitals import TopicVitals
-from testudo.plugins.base import CheckStatus, Severity, ThresholdZone, colorize, evaluate_zone
+from testudo.plugins.base import ActiveCodes, CheckStatus, Severity, ThresholdZone, colorize, evaluate_zone
 
 
 @dataclass(frozen=True)
@@ -120,6 +120,7 @@ def liveness_status(
             label="liveness",
             message=message,
             codes={"LIVE-002": colorize(message, Severity.ERROR)},
+            code_severities={"LIVE-002": Severity.ERROR},
         )
     age = vitals.age_seconds(now)
     if age is not None and age > stale_after_seconds:
@@ -144,6 +145,7 @@ def liveness_status(
             message=message,
             values=vitals_values(vitals, age, monitor_hz),
             codes={"LIVE-003": colorize(message, Severity.STALE)},
+            code_severities={"LIVE-003": Severity.STALE},
         )
     return None
 
@@ -217,14 +219,21 @@ def vitals_report(
 
     severity = Severity.OK
     message = "alive"
-    codes: dict[str, str] = {}
+    codes = ActiveCodes()
     if monitor_hz and rate_threshold is not None and rate is not None:
         severity = evaluate_zone(rate, rate_threshold, higher_is_worse=False)
         if severity != Severity.OK:
             message = f"rate {rate:.2f}Hz below configured threshold"
-            codes["LIVE-004"] = colorize(message, severity)
+            codes.add("LIVE-004", message, severity)
 
-    status = CheckStatus(severity=severity, label="liveness", message=message, values=values, codes=codes)
+    status = CheckStatus(
+        severity=severity,
+        label="liveness",
+        message=message,
+        values=values,
+        codes=codes.messages,
+        code_severities=codes.severities,
+    )
     return TopicReport(topic=topic_name, msg_type=msg_type, tier="vitals", status=status, rate_hz=rate)
 
 
@@ -303,6 +312,7 @@ def no_publishers_report(
             label="liveness",
             message="no publishers",
             codes={"LIVE-001": colorize("no publishers", Severity.ERROR)},
+            code_severities={"LIVE-001": Severity.ERROR},
         )
     return TopicReport(topic=topic_name, msg_type=msg_type, tier="vitals", status=status)
 

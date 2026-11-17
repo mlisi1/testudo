@@ -30,7 +30,7 @@ from typing import Any
 
 from action_msgs.msg import GoalStatus
 
-from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, ThresholdZone, colorize, evaluate_zone
+from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, ThresholdZone, colorize, evaluate_zone
 from testudo.plugins.render import meter, sparkline, strip
 
 _TERMINAL_STATUSES = frozenset({GoalStatus.STATUS_SUCCEEDED, GoalStatus.STATUS_CANCELED, GoalStatus.STATUS_ABORTED})
@@ -283,16 +283,16 @@ class Nav2GoalPlugin(CheckPlugin):
         worst = max(success_severity, duration_severity, frequency_severity)
 
         problems = []
-        codes: dict[str, str] = {}
+        codes = ActiveCodes()
         if success_severity != Severity.OK:
             problems.append(f"success rate {success_rate:.0%}")
-            codes["NAV-001"] = colorize(f"success rate {success_rate:.0%}", success_severity)
+            codes.add("NAV-001", f"success rate {success_rate:.0%}", success_severity)
         if duration_severity != Severity.OK:
             problems.append(f"mean duration {mean_duration:.1f}s")
-            codes["NAV-002"] = colorize(f"mean goal duration {mean_duration:.1f}s", duration_severity)
+            codes.add("NAV-002", f"mean goal duration {mean_duration:.1f}s", duration_severity)
         if frequency_severity != Severity.OK:
             problems.append(f"invocation frequency {frequency:.1f}/min")
-            codes["NAV-003"] = colorize(f"invoked {frequency:.1f} times/min", frequency_severity)
+            codes.add("NAV-003", f"invoked {frequency:.1f} times/min", frequency_severity)
         message = "; ".join(problems) if problems else "nominal"
 
         values = {"state": self._state_line(), "history": self._history_line()}
@@ -317,5 +317,6 @@ class Nav2GoalPlugin(CheckPlugin):
             topic_panel_column="Last 5",
             metrics=self._metrics(success_rate, mean_duration, frequency),
             topic_panel_value=recent or "[dim]–[/dim]",
-            codes=codes,
+            codes=codes.messages,
+            code_severities=codes.severities,
         )

@@ -4,7 +4,15 @@ from __future__ import annotations
 import pytest
 from diagnostic_msgs.msg import DiagnosticStatus
 
-from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, ThresholdZone, evaluate_zone
+from testudo.plugins.base import (
+    ActiveCodes,
+    CheckPlugin,
+    CheckStatus,
+    Severity,
+    ThresholdZone,
+    code_severity,
+    evaluate_zone,
+)
 
 
 def test_check_plugin_cannot_be_instantiated_directly() -> None:
@@ -114,3 +122,19 @@ def test_threshold_zone_defaults_to_none() -> None:
     assert zone.green is None
     assert zone.orange is None
     assert zone.red is None
+
+
+def test_active_codes_colors_each_message_by_its_own_severity() -> None:
+    codes = ActiveCodes()
+    codes.add("GNSS-001", "no fix", Severity.ERROR)
+    codes.add("GNSS-007", "frame_id changed", Severity.WARN)
+    assert codes.messages == {"GNSS-001": "[bold red]no fix[/bold red]", "GNSS-007": "[yellow]frame_id changed[/yellow]"}
+    assert codes.severities == {"GNSS-001": Severity.ERROR, "GNSS-007": Severity.WARN}
+
+
+def test_code_severity_falls_back_to_the_status_severity() -> None:
+    status = CheckStatus(
+        Severity.ERROR, "x", "", codes={"A-001": "a", "A-002": "b"}, code_severities={"A-002": Severity.WARN}
+    )
+    assert code_severity(status, "A-001") == Severity.ERROR
+    assert code_severity(status, "A-002") == Severity.WARN

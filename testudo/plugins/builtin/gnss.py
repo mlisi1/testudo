@@ -27,6 +27,7 @@ from typing import Any
 from sensor_msgs.msg import NavSatFix, NavSatStatus
 
 from testudo.plugins.base import (
+    ActiveCodes,
     CheckPlugin,
     CheckStatus,
     Severity,
@@ -261,9 +262,9 @@ class GnssPlugin(CheckPlugin):
             problems.append(f"frame_id changed (now '{self._last_frame_id}')")
         message = "; ".join(problems) if problems else f"{fix_label} nominal"
 
-        codes: dict[str, str] = {}
+        codes = ActiveCodes()
         if fix_severity != Severity.OK:
-            codes["GNSS-001"] = colorize("no fix", fix_severity)
+            codes.add("GNSS-001", "no fix", fix_severity)
         if covariance_severity != Severity.OK:
             # σ, not the raw m² variance: the same unit as the meters above.
             bad_sigmas = [
@@ -271,22 +272,23 @@ class GnssPlugin(CheckPlugin):
                 for axis, value, severity in zip(_POSITION_AXES, self._position_covariance, axis_severities)
                 if severity != Severity.OK
             ]
-            codes["GNSS-002"] = colorize(
+            codes.add(
+                "GNSS-002",
                 f"position σ high ({', '.join(bad_sigmas)}; per-axis limit {fmt_sigma(covariance_zone.orange)})"
                 if covariance_zone is not None and covariance_zone.orange is not None
                 else f"position σ high ({', '.join(bad_sigmas)})",
                 covariance_severity,
             )
         if dropout_severity != Severity.OK:
-            codes["GNSS-003"] = colorize(f"fix dropped in {sum(self._dropout_window)}/{len(self._dropout_window)}", dropout_severity)
+            codes.add("GNSS-003", f"fix dropped in {sum(self._dropout_window)}/{len(self._dropout_window)}", dropout_severity)
         if jump_severity != Severity.OK:
-            codes["GNSS-004"] = colorize(f"implausible jump at {self._jump_speed_mps:.3g} m/s", jump_severity)
+            codes.add("GNSS-004", f"implausible jump at {self._jump_speed_mps:.3g} m/s", jump_severity)
         if stuck_severity != Severity.OK:
-            codes["GNSS-005"] = colorize(f"fix identical for {self._stuck_count} messages", stuck_severity)
+            codes.add("GNSS-005", f"fix identical for {self._stuck_count} messages", stuck_severity)
         if invalid_severity != Severity.OK:
-            codes["GNSS-006"] = colorize(f"NaN/Inf in {self._invalid_ratio:.0%} of lat/lon/alt", invalid_severity)
+            codes.add("GNSS-006", f"NaN/Inf in {self._invalid_ratio:.0%} of lat/lon/alt", invalid_severity)
         if frame_id_severity != Severity.OK:
-            codes["GNSS-007"] = colorize(f"frame_id changed (now '{self._last_frame_id}')", frame_id_severity)
+            codes.add("GNSS-007", f"frame_id changed (now '{self._last_frame_id}')", frame_id_severity)
 
         # σh/σv instead of three per-axis chunks: people think in "±26 cm
         # horizontal". Each meter judges the worst single axis it
@@ -330,7 +332,8 @@ class GnssPlugin(CheckPlugin):
             values=values,
             topic_panel_column="Fix",
             topic_panel_value=topic_panel_value,
-            codes=codes,
+            codes=codes.messages,
+            code_severities=codes.severities,
             metrics=self._metrics(fix_label, covariance_label, covariance_known),
         )
 

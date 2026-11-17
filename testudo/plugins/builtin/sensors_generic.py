@@ -17,7 +17,7 @@ from typing import Any
 
 from sensor_msgs.msg import Imu
 
-from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, ThresholdZone, colorize, evaluate_zone
+from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, ThresholdZone, evaluate_zone
 from testudo.plugins.render import downsample, sparkline
 
 _IMU_TYPE = "sensor_msgs/msg/Imu"
@@ -166,15 +166,15 @@ class GenericSensorPlugin(CheckPlugin):
             problems.append(f"frame_id changed (now '{self._last_frame_id}')")
         message = "; ".join(problems) if problems else self._detail
 
-        codes: dict[str, str] = {}
+        codes = ActiveCodes()
         if invalid_severity != Severity.OK:
-            codes["SENS-001"] = colorize(f"NaN/Inf in {self._invalid_ratio:.0%} of accel/gyro fields", invalid_severity)
+            codes.add("SENS-001", f"NaN/Inf in {self._invalid_ratio:.0%} of accel/gyro fields", invalid_severity)
         if stuck_severity != Severity.OK:
-            codes["SENS-002"] = colorize(f"reading identical for {self._stuck_count} messages", stuck_severity)
+            codes.add("SENS-002", f"reading identical for {self._stuck_count} messages", stuck_severity)
         if plausibility_severity != Severity.OK:
-            codes["SENS-004"] = colorize(f"implausible magnitude ({self._detail})", plausibility_severity)
+            codes.add("SENS-004", f"implausible magnitude ({self._detail})", plausibility_severity)
         if frame_id_severity != Severity.OK:
-            codes["SENS-005"] = colorize(f"frame_id changed (now '{self._last_frame_id}')", frame_id_severity)
+            codes.add("SENS-005", f"frame_id changed (now '{self._last_frame_id}')", frame_id_severity)
 
         accel_magnitude = math.sqrt(sum(v * v for v in self._accel))
         gyro_trend = sparkline(downsample(self._gyro_trend, _TREND_WIDTH), floor=0.0)
@@ -204,7 +204,8 @@ class GenericSensorPlugin(CheckPlugin):
             values=values,
             topic_panel_column="|a|",
             topic_panel_value=f"{accel_magnitude:.2f}",
-            codes=codes,
+            codes=codes.messages,
+            code_severities=codes.severities,
             metrics=self._metrics(accel_magnitude),
         )
 

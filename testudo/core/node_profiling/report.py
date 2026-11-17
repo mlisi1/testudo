@@ -8,7 +8,7 @@ from diagnostic_msgs.msg import DiagnosticArray
 from testudo.core.node_profiling.sampler import ProcessSample
 from testudo.core.publisher import to_diagnostic_status
 from testudo.core.topic_report import TopicReport
-from testudo.plugins.base import CheckStatus, Severity, ThresholdZone, colorize, evaluate_zone
+from testudo.plugins.base import ActiveCodes, CheckStatus, Severity, ThresholdZone, colorize, evaluate_zone
 from testudo.plugins.render import downsample, sparkline
 
 
@@ -116,18 +116,18 @@ def build_status(
     status_severity = _STATUS_SEVERITY.get(sample.status, Severity.OK)
     ctx_switch_severity = Severity.OK
 
-    codes: dict[str, str] = {}
+    codes = ActiveCodes()
     if cpu_severity >= Severity.WARN:
-        codes["NODE-004"] = colorize(f"CPU high ({sample.cpu_percent:.0f}%)", cpu_severity)
+        codes.add("NODE-004", f"CPU high ({sample.cpu_percent:.0f}%)", cpu_severity)
     if memory_severity >= Severity.WARN:
-        codes["NODE-005"] = colorize(f"memory high ({sample.memory_rss_mb:.0f} MB RSS)", memory_severity)
+        codes.add("NODE-005", f"memory high ({sample.memory_rss_mb:.0f} MB RSS)", memory_severity)
     if sample.status in _STATUS_CODES:
-        codes["NODE-002"] = colorize(_STATUS_CODES[sample.status], status_severity)
+        codes.add("NODE-002", _STATUS_CODES[sample.status], status_severity)
     if sample.ctx_switches_involuntary_per_sec is not None:
         ctx_switch_severity = evaluate_zone(sample.ctx_switches_involuntary_per_sec, ctx_switch_zone)
         if ctx_switch_severity >= Severity.WARN:
-            codes["NODE-001"] = colorize(
-                # Kept short: a message wider than the Detail Panel wraps,
+            codes.add(
+                "NODE-001", # Kept short: a message wider than the Detail Panel wraps,
                 # taking a row from the readings it sits under.
                 f"possible CPU starvation: preempted {sample.ctx_switches_involuntary_per_sec:.0f} times/s",
                 ctx_switch_severity,
@@ -137,8 +137,8 @@ def build_status(
     if memory_slope_mb_per_min is not None and sample.uptime_seconds >= LEAK_GRACE_SECONDS:
         slope_severity = evaluate_zone(memory_slope_mb_per_min, memory_slope_zone)
         if slope_severity >= Severity.WARN:
-            codes["NODE-003"] = colorize(
-                f"memory growing {memory_slope_mb_per_min:+.1f} MB/min -- possible leak", slope_severity
+            codes.add(
+                "NODE-003", f"memory growing {memory_slope_mb_per_min:+.1f} MB/min -- possible leak", slope_severity
             )
 
     severity = max(cpu_severity, memory_severity, status_severity, ctx_switch_severity, slope_severity)
@@ -190,7 +190,8 @@ def build_status(
         # number; everything else above shows in the Detail Panel instead.
         topic_panel_column="CPU%",
         topic_panel_value="-" if sample.warming_up else colorize(f"{sample.cpu_percent:.1f}", cpu_severity),
-        codes=codes,
+        codes=codes.messages,
+        code_severities=codes.severities,
     )
 
 
