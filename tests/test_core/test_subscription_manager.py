@@ -23,6 +23,7 @@ from testudo.core.config import (
     TFPairConfig,
     TopicConfig,
 )
+from testudo.core.report_builder import build_reports
 from testudo.core.subscription_manager import SubscriptionManager
 from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, ThresholdZone
 from testudo.plugins.registry import DiscoveredPlugin
@@ -808,6 +809,24 @@ def test_declared_topic_with_no_publishers_is_reported_as_error_without_subscrib
     assert reports[0].status.severity == Severity.ERROR
     assert "no publishers" in reports[0].status.message
     assert "LIVE-001" in reports[0].status.codes
+
+
+def test_code_overrides_apply_to_reports_but_not_to_dead_stack_detection() -> None:
+    node = _FakeNode(topics=[("/scan", ["sensor_msgs/msg/LaserScan"])], publishers_by_topic={})
+    config = TestudoConfig(
+        topics={
+            "sensor_msgs/msg/LaserScan": [
+                TopicConfig(name="/scan", msg_type="sensor_msgs/msg/LaserScan", codes={"LIVE-001": Severity.WARN})
+            ]
+        }
+    )
+    manager = SubscriptionManager(node, config, [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+
+    report = manager.reports()[0]
+    assert report.status.severity == Severity.WARN
+    assert report.status.code_severities == {"LIVE-001": Severity.WARN}
+    assert build_reports(manager, code_overrides=False)[0].status.severity == Severity.ERROR
 
 
 def test_a_topic_that_lost_its_publisher_is_an_error_not_an_idle_input() -> None:

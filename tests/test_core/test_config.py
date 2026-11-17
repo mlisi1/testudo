@@ -19,7 +19,7 @@ from testudo.core.config import (
     default_config_path,
 )
 from testudo.core.config_loader import load_config
-from testudo.plugins.base import SeverityLevels, ThresholdZone
+from testudo.plugins.base import Severity, SeverityLevels, ThresholdZone
 
 
 def _write(tmp_path: Path, text: str) -> Path:
@@ -629,3 +629,36 @@ def test_levels_override_keeps_unwritten_keys() -> None:
     override = LevelsOverride(warn=2.0, given=frozenset({"warn"}))
     assert override.over(None) == SeverityLevels(warn=2.0)
     assert override.over(SeverityLevels(warn=1.0, error=9.0)) == SeverityLevels(warn=2.0, error=9.0)
+
+
+def test_code_overrides_parse_on_topics_and_actions(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        """
+        topics:
+          sensor_msgs/msg/NavSatFix:
+            - name: /gps/filtered
+              codes: {GNSS-001: warn, gnss-007: OK}
+        actions:
+          - name: spin
+            action_type: nav2_msgs/action/Spin
+            codes: {NAV-003: error}
+        """,
+    )
+    config = load_config(path)
+    assert config.topics["sensor_msgs/msg/NavSatFix"][0].codes == {"GNSS-001": Severity.WARN, "GNSS-007": Severity.OK}
+    assert config.actions[0].codes == {"NAV-003": Severity.ERROR}
+
+
+def test_code_override_severity_must_be_ok_warn_or_error(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        """
+        topics:
+          sensor_msgs/msg/NavSatFix:
+            - name: /gps
+              codes: {GNSS-001: stale}
+        """,
+    )
+    with pytest.raises(ConfigError, match="GNSS-001 must be one of ok, warn, error"):
+        load_config(path)

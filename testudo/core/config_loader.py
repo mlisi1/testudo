@@ -25,6 +25,7 @@ from testudo.core.config import (
     TopicConfig,
 )
 from testudo.core.config_values import (
+    parse_code_overrides,
     parse_exclude_rules,
     parse_non_empty_string,
     parse_positive_number,
@@ -110,7 +111,7 @@ def _parse_topics(raw: Any, source: str) -> dict[str, list[TopicConfig]]:
     return result
 
 
-_TOPIC_ENTRY_KEYS = {"name", "weight", "thresholds", "related_topics", "event_driven"}
+_TOPIC_ENTRY_KEYS = {"name", "weight", "thresholds", "codes", "related_topics", "event_driven"}
 
 
 def _parse_topic_entry(entry: Any, msg_type: str, source: str) -> TopicConfig:
@@ -124,6 +125,7 @@ def _parse_topic_entry(entry: Any, msg_type: str, source: str) -> TopicConfig:
         raise ConfigError(f"{source}: topics.{msg_type} entry missing required string 'name'")
     weight = _parse_weight(entry.get("weight", 1.0), f"topics.{msg_type}[{name}]", source)
     thresholds, levels = _parse_thresholds(entry.get("thresholds", {}), f"topics.{msg_type}[{name}]", source)
+    codes = parse_code_overrides(entry.get("codes", {}), f"topics.{msg_type}[{name}]", source)
     related_topics = _parse_related_topics(entry.get("related_topics", {}), f"topics.{msg_type}[{name}]", source)
     event_driven = entry.get("event_driven", False)
     if not isinstance(event_driven, bool):
@@ -134,6 +136,7 @@ def _parse_topic_entry(entry: Any, msg_type: str, source: str) -> TopicConfig:
         weight=weight,
         thresholds=thresholds,
         levels=levels,
+        codes=codes,
         related_topics=related_topics,
         event_driven=event_driven,
     )
@@ -175,7 +178,7 @@ def _parse_weight(value: Any, context: str, source: str) -> float:
     return float(value)
 
 
-_ACTION_ENTRY_KEYS = {"name", "action_type", "weight", "thresholds", "related_topics"}
+_ACTION_ENTRY_KEYS = {"name", "action_type", "weight", "thresholds", "codes", "related_topics"}
 
 
 def _parse_actions(raw: Any, source: str) -> list[ActionConfig]:
@@ -196,6 +199,7 @@ def _parse_actions(raw: Any, source: str) -> list[ActionConfig]:
             raise ConfigError(f"{source}: action '{name}' missing required string 'action_type'")
         weight = _parse_weight(entry.get("weight", 1.0), f"actions[{name}]", source)
         thresholds, levels = _parse_thresholds(entry.get("thresholds", {}), f"actions[{name}]", source)
+        codes = parse_code_overrides(entry.get("codes", {}), f"actions[{name}]", source)
         related_topics = _parse_related_topics(entry.get("related_topics", {}), f"actions[{name}]", source)
         result.append(
             ActionConfig(
@@ -204,6 +208,7 @@ def _parse_actions(raw: Any, source: str) -> list[ActionConfig]:
                 weight=weight,
                 thresholds=thresholds,
                 levels=levels,
+                codes=codes,
                 related_topics=related_topics,
             )
         )

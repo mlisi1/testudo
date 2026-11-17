@@ -10,7 +10,7 @@ import logging
 from typing import Any
 
 from testudo.core.config import ConfigError, ExcludeMatchType, ExcludeRule, InvalidExcludePatternError, LevelsOverride
-from testudo.plugins.base import ThresholdZone
+from testudo.plugins.base import Severity, ThresholdZone
 
 _logger = logging.getLogger(__name__)
 
@@ -91,6 +91,27 @@ def parse_metric(raw: Any, context: str, source: str) -> tuple[ThresholdZone | N
             context,
         )
     return zone, levels
+
+
+#: What a `codes:` override may set a code to.
+CODE_SEVERITY_NAMES: dict[str, int] = {"ok": Severity.OK, "warn": Severity.WARN, "error": Severity.ERROR}
+
+
+def parse_code_overrides(raw: Any, context: str, source: str) -> dict[str, int]:
+    """`codes: {GNSS-001: warn}` as {code: Severity}; codes are upper-cased, severities must be ok/warn/error."""
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{source}: {context}.codes must be a mapping of code -> ok/warn/error")
+    result: dict[str, int] = {}
+    for code, name in raw.items():
+        if not isinstance(code, str) or not code.strip() or " " in code.strip():
+            raise ConfigError(f"{source}: {context}.codes has an invalid code {code!r} (e.g. GNSS-001)")
+        severity = CODE_SEVERITY_NAMES.get(name.lower()) if isinstance(name, str) else None
+        if severity is None:
+            raise ConfigError(
+                f"{source}: {context}.codes.{code} must be one of {', '.join(CODE_SEVERITY_NAMES)}, got {name!r}"
+            )
+        result[code.strip().upper()] = severity
+    return result
 
 
 def _to_float(value: Any) -> float | None:

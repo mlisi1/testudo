@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
+from testudo.core.code_overrides import apply_code_overrides
 from testudo.core.exclusion import matching_rule
 from testudo.core.global_watches import TF_TOPIC
 from testudo.core.topic_report import (
@@ -27,8 +28,13 @@ if TYPE_CHECKING:
     from testudo.core.subscription_manager import SubscriptionManager
 
 
-def build_reports(manager: "SubscriptionManager") -> list[TopicReport]:
-    """Current health of every subscribed (or publisher-less) topic, sorted by name."""
+def build_reports(manager: "SubscriptionManager", *, code_overrides: bool = True) -> list[TopicReport]:
+    """Current health of every subscribed (or publisher-less) topic, sorted by name.
+
+    `code_overrides=False` leaves out the config's per-topic `codes:`
+    overrides: what dead-stack detection judges, since an override hides a
+    code from the user, not the fact that the topic stopped.
+    """
     now = manager._clock.now_seconds()
     reports: list[TopicReport] = []
 
@@ -80,7 +86,23 @@ def build_reports(manager: "SubscriptionManager") -> list[TopicReport]:
         )
         reports.append(_suppress(manager, topic_name, report))
 
+    if code_overrides:
+        reports = [_override_codes(manager, report) for report in reports]
     return sorted(reports, key=lambda report: report.topic)
+
+
+def _override_codes(manager: "SubscriptionManager", report: TopicReport) -> TopicReport:
+    """`report` with its topic's `codes:` overrides applied (topic entry, then its action's)."""
+    overrides: dict[str, int] = {}
+    topic_config = manager._topic_config_by_name.get(report.topic)
+    if topic_config is not None:
+        overrides.update(topic_config.codes)
+    action_config = manager._action_config_by_status_topic.get(report.topic)
+    if action_config is not None:
+        overrides.update(action_config.codes)
+    if not overrides:
+        return report
+    return replace(report, status=apply_code_overrides(report.status, overrides))
 
 
 def is_declared(manager: "SubscriptionManager", topic_name: str) -> bool:

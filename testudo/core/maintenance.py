@@ -32,6 +32,7 @@ from testudo.core.exclusion import sweep_excluded_topics
 from testudo.core.global_watches import subscribe_lifecycle_tracking, subscribe_tf_watch
 from testudo.core.lifecycle import LifecycleTracker
 from testudo.core.tier_subscription import subscribe_topic
+from testudo.core.report_builder import build_reports
 from testudo.core.topic_report import TopicReport
 from testudo.plugins.base import Severity
 
@@ -145,7 +146,8 @@ def _maybe_clear_stale_stack(manager: "SubscriptionManager") -> None:
         return
     manager._last_stale_check_monotonic = now_wall
 
-    reports = manager.reports()
+    # Without `codes:` overrides: hiding a code doesn't make a dead topic alive.
+    reports = build_reports(manager, code_overrides=False)
     if not reports or not _mostly_dead(manager, reports):
         manager._stale_since_monotonic = None
         return

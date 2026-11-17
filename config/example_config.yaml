@@ -113,6 +113,11 @@ topics:
           warn: 0.15
         # stuck_count, invalid_ratio, and jump_speed_mps aren't overridden:
         # the plugin defaults apply.
+      # Per-code severity: ok | warn | error. This robot also works in a
+      # shed, where losing the fix is expected: no fix is a WARN here, not
+      # an ERROR. `ok` hides a code entirely (no fault, no "Needs attention").
+      codes:
+        GNSS-001: warn
 
   # Costmap/planner/controller actual-vs-configured rate: no dedicated
   # plugin needed for this -- any declared topic's vitals-tier rate gets
