@@ -41,7 +41,7 @@ from testudo.core.aggregator import DEFAULT_REQUIRED_CONSECUTIVE, HysteresisDebo
 from testudo.core.clock import TestudoClock
 from testudo.core.config import ActionConfig, ExcludeRule, SeverityMode, TestudoConfig, TopicConfig
 from testudo.core.exclusion import add_rule, matching_rule, remove_rule
-from testudo.core.global_watches import DEFAULT_GET_STATE_TIMEOUT_SECONDS
+from testudo.core.global_watches import DEFAULT_GET_STATE_TIMEOUT_SECONDS, TF_TOPIC
 from testudo.core.lifecycle import LifecycleTracker
 from testudo.core.maintenance import (
     DEFAULT_REDISCOVERY_INTERVAL_SECONDS,
@@ -53,6 +53,7 @@ from testudo.core.maintenance import discover_and_subscribe as _discover_and_sub
 from testudo.core.maintenance import maintain as _maintain
 from testudo.core.topic_report import (
     is_event_driven,
+    no_publishers_report,
     TopicReport,
     excluded_report,
     full_tier_report,
@@ -197,6 +198,12 @@ class SubscriptionManager:
         self._msg_type_by_topic: dict[str, str] = {}
         self._owning_node_by_topic: dict[str, str] = {}
         self._no_publishers: set[str] = set()
+        # Topics seen with a publisher at some point this session (never
+        # cleared, not even with a dead stack): losing it is a fault, while
+        # a topic that never had one is just an input nobody drives.
+        self._had_publishers: set[str] = set()
+        # no-publisher topic -> the nodes subscribed to it, for display.
+        self._subscribers_by_topic: dict[str, tuple[str, ...]] = {}
         # Topics whose publisher offers transient_local durability -- usually
         # publish-once (robot_description, extrinsics), so their silence is
         # reported as "latched", not STALE (see topic_report.liveness_status).
@@ -318,17 +325,13 @@ class SubscriptionManager:
         reports: list[TopicReport] = []
 
         for topic_name in self._no_publishers:
+            idle_input = topic_name not in self._had_publishers and not self._is_declared(topic_name)
             reports.append(
-                TopicReport(
-                    topic=topic_name,
-                    msg_type=self._msg_type_by_topic[topic_name],
-                    tier="vitals",
-                    status=CheckStatus(
-                        severity=Severity.ERROR,
-                        label="liveness",
-                        message="no publishers",
-                        codes={"LIVE-001": colorize("no publishers", Severity.ERROR)},
-                    ),
+                no_publishers_report(
+                    topic_name,
+                    self._msg_type_by_topic[topic_name],
+                    idle_input,
+                    self._subscribers_by_topic.get(topic_name, ()),
                 )
             )
         for topic_name, msg_type in self._presence_only.items():
@@ -369,6 +372,14 @@ class SubscriptionManager:
             reports.append(self._suppress(topic_name, report))
 
         return sorted(reports, key=lambda report: report.topic)
+
+    def _is_declared(self, topic_name: str) -> bool:
+        """True for a topic the config names: under `topics:`, an action's status, or /tf with `tf:` pairs."""
+        return (
+            topic_name in self._topic_config_by_name
+            or topic_name in self._action_config_by_status_topic
+            or (topic_name == TF_TOPIC and bool(self._config.tf))
+        )
 
     def _quiet_flags(self, topic_name: str) -> dict[str, bool]:
         """`latched`/`event_driven` kwargs for a topic's liveness verdict (see `liveness_status`)."""

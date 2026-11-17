@@ -8,7 +8,7 @@ from __future__ import annotations
 from rich.text import Text
 
 from testudo.core.discovery import ACTION_STATUS_SUFFIX
-from testudo.core.topic_report import IDLE_LABEL, LATCHED_LABEL, TopicReport, quiet_label
+from testudo.core.topic_report import IDLE_LABEL, INPUT_LABEL, LATCHED_LABEL, TopicReport, quiet_label
 from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_ICONS, SEVERITY_LABELS, Severity
 
 #: Status cells for an OK topic that is quiet by design, or never
@@ -17,6 +17,7 @@ from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_ICONS, SEVERITY_LABEL
 _QUIET_STATUS_CELLS = {
     IDLE_LABEL: "[dim]◌ idle[/dim]",
     LATCHED_LABEL: "[green]● latched[/green]",
+    INPUT_LABEL: "[dim]◌ input[/dim]",
 }
 _PRESENCE_STATUS_CELL = "[dim]◌ present[/dim]"
 

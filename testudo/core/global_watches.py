@@ -77,6 +77,7 @@ def subscribe_tf_watch(manager: "SubscriptionManager", topics_by_name: dict[str,
         manager._no_publishers.add(TF_TOPIC)
         return claimed
     manager._no_publishers.discard(TF_TOPIC)
+    manager._had_publishers.add(TF_TOPIC)
     manager._owning_node_by_topic[TF_TOPIC] = fully_qualified_node_name(
         publisher_info.node_namespace, publisher_info.node_name
     )

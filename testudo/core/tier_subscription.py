@@ -60,10 +60,16 @@ def subscribe_topic(
     try:
         publisher_info = first_publisher_info(publisher_infos, topic_name)
     except NoPublishersError:
-        _logger.warning("topic '%s' has no publishers", topic_name)
+        _logger.info("topic '%s' has no publishers", topic_name)
         manager._no_publishers.add(topic_name)
+        manager._subscribers_by_topic[topic_name] = tuple(
+            fully_qualified_node_name(info.node_namespace, info.node_name)
+            for info in manager._node.get_subscriptions_info_by_topic(topic_name)
+        )
         return
     manager._no_publishers.discard(topic_name)
+    manager._subscribers_by_topic.pop(topic_name, None)
+    manager._had_publishers.add(topic_name)
     manager._publishers_by_topic[topic_name] = tuple(describe_publisher(info) for info in publisher_infos)
     manager._owning_node_by_topic[topic_name] = fully_qualified_node_name(
         publisher_info.node_namespace, publisher_info.node_name

@@ -76,6 +76,7 @@ def test_status_cell_shows_severity_by_default() -> None:
 def test_status_cell_quiet_topics_get_their_own_glyph() -> None:
     assert "◌ idle" in status_cell(_report("vitals", Severity.OK, label="idle"))
     assert "● latched" in status_cell(_report("vitals", Severity.OK, label="latched"))
+    assert "◌ input" in status_cell(_report("vitals", Severity.OK, label="input"))
     assert "◌ idle" in status_cell(_report("full", Severity.OK, values={"idle_for_s": "3.0"}))
 
 

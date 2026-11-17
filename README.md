@@ -42,8 +42,12 @@ covariance sanity, TF tree health) those tools don't cover out of the box.
 - **Quiet is not dead.** A latched (transient_local) topic like
   `/robot_description` reads `● latched`, not STALE. A topic that only
   publishes when something happens (behavior tree logs, action goal
-  statuses, or anything you declare with `event_driven: true`) reads
-  `◌ idle`.
+  statuses and feedback, planned paths, costmap updates, or anything you
+  declare with `event_driven: true`) reads `◌ idle`. A topic other nodes
+  subscribe to but nobody publishes (`/goal_pose`, a teleop `cmd_vel`)
+  reads `◌ input`: an input nobody is driving right now. It's still an
+  error when the topic is declared, or when it had a publisher earlier
+  and lost it.
 - **Built-in content checks**, all through the same plugin interface
   external users build against:
 

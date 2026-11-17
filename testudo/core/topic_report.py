@@ -58,7 +58,10 @@ def is_event_driven(topic_name: str, msg_type: str | None) -> bool:
 #: dead: severity OK, and the TUI renders them with their own glyphs.
 IDLE_LABEL = "idle"
 LATCHED_LABEL = "latched"
-QUIET_LABELS = frozenset({IDLE_LABEL, LATCHED_LABEL})
+#: A topic other nodes subscribe to that nobody publishes: an input nobody
+#: is driving right now (/goal_pose, a teleop cmd_vel), not a dead output.
+INPUT_LABEL = "input"
+QUIET_LABELS = frozenset({IDLE_LABEL, LATCHED_LABEL, INPUT_LABEL})
 
 
 def quiet_label(status: CheckStatus) -> str | None:
@@ -275,6 +278,33 @@ def full_tier_report(
             metrics=metrics,
         )
     return TopicReport(topic=topic_name, msg_type=msg_type, tier="full", status=status, rate_hz=reported_rate)
+
+
+def no_publishers_report(
+    topic_name: str, msg_type: str, idle_input: bool, subscribers: tuple[str, ...] = ()
+) -> TopicReport:
+    """A topic on the graph with no publisher: an ERROR, or an idle input when `idle_input`.
+
+    The caller decides `idle_input`: true only for a topic that isn't
+    declared and never had a publisher this session. A declared topic is
+    expected to be published, and one that lost its publisher is a fault
+    (a crashed driver leaves its consumers subscribed); otherwise a topic
+    only subscribed to is an input nobody drives right now -- a goal, a
+    teleop command, a speed limit -- or one this robot doesn't use at all.
+    """
+    if idle_input:
+        values = {"subscribers": ", ".join(subscribers)} if subscribers else {}
+        status = CheckStatus(
+            severity=Severity.OK, label=INPUT_LABEL, message="input: subscribed, nobody publishing", values=values
+        )
+    else:
+        status = CheckStatus(
+            severity=Severity.ERROR,
+            label="liveness",
+            message="no publishers",
+            codes={"LIVE-001": colorize("no publishers", Severity.ERROR)},
+        )
+    return TopicReport(topic=topic_name, msg_type=msg_type, tier="vitals", status=status)
 
 
 def presence_report(topic_name: str, msg_type: str) -> TopicReport:

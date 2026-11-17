@@ -97,6 +97,9 @@ class _FakeNode:
     def get_publishers_info_by_topic(self, topic_name: str) -> list[object]:
         return self._publishers_by_topic.get(topic_name, [])
 
+    def get_subscriptions_info_by_topic(self, topic_name: str) -> list[object]:
+        return [_FakeEndpointInfo(qos_profile=_qos(), node_name="bt_navigator")]
+
     def create_subscription(self, msg_class, topic, callback, qos_profile, raw: bool = False):
         sub = _RecordedSubscription(msg_class, topic, callback, qos_profile, raw)
         self.subscriptions.append(sub)
@@ -771,9 +774,30 @@ def test_hysteresis_debounces_full_tier_severity_transitions() -> None:
     assert manager.reports()[0].status.severity == Severity.ERROR
 
 
-def test_topic_with_no_publishers_is_reported_as_error_without_subscribing() -> None:
-    node = _FakeNode(topics=[("/scan", ["sensor_msgs/msg/LaserScan"])], publishers_by_topic={})
+def _declared_scan_config() -> TestudoConfig:
+    return TestudoConfig(
+        publish=PublishConfig(topic="/diagnostics"),
+        topics={"sensor_msgs/msg/LaserScan": [TopicConfig(name="/scan", msg_type="sensor_msgs/msg/LaserScan")]},
+    )
+
+
+def test_undeclared_topic_with_only_subscribers_is_an_idle_input_without_subscribing() -> None:
+    node = _FakeNode(topics=[("/goal_pose", ["geometry_msgs/msg/PoseStamped"])], publishers_by_topic={})
     manager = SubscriptionManager(node, _config(), [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+
+    assert node.subscriptions == []
+    reports = manager.reports()
+    assert len(reports) == 1
+    assert reports[0].status.severity == Severity.OK
+    assert reports[0].status.label == "input"
+    assert reports[0].status.values == {"subscribers": "/bt_navigator"}
+    assert reports[0].status.codes == {}
+
+
+def test_declared_topic_with_no_publishers_is_reported_as_error_without_subscribing() -> None:
+    node = _FakeNode(topics=[("/scan", ["sensor_msgs/msg/LaserScan"])], publishers_by_topic={})
+    manager = SubscriptionManager(node, _declared_scan_config(), [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
     manager.start()
 
     assert node.subscriptions == []
@@ -783,6 +807,15 @@ def test_topic_with_no_publishers_is_reported_as_error_without_subscribing() -> 
     assert reports[0].status.severity == Severity.ERROR
     assert "no publishers" in reports[0].status.message
     assert "LIVE-001" in reports[0].status.codes
+
+
+def test_a_topic_that_lost_its_publisher_is_an_error_not_an_idle_input() -> None:
+    node = _FakeNode(topics=[("/odom", ["nav_msgs/msg/Odometry"])], publishers_by_topic={})
+    manager = SubscriptionManager(node, _config(), [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager._had_publishers.add("/odom")  # seen with a publisher earlier, e.g. before a dead-stack clear
+    manager.start()
+
+    assert manager.reports()[0].status.severity == Severity.ERROR
 
 
 def test_vitals_topic_with_no_messages_received_is_error() -> None:
@@ -1206,9 +1239,9 @@ def test_weight_for_topic_defaults_to_one() -> None:
 def test_overall_status_reflects_worst_report() -> None:
     node = _FakeNode(
         topics=[("/scan", ["sensor_msgs/msg/LaserScan"])],
-        publishers_by_topic={},  # no publishers -> ERROR report
+        publishers_by_topic={},  # declared, no publishers -> ERROR report
     )
-    manager = SubscriptionManager(node, _config(), [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager = SubscriptionManager(node, _declared_scan_config(), [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
     manager.start()
     overall = manager.overall_status(SeverityMode.WORST)
     assert overall.severity == Severity.ERROR
@@ -1296,7 +1329,7 @@ def test_maintain_retries_a_topic_that_previously_had_no_publishers() -> None:
     assert node.subscriptions == []
     reports = manager.reports()
     assert len(reports) == 1
-    assert "no publishers" in reports[0].status.message
+    assert reports[0].status.label == "input"
 
     # The publisher shows up later.
     publishers["/scan"] = [_FakeEndpointInfo(qos_profile=_qos())]
@@ -1307,7 +1340,7 @@ def test_maintain_retries_a_topic_that_previously_had_no_publishers() -> None:
     # Exactly one row -- the earlier "no publishers" entry must not linger
     # alongside the now-subscribed topic's own report.
     assert len(reports) == 1
-    assert "no publishers" not in reports[0].status.message
+    assert reports[0].status.label != "input"
 
 
 def test_maintain_clears_all_topics_once_the_stack_goes_stale_and_disappears() -> None:
