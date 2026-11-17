@@ -228,7 +228,7 @@ def _run_tui(node: rclpy.node.Node, data_source, on_snapshot, poll_rate_hz: floa
         sim_time_active=TestudoClock.from_node(node).is_sim_time_active(),
         on_snapshot=on_snapshot,
     )
-    with terminal_title(TITLE):
+    with terminal_title(TITLE, window_icon=True):
         app.run()
 
 
@@ -355,7 +355,7 @@ def _watch_replay(bag: str, config: TestudoConfig, plugins: list, node: rclpy.no
         dds_implementation=_dds_implementation(),
         sim_time_active=True,
     )
-    with suppressed_terminal_logging(), terminal_title(TITLE + REPLAY_SUFFIX):
+    with suppressed_terminal_logging(), terminal_title(TITLE + REPLAY_SUFFIX, window_icon=True):
         app.run()
     return 0
 

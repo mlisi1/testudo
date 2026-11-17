@@ -6,6 +6,8 @@ setup(
     name=package_name,
     version="0.0.1",
     packages=find_packages(exclude=["tests", "tests.*"]),
+    # The shield as the TUI's X11 window icon (tools/make_window_icon.py).
+    package_data={"testudo.tui.assets": ["window_icon.bin"]},
     data_files=[
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),

@@ -1,4 +1,4 @@
-"""The terminal's window title while the TUI runs: `testudo`, the user's own title back on exit.
+"""The terminal's window title (and, on X11, icon) while the TUI runs; the user's own back on exit.
 
 Textual sets no terminal title itself. xterm-compatible terminals (xterm,
 VTE/GNOME Terminal, Konsole, kitty, Alacritty, tmux, ...) keep a title
@@ -33,20 +33,34 @@ def set_title_sequence(title: str) -> str:
 
 
 @contextlib.contextmanager
-def terminal_title(title: str, stream: TextIO | None = None) -> Iterator[None]:
+def terminal_title(title: str, stream: TextIO | None = None, *, window_icon: bool = False) -> Iterator[None]:
     """Show `title` as the terminal's title for the `with` block, then restore the previous one.
 
     `stream` defaults to the process's real stdout; nothing is written
     unless it's a terminal (piped or redirected output stays clean).
+    `window_icon` also sets the shield as the window's icon, best effort
+    (`window_icon.set_window_icon`, X11 only), restored first on the way out.
     """
     out = stream if stream is not None else sys.__stdout__
     if out is None or not out.isatty():
         yield
         return
-    out.write(PUSH_TITLE + set_title_sequence(title))
-    out.flush()
+
+    def show(text: str) -> None:
+        out.write(set_title_sequence(text))
+        out.flush()
+
+    out.write(PUSH_TITLE)
+    restore_icon = None
+    if window_icon:
+        from testudo.tui.window_icon import set_window_icon
+
+        restore_icon = set_window_icon(show)
+    show(title)
     try:
         yield
     finally:
+        if restore_icon is not None:
+            restore_icon()
         out.write(POP_TITLE)
         out.flush()
