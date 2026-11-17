@@ -28,6 +28,7 @@ from testudo.core.discovery import (
     first_publisher_info,
     fully_qualified_node_name,
     resolve_subscription_qos,
+    subscription_qos,
 )
 from testudo.core.exclusion import maybe_record_excluded
 from testudo.core.vitals import TopicVitals
@@ -91,7 +92,7 @@ def subscribe_topic(
 
     plugin_class = manager._plugin_class_by_msg_type.get(msg_type_str)
     if plugin_class is None:
-        subscribe_vitals_tier(manager, topic_name, msg_class, publisher_info.qos_profile)
+        subscribe_vitals_tier(manager, topic_name, msg_class, subscription_qos(publisher_info.qos_profile))
         return
 
     topic_config = manager._topic_config_by_name.get(topic_name)
@@ -105,7 +106,14 @@ def subscribe_topic(
         thresholds.update(action_config.thresholds)
         related_topics = {**related_topics, **action_config.related_topics}
     subscribe_full_tier(
-        manager, topic_name, msg_class, publisher_info.qos_profile, plugin_class, thresholds, related_topics, topics_by_name
+        manager,
+        topic_name,
+        msg_class,
+        subscription_qos(publisher_info.qos_profile),
+        plugin_class,
+        thresholds,
+        related_topics,
+        topics_by_name,
     )
 
 

@@ -80,7 +80,9 @@ def test_qos_from_publisher_infos_raises_on_no_publishers() -> None:
 def test_resolve_subscription_qos_uses_node_query() -> None:
     qos = QoSProfile(depth=5)
     node = _FakeNode(topics=[], publishers_by_topic={"/scan": [_FakeEndpointInfo(qos_profile=qos)]})
-    assert resolve_subscription_qos(node, "/scan") is qos
+    resolved = resolve_subscription_qos(node, "/scan")
+    assert resolved.reliability == qos.reliability and resolved.durability == qos.durability
+    assert resolved.depth == 10  # the offered depth 5, raised to MIN_SUBSCRIPTION_DEPTH
 
 
 def test_resolve_subscription_qos_raises_on_no_publishers() -> None:
@@ -129,3 +131,19 @@ def test_fully_qualified_node_name_combines_namespace_and_name() -> None:
     assert fully_qualified_node_name("/ns", "talker") == "/ns/talker"
     assert fully_qualified_node_name("/ns/", "talker") == "/ns/talker"
     assert fully_qualified_node_name("", "talker") == "/talker"
+
+
+def test_subscription_qos_matches_the_offer_but_never_keeps_a_shallow_history() -> None:
+    from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+
+    from testudo.core.discovery import LATCHED_SUBSCRIPTION_DEPTH, MIN_SUBSCRIPTION_DEPTH, subscription_qos
+
+    sensor = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT, durability=DurabilityPolicy.VOLATILE)
+    qos = subscription_qos(sensor)
+    assert qos.depth == MIN_SUBSCRIPTION_DEPTH and qos.history == HistoryPolicy.KEEP_LAST
+    assert qos.reliability == ReliabilityPolicy.BEST_EFFORT and qos.durability == DurabilityPolicy.VOLATILE
+
+    # /tf_static: several static broadcasters' latched messages share one keyless instance.
+    static = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+    assert subscription_qos(static).depth == LATCHED_SUBSCRIPTION_DEPTH
+    assert subscription_qos(QoSProfile(depth=500)).depth == 500

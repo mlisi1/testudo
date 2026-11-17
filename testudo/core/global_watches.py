@@ -24,6 +24,7 @@ from testudo.core.discovery import (
     list_lifecycle_nodes,
     resolve_publisher_info,
     resolve_subscription_qos,
+    subscription_qos,
 )
 from testudo.core.tier_subscription import subscribe_full_tier
 
@@ -95,7 +96,14 @@ def subscribe_tf_watch(manager: "SubscriptionManager", topics_by_name: dict[str,
     related_topics = {"tf_static": TF_STATIC_TOPIC} if TF_STATIC_TOPIC in topics_by_name else {}
 
     state = subscribe_full_tier(
-        manager, TF_TOPIC, msg_class, publisher_info.qos_profile, plugin_class, thresholds, related_topics, topics_by_name
+        manager,
+        TF_TOPIC,
+        msg_class,
+        subscription_qos(publisher_info.qos_profile),
+        plugin_class,
+        thresholds,
+        related_topics,
+        topics_by_name,
     )
 
     # TF's watch list comes from config.tf (parent/child pairs), not the
