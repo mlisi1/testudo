@@ -811,6 +811,39 @@ def test_declared_topic_with_no_publishers_is_reported_as_error_without_subscrib
     assert "LIVE-001" in reports[0].status.codes
 
 
+def test_rate_hz_is_checked_on_a_full_tier_topic_too() -> None:
+    node = _FakeNode(
+        topics=[("/odom", ["nav_msgs/msg/Odometry"])],
+        publishers_by_topic={"/odom": [_FakeEndpointInfo(qos_profile=_qos())]},
+    )
+    discovered = [DiscoveredPlugin(name="recording", plugin_class=_RecordingPlugin, source="packaged")]
+    rate = LevelsOverride(warn=9.0, error=5.0, given=frozenset({"warn", "error"}))
+    config = TestudoConfig(
+        topics={"nav_msgs/msg/Odometry": [TopicConfig(name="/odom", msg_type="nav_msgs/msg/Odometry", levels={"rate_hz": rate})]}
+    )
+    clock_seconds = [0.0]
+
+    class _MutableClock:
+        def now(self):
+            class _T:
+                nanoseconds = int(clock_seconds[0] * 1e9)
+
+            return _T()
+
+    clock = TestudoClock(_MutableClock(), sim_time_query=lambda: False)
+    manager = SubscriptionManager(node, config, discovered, clock=clock, stale_after_seconds=100.0, **_FAST_SETTLE)
+    manager.start()
+
+    callback = node.subscriptions[0].callback
+    callback(object())
+    clock_seconds[0] = 0.5
+    callback(object())  # 2 Hz: alive, plugin OK, but far under the 5 Hz error level
+    report = manager.reports()[0]
+    assert report.tier == "full"
+    assert report.status.severity == Severity.ERROR
+    assert report.status.code_severities == {"LIVE-004": Severity.ERROR}
+
+
 def test_code_overrides_apply_to_reports_but_not_to_dead_stack_detection() -> None:
     node = _FakeNode(topics=[("/scan", ["sensor_msgs/msg/LaserScan"])], publishers_by_topic={})
     config = TestudoConfig(
@@ -1227,7 +1260,7 @@ def test_rate_hz_threshold_flags_slow_vitals_topic() -> None:
     sub.callback(b"")  # second message at t=5.0 -> rate = 1/5 = 0.2 Hz, well below orange(1.0)
     reports = manager.reports()
     assert reports[0].status.severity == Severity.ERROR
-    assert "below configured threshold" in reports[0].status.message
+    assert "below 1 Hz" in reports[0].status.message
 
 
 def test_weight_for_topic_uses_declared_topic_weight() -> None:

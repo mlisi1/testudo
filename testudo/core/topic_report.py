@@ -11,7 +11,15 @@ from dataclasses import dataclass, replace
 
 from testudo.core.lifecycle import LifecycleTracker
 from testudo.core.vitals import TopicVitals
-from testudo.plugins.base import ActiveCodes, CheckStatus, Severity, SeverityLevels, colorize, evaluate_levels
+from testudo.plugins.base import (
+    ActiveCodes,
+    CheckStatus,
+    Severity,
+    SeverityLevels,
+    code_severity,
+    colorize,
+    evaluate_levels,
+)
 
 
 @dataclass(frozen=True)
@@ -221,11 +229,10 @@ def vitals_report(
     severity = Severity.OK
     message = "alive"
     codes = ActiveCodes()
-    if monitor_hz and rate_levels is not None and rate is not None:
-        severity = evaluate_levels(rate, rate_levels, higher_is_worse=False)
-        if severity != Severity.OK:
-            message = f"rate {rate:.2f}Hz below configured threshold"
-            codes.add("LIVE-004", message, severity)
+    slow = rate_problem(rate, rate_levels, latched=latched, event_driven=event_driven)
+    if slow is not None:
+        severity, message = slow
+        codes.add("LIVE-004", message, severity)
 
     status = CheckStatus(
         severity=severity,
@@ -236,6 +243,25 @@ def vitals_report(
         code_severities=codes.severities,
     )
     return TopicReport(topic=topic_name, msg_type=msg_type, tier="vitals", status=status, rate_hz=rate)
+
+
+def rate_problem(
+    rate: float | None, rate_levels: SeverityLevels | None, *, latched: bool = False, event_driven: bool = False
+) -> tuple[int, str] | None:
+    """(severity, message) when `rate` is below a configured `rate_hz` level (LIVE-004), else None.
+
+    Lower is worse. Never for a quiet-by-design topic (latched, event-driven),
+    whose rate says nothing about its health, nor without a rate (`--no-hz`,
+    too few messages yet). Costs nothing: the rate is already tracked for
+    every subscribed topic.
+    """
+    if rate is None or rate_levels is None or latched or event_driven:
+        return None
+    severity = evaluate_levels(rate, rate_levels, higher_is_worse=False)
+    if severity == Severity.OK:
+        return None
+    limit = rate_levels.error if severity >= Severity.ERROR else rate_levels.warn
+    return severity, f"rate {rate:.2f} Hz below {limit:g} Hz"
 
 
 def full_tier_report(
@@ -250,8 +276,13 @@ def full_tier_report(
     *,
     latched: bool = False,
     event_driven: bool = False,
+    rate_levels: SeverityLevels | None = None,
 ) -> TopicReport:
     """Build a full-tier report: liveness verdict takes priority, else the (debounced) content status.
+
+    `rate_levels` (a declared topic's `rate_hz`) adds LIVE-004 next to the
+    plugin's own codes when the topic is alive but slower than configured
+    (`rate_problem`); the topic takes the worse of the two severities.
 
     A topic that is quiet by design (`latched`/`event_driven`, see
     `liveness_status`) keeps its content status as-is -- a Nav2 action
@@ -275,6 +306,9 @@ def full_tier_report(
     metrics = {**vitals_metrics(vitals, age, monitor_hz), **content.metrics} if content.metrics else {}
     if liveness is None:
         status = replace(content, metrics=metrics) if metrics else content
+        slow = rate_problem(reported_rate, rate_levels, latched=latched, event_driven=event_driven)
+        if slow is not None:
+            status = _with_code(status, "LIVE-004", *slow)
     elif liveness.label in QUIET_LABELS:
         quiet = {f"{liveness.label}_for_s": f"{age:.1f}"} if age is not None else {}
         quiet_metrics = {f"{liveness.label}_for_s": age} if metrics and age is not None else {}
@@ -288,6 +322,18 @@ def full_tier_report(
             metrics=metrics,
         )
     return TopicReport(topic=topic_name, msg_type=msg_type, tier="full", status=status, rate_hz=reported_rate)
+
+
+def _with_code(status: CheckStatus, code: str, severity: int, message: str) -> CheckStatus:
+    """`status` with one more active `code`; its severity becomes the worse of the two."""
+    codes = ActiveCodes(dict(status.codes), {c: code_severity(status, c) for c in status.codes})
+    codes.add(code, message, severity)
+    return replace(
+        status,
+        severity=max(status.severity, severity),
+        codes=codes.messages,
+        code_severities=codes.severities,
+    )
 
 
 def no_publishers_report(

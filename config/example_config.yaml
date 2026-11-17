@@ -74,6 +74,12 @@ topics:
         # the plugin's indoor-tuned default tolerates.
         invalid_ratio:
           warn: 0.02
+        # The driver spins at 10 Hz: a little slow is degraded, half rate
+        # means something has gone wrong (LIVE-004). Works on any declared
+        # topic, plugin or not, at no extra cost.
+        rate_hz:
+          warn: 9.0
+          error: 5.0
 
   sensor_msgs/msg/Imu:
     - name: /imu/data
@@ -120,8 +126,9 @@ topics:
         GNSS-001: warn
 
   # Costmap/planner/controller actual-vs-configured rate: no dedicated
-  # plugin needed for this -- any declared topic's vitals-tier rate gets
-  # checked against `rate_hz` if it's set (lower is worse). This costmap
+  # plugin needed for this -- any declared topic's rate is checked against
+  # `rate_hz` if it's set (lower is worse; unchecked by default, and never
+  # for an event-driven or latched topic). This costmap
   # is configured to update at 5 Hz; falling much below that means the
   # controller isn't keeping up.
   nav_msgs/msg/OccupancyGrid:

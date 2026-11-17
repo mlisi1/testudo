@@ -24,6 +24,8 @@ from testudo.core.topic_report import (
     vitals_report,
 )
 
+from testudo.plugins.base import SeverityLevels
+
 if TYPE_CHECKING:
     from testudo.core.subscription_manager import SubscriptionManager
 
@@ -58,16 +60,13 @@ def build_reports(manager: "SubscriptionManager", *, code_overrides: bool = True
         rule_text = f"{rule.match_type.value} {rule.pattern}" if rule is not None else ""
         reports.append(excluded_report(topic_name, msg_type, rule_text))
     for topic_name, vitals in manager._vitals.items():
-        topic_config = manager._topic_config_by_name.get(topic_name)
-        rate_override = topic_config.levels.get("rate_hz") if topic_config is not None else None
-        rate_levels = rate_override.over(None) if rate_override is not None else None
         report = vitals_report(
             topic_name,
             manager._msg_type_by_topic[topic_name],
             vitals,
             now,
             manager._stale_after_seconds,
-            rate_levels,
+            _rate_levels(manager, topic_name),
             manager._monitor_hz,
             **_quiet_flags(manager, topic_name),
         )
@@ -83,6 +82,7 @@ def build_reports(manager: "SubscriptionManager", *, code_overrides: bool = True
             manager._stale_after_seconds,
             manager._monitor_hz,
             **_quiet_flags(manager, topic_name),
+            rate_levels=_rate_levels(manager, topic_name),
         )
         reports.append(_suppress(manager, topic_name, report))
 
@@ -112,6 +112,13 @@ def is_declared(manager: "SubscriptionManager", topic_name: str) -> bool:
         or topic_name in manager._action_config_by_status_topic
         or (topic_name == TF_TOPIC and bool(manager._config.tf))
     )
+
+
+def _rate_levels(manager: "SubscriptionManager", topic_name: str) -> SeverityLevels | None:
+    """A declared topic's `thresholds.rate_hz` warn/error (LIVE-004), or None: rate is unchecked by default."""
+    topic_config = manager._topic_config_by_name.get(topic_name)
+    override = topic_config.levels.get("rate_hz") if topic_config is not None else None
+    return override.over(None) if override is not None else None
 
 
 def _quiet_flags(manager: "SubscriptionManager", topic_name: str) -> dict[str, bool]:

@@ -74,7 +74,7 @@ def test_vitals_report_rate_below_threshold_is_flagged() -> None:
     zone = SeverityLevels(warn=4.0, error=1.0)
     report = vitals_report("/x", "nav_msgs/msg/OccupancyGrid", vitals, now=1.0, stale_after_seconds=5.0, rate_levels=zone)
     assert report.status.severity == Severity.WARN
-    assert "below configured threshold" in report.status.message
+    assert "below 4 Hz" in report.status.message
     assert "LIVE-004" in report.status.codes
 
 
@@ -275,3 +275,28 @@ def test_paths_costmap_updates_and_action_feedback_are_event_driven_by_default()
     assert is_event_driven("/navigate_to_pose/_action/feedback", "nav2_msgs/action/NavigateToPose_FeedbackMessage")
     assert not is_event_driven("/scan", "sensor_msgs/msg/LaserScan")
     assert not is_event_driven("/feedback", "std_msgs/msg/String")
+
+
+def test_full_tier_rate_below_its_level_adds_live_004_next_to_the_plugin_codes() -> None:
+    vitals = _vitals_with_messages(3, [0.0, 0.5, 1.0])  # 2 Hz
+    content = CheckStatus(
+        Severity.WARN, "plugin", "", codes={"SENS-005": "w"}, code_severities={"SENS-005": Severity.WARN}
+    )
+    report = full_tier_report(
+        "/scan", "t", vitals, content, content, now=1.0, stale_after_seconds=5.0,
+        rate_levels=SeverityLevels(warn=9.0, error=5.0),
+    )  # fmt: skip
+    assert report.status.severity == Severity.ERROR
+    assert report.status.code_severities == {"SENS-005": Severity.WARN, "LIVE-004": Severity.ERROR}
+    assert "rate 2.00 Hz below 5 Hz" in report.status.codes["LIVE-004"]
+
+
+def test_full_tier_rate_is_not_judged_on_quiet_by_design_topics_or_with_no_hz() -> None:
+    vitals = _vitals_with_messages(3, [0.0, 0.5, 1.0])
+    content = CheckStatus(Severity.OK, "plugin", "")
+    levels = SeverityLevels(warn=9.0, error=5.0)
+    common = dict(now=1.0, stale_after_seconds=5.0, rate_levels=levels)
+    assert full_tier_report("/x", "t", vitals, content, content, event_driven=True, **common).status.codes == {}
+    assert full_tier_report("/x", "t", vitals, content, content, latched=True, **common).status.codes == {}
+    assert full_tier_report("/x", "t", vitals, content, content, monitor_hz=False, **common).status.codes == {}
+    assert "LIVE-004" in full_tier_report("/x", "t", vitals, content, content, **common).status.codes
