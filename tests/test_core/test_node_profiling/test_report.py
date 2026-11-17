@@ -242,3 +242,13 @@ def test_published_values_keep_one_plain_number_per_key() -> None:
     values = _build(_sample()).values
     assert values["memory_mb"] == "50.0"
     assert values["ctx_switches_involuntary"] == "5"
+
+
+def test_high_cpu_and_memory_each_get_a_code() -> None:
+    status = _build(_sample(cpu_percent=95.0, memory_rss_mb=200.0))
+    assert "NODE-004" in status.codes and "95%" in status.codes["NODE-004"]
+    assert "NODE-005" in status.codes and "200 MB" in status.codes["NODE-005"]
+
+
+def test_cpu_code_waits_for_the_first_real_cpu_reading() -> None:
+    assert "NODE-004" not in _build(_sample(cpu_percent=95.0, warming_up=True)).codes

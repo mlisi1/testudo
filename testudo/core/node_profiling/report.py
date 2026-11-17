@@ -117,6 +117,10 @@ def build_status(
     ctx_switch_severity = Severity.OK
 
     codes: dict[str, str] = {}
+    if cpu_severity >= Severity.WARN:
+        codes["NODE-004"] = colorize(f"CPU high ({sample.cpu_percent:.0f}%)", cpu_severity)
+    if memory_severity >= Severity.WARN:
+        codes["NODE-005"] = colorize(f"memory high ({sample.memory_rss_mb:.0f} MB RSS)", memory_severity)
     if sample.status in _STATUS_CODES:
         codes["NODE-002"] = colorize(_STATUS_CODES[sample.status], status_severity)
     if sample.ctx_switches_involuntary_per_sec is not None:
