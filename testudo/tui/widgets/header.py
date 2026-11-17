@@ -156,15 +156,21 @@ class TestudoHeader(Static):
         self.uptime_seconds = time.monotonic() - self._started_monotonic
 
     def _render_text(self) -> str:
-        wide = self.size.width >= WIDE_STATUS_BAR_WIDTH
-        left = self._left_text(wide)
-        if self.verdict is None:
-            return left
-        right = verdict_markup(*self.verdict, wide=wide)
+        content_width = self.content_size.width or self.size.width
+        # The wide layout (DDS segment, full gauge) only when the bar is wide
+        # enough *and* it actually fits: the replay position segment, or a
+        # long distro/DDS name, can push the verdict off the edge otherwise.
+        layouts = (True, False) if self.size.width >= WIDE_STATUS_BAR_WIDTH else (False,)
+        for wide in layouts:
+            left = self._left_text(wide)
+            if self.verdict is None:
+                return left
+            right = verdict_markup(*self.verdict, wide=wide)
+            gap = content_width - cell_len(Text.from_markup(left).plain) - cell_len(Text.from_markup(right).plain)
+            if gap >= 2:
+                break
         # Padding ends the right-hand side flush with the bar's content edge;
         # at least two spaces apart even when the bar is too narrow for both.
-        content_width = self.content_size.width or self.size.width
-        gap = content_width - cell_len(Text.from_markup(left).plain) - cell_len(Text.from_markup(right).plain)
         return f"{left}{' ' * max(2, gap)}{right}"
 
     def _left_text(self, wide: bool) -> str:

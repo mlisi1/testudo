@@ -190,8 +190,14 @@ def test_cleared_faults_come_last_one_dim_line_per_code() -> None:
         ClearedFault("/odom", "ODOM-002", Severity.WARN, "[yellow]σ high[/yellow]", 80.0, 90.0),
         ClearedFault("/odom", "ODOM-002", Severity.WARN, "older", 10.0, 20.0),
     ]
-    lines = _plain(render_detail(report, 80, 20, cleared, now=100.0))
+    markup = render_detail(report, 80, 20, cleared, now=100.0)
+    lines = _plain(markup)
     assert lines[-1] == "▲ [ODOM-002] cleared 10s ago, lasted 10s ×2 · σ high"
+    # What the Detail Panel actually renders with: Textual's parser, which
+    # swallowed an unescaped "[ODOM-002]" as a style tag.
+    from textual.content import Content
+
+    assert Content.from_markup(markup).plain.splitlines()[-1] == lines[-1]
     assert lines[-3].startswith("[ODOM-001]")
 
 

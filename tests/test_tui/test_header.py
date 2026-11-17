@@ -105,3 +105,30 @@ def test_verdict_chip_names_fault_over_stale_when_any_topic_errors() -> None:
     assert chip_severity(stale, {Severity.STALE: 6, Severity.ERROR: 4}) == Severity.ERROR
     counts = {Severity.STALE: 6, Severity.ERROR: 4, Severity.WARN: 2}
     assert Text.from_markup(verdict_markup(stale, counts, wide=True)).plain == " ✗ FAULT  ■6 ✗4 ▲2"
+
+
+def test_wide_bar_falls_back_to_the_narrow_layout_when_a_replay_segment_would_push_the_verdict_off() -> None:
+    from rich.text import Text
+
+    from testudo.plugins.base import CheckStatus, Severity
+
+    class _App(App):
+        def compose(self) -> ComposeResult:
+            yield TestudoHeader("jazzy", "177", "rmw_cyclonedds_cpp")
+
+    overall = CheckStatus(Severity.ERROR, "overall", "", values={"weighted_score": "0.40"})
+
+    async def body() -> None:
+        app = _App()
+        async with app.run_test(size=(136, 10)):
+            header = app.query_one(TestudoHeader)
+            header.sim_time_active = True
+            header.verdict = (overall, {Severity.ERROR: 5, Severity.STALE: 3})
+            assert "rmw_cyclonedds_cpp" in Text.from_markup(header._render_text()).plain
+            header.uptime_seconds = 176.0  # "up 2m56s", as on the 136x36 screenshot that clipped
+            header.replay = (96.0, 155.0, False)
+            plain = Text.from_markup(header._render_text()).plain
+            assert len(plain) <= header.content_size.width
+            assert "rmw_cyclonedds_cpp" not in plain and plain.rstrip().endswith("%")
+
+    asyncio.run(body())

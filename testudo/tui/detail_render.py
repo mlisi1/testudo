@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import math
 
-from rich.markup import escape
 from rich.text import Text
 
 from testudo.core.fault_history import ClearedFault, format_ago, latest_per_code
@@ -352,7 +351,10 @@ def cleared_fault_line(fault: ClearedFault, times: int, now: float, width: int) 
     if len(text) > room:
         text = text[: room - 1] + "…"
     icon = SEVERITY_ICONS.get(fault.severity, "?")
-    return f"[dim {color}]{icon}[/dim {color}] [dim]{escape(text)}[/dim]"
+    # Every "[" escaped, not `rich.markup.escape`: that one leaves `[LIVE-003]`
+    # alone (it only escapes lowercase tag shapes), and Textual's own markup
+    # parser then swallows it as a style tag.
+    return f"[dim {color}]{icon}[/dim {color}] [dim]{text.replace('[', chr(92) + '[')}[/dim]"
 
 
 def render_detail(
