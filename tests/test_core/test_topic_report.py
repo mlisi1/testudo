@@ -264,3 +264,14 @@ def test_full_tier_report_leaves_metrics_empty_for_a_plugin_without_any() -> Non
         "/x", "t", vitals, debounced_status=content, fallback_status=content, now=1.0, stale_after_seconds=2.0
     )
     assert report.status.metrics == {}
+
+
+def test_paths_costmap_updates_and_action_feedback_are_event_driven_by_default() -> None:
+    from testudo.core.topic_report import is_event_driven
+
+    assert is_event_driven("/plan", "nav_msgs/msg/Path")
+    assert is_event_driven("/global_costmap/costmap_updates", "map_msgs/msg/OccupancyGridUpdate")
+    assert is_event_driven("/local_costmap/costmap_raw_updates", "nav2_msgs/msg/CostmapUpdate")
+    assert is_event_driven("/navigate_to_pose/_action/feedback", "nav2_msgs/action/NavigateToPose_FeedbackMessage")
+    assert not is_event_driven("/scan", "sensor_msgs/msg/LaserScan")
+    assert not is_event_driven("/feedback", "std_msgs/msg/String")

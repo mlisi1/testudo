@@ -52,7 +52,7 @@ from testudo.core.maintenance import (
 from testudo.core.maintenance import discover_and_subscribe as _discover_and_subscribe
 from testudo.core.maintenance import maintain as _maintain
 from testudo.core.topic_report import (
-    EVENT_DRIVEN_MSG_TYPES,
+    is_event_driven,
     TopicReport,
     excluded_report,
     full_tier_report,
@@ -373,7 +373,7 @@ class SubscriptionManager:
     def _quiet_flags(self, topic_name: str) -> dict[str, bool]:
         """`latched`/`event_driven` kwargs for a topic's liveness verdict (see `liveness_status`)."""
         topic_config = self._topic_config_by_name.get(topic_name)
-        event_driven = self._msg_type_by_topic.get(topic_name) in EVENT_DRIVEN_MSG_TYPES or (
+        event_driven = is_event_driven(topic_name, self._msg_type_by_topic.get(topic_name)) or (
             topic_config is not None and topic_config.event_driven
         )
         return {"latched": topic_name in self._latched, "event_driven": event_driven}

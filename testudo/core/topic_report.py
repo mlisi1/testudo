@@ -30,11 +30,29 @@ class TopicReport:
 
 
 #: Message types whose publishers only speak when something changes -- a
-#: behavior tree's status transitions, an action server's goal status --
-#: so silence means "nothing is happening", not "the publisher died".
-#: Extended per topic with `event_driven: true` in config (e.g. a
-#: controller's cmd_vel, silent whenever the robot isn't driving).
-EVENT_DRIVEN_MSG_TYPES = frozenset({"nav2_msgs/msg/BehaviorTreeLog", "action_msgs/msg/GoalStatusArray"})
+#: behavior tree's status transitions, an action server's goal status, a
+#: planner's path, a costmap's incremental updates -- so silence means
+#: "nothing is happening", not "the publisher died". Extended per topic
+#: with `event_driven: true` in config (e.g. a controller's cmd_vel,
+#: silent whenever the robot isn't driving).
+EVENT_DRIVEN_MSG_TYPES = frozenset(
+    {
+        "nav2_msgs/msg/BehaviorTreeLog",
+        "action_msgs/msg/GoalStatusArray",
+        "nav_msgs/msg/Path",
+        "map_msgs/msg/OccupancyGridUpdate",
+        "nav2_msgs/msg/CostmapUpdate",
+    }
+)
+
+#: Topic-name suffixes that are event-driven whatever their message type:
+#: an action's feedback only flows while one of its goals is running.
+EVENT_DRIVEN_TOPIC_SUFFIXES = ("/_action/feedback",)
+
+
+def is_event_driven(topic_name: str, msg_type: str | None) -> bool:
+    """True when `topic_name` is quiet by design by default (`EVENT_DRIVEN_MSG_TYPES`/`_TOPIC_SUFFIXES`)."""
+    return msg_type in EVENT_DRIVEN_MSG_TYPES or topic_name.endswith(EVENT_DRIVEN_TOPIC_SUFFIXES)
 
 #: `CheckStatus.label`s for a topic that is quiet by design rather than
 #: dead: severity OK, and the TUI renders them with their own glyphs.
