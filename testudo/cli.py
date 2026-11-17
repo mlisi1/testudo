@@ -307,7 +307,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
 
     # Imported lazily so commands that never touch a bag don't require
     # rosbag2_py to be installed.
-    from testudo.core.replay import replay_bag
+    from testudo.core.replay_timeline import replay_with_faults
 
     # Node profiling is deliberately never wired into replay, live or
     # batch: a bag replay has no corresponding live OS process to sample
@@ -321,7 +321,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
         if args.watch:
             return _watch_replay(args.bag, config, plugins, node)
         try:
-            reports, overall = replay_bag(args.bag, config, plugins, node)
+            end, faults = replay_with_faults(args.bag, config, plugins, node)
         except FileNotFoundError as exc:
             _logger.error("%s", exc)
             return 2
@@ -329,7 +329,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
         node.destroy_node()
         rclpy.shutdown()
 
-    return print_report(reports, overall)
+    return print_report(end.reports, end.overall, faults)
 
 
 def _watch_replay(bag: str, config: TestudoConfig, plugins: list, node: rclpy.node.Node) -> int:

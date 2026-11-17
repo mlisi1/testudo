@@ -1,4 +1,4 @@
-"""The `replay` text report: one line per topic plus the overall verdict.
+"""The `replay` text report: one line per topic, the faults the bag raised, then the overall verdict.
 
 Read by a person, so it uses `CheckStatus.values` (markup stripped, single
 line), not the `metrics` that get published.
@@ -10,6 +10,7 @@ import logging
 from rich.console import Console
 from rich.text import Text
 
+from testudo.core.fault_history import FaultEntry
 from testudo.core.plain_values import plain_values, strip_markup
 from testudo.core.topic_report import TopicReport
 from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_LABELS, CheckStatus, Severity
@@ -17,8 +18,13 @@ from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_LABELS, CheckStatus, 
 _logger = logging.getLogger("testudo")
 
 
-def print_report(reports: list[TopicReport], overall: CheckStatus) -> int:
-    """Print one line per topic plus the aggregated summary; return the exit code it implies.
+def print_report(reports: list[TopicReport], overall: CheckStatus, faults: list[FaultEntry] | None = None) -> int:
+    """Print one line per topic, the bag's faults, then the aggregated summary; return the exit code it implies.
+
+    `faults` (every fault raised during the bag, its times as offsets into
+    it) get a section of their own, so a problem that came and went before
+    the end of the bag is still reported. The exit code is the end-of-bag
+    verdict's, as before.
 
     Exit codes follow the common CI convention: 0 OK, 1 WARN, 2 ERROR/STALE.
     Which severity drives `overall` (worst vs. weighted) is decided by
@@ -36,6 +42,12 @@ def print_report(reports: list[TopicReport], overall: CheckStatus) -> int:
 
     for report in sorted(reports, key=lambda r: (-r.status.severity, r.topic)):
         console.print(_topic_line(report))
+
+    if faults:
+        console.print()
+        console.print(Text("Faults during the bag:", style="bold"))
+        for entry in sorted(faults, key=lambda entry: (entry.raised_at, entry.topic, entry.code)):
+            console.print(fault_line(entry))
 
     console.print()
     console.print(_status_line(overall))
@@ -59,6 +71,29 @@ def _topic_line(report: TopicReport) -> Text:
     line.append(f"{report.msg_type:35s} ")
     line.append(f"{strip_markup(report.status.message)}{suffix}")
     return line
+
+
+def fault_line(entry: FaultEntry) -> Text:
+    """`ERROR GNSS-002 /gps/filtered  0:12.0 -> 0:40.5 (lasted 28.5 s, 3 times)`, or `... still active at the end`."""
+    color = SEVERITY_COLORS.get(entry.severity, "white")
+    label = SEVERITY_LABELS.get(entry.severity, str(entry.severity))
+    line = Text()
+    line.append(f"{label:5s} ", style=color)
+    line.append(f"{entry.code} {entry.topic}  ")
+    if entry.active:
+        line.append(f"{_bag_time(entry.raised_at)} -> still active at the end ({entry.duration_s:.1f} s)")
+    else:
+        line.append(f"{_bag_time(entry.raised_at)} -> {_bag_time(entry.cleared_at)} (lasted {entry.duration_s:.1f} s)")
+    if entry.times_raised > 1:
+        line.append(f", {entry.times_raised} times", style="dim")
+    line.append(f"  {strip_markup(entry.message)}", style="dim")
+    return line
+
+
+def _bag_time(offset_s: float | None) -> str:
+    """Seconds into the bag as `m:ss.s`."""
+    offset_s = offset_s or 0.0
+    return f"{int(offset_s // 60)}:{offset_s % 60:04.1f}"
 
 
 def _status_line(status: CheckStatus) -> Text:

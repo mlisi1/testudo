@@ -19,7 +19,7 @@ from dataclasses import dataclass
 import rclpy.node
 
 from testudo.core.config import FaultsConfig, SeverityMode, TestudoConfig
-from testudo.core.fault_history import ClearedFault, FaultHistory
+from testudo.core.fault_history import ClearedFault, FaultEntry, FaultHistory
 from testudo.core.replay import ReplayClockSource, bag_duration_s, run_replay
 from testudo.core.subscription_manager import SubscriptionManager
 from testudo.core.topic_report import TopicReport
@@ -58,8 +58,16 @@ def frame_interval_for(duration_s: float | None) -> float:
 class FrameRecorder:
     """A `replay.BagTimeHook` that records a frame every `interval_s` of bag time."""
 
-    def __init__(self, interval_s: float, severity_mode: SeverityMode, faults: FaultsConfig | None = None) -> None:
+    def __init__(
+        self,
+        interval_s: float,
+        severity_mode: SeverityMode,
+        faults: FaultsConfig | None = None,
+        keep_frames: bool = True,
+    ) -> None:
+        """`keep_frames=False` keeps only the latest frame (a batch report needs no timeline)."""
         faults = faults or FaultsConfig()
+        self._keep_frames = keep_frames
         self._interval_ns = int(interval_s * 1e9)
         self._severity_mode = severity_mode
         self._start_ns: int | None = None
@@ -93,7 +101,39 @@ class FrameRecorder:
         reports = manager.reports()
         self._history.update(reports, offset_s)
         overall = manager.overall_status(self._severity_mode)
-        self.frames.append(ReplayFrame(offset_s, reports, overall, self._history.cleared()))
+        frame = ReplayFrame(offset_s, reports, overall, self._history.cleared())
+        if self._keep_frames:
+            self.frames.append(frame)
+        else:
+            self.frames = [frame]
+
+    def fault_entries(self) -> list[FaultEntry]:
+        """Every fault the bag raised, as of the last frame (offsets into the bag as times)."""
+        now = self.frames[-1].offset_s if self.frames else 0.0
+        return self._history.entries(now)
+
+
+def replay_with_faults(
+    bag_path: str,
+    config: TestudoConfig,
+    discovered_plugins: list[DiscoveredPlugin],
+    node: rclpy.node.Node,
+) -> tuple[ReplayFrame, list[FaultEntry]]:
+    """The end-of-bag frame plus every fault raised along the way: what `replay`'s text report prints.
+
+    Samples the bag like `replay_timeline` (so a fault is seen the way
+    `replay --watch` and a live session would see it), keeping only the
+    latest frame.
+
+    Raises:
+        FileNotFoundError: `bag_path` doesn't exist or isn't a readable bag.
+    """
+    recorder = FrameRecorder(
+        frame_interval_for(bag_duration_s(bag_path)), config.severity_mode, config.faults, keep_frames=False
+    )
+    manager = run_replay(bag_path, config, discovered_plugins, node, on_bag_time=recorder)
+    recorder.finish(manager)
+    return recorder.frames[-1], recorder.fault_entries()
 
 
 def replay_timeline(

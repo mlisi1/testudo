@@ -66,3 +66,17 @@ def test_frame_interval_spaces_out_a_long_bag() -> None:
     assert frame_interval_for(None) == MIN_FRAME_INTERVAL_S
     assert frame_interval_for(155.0) == MIN_FRAME_INTERVAL_S
     assert frame_interval_for(3600.0) == pytest.approx(3600.0 / MAX_REPLAY_FRAMES)
+
+
+def test_replay_with_faults_keeps_only_the_last_frame_and_reports_the_gap(tmp_path: Path, ros_node) -> None:
+    from testudo.core.replay_timeline import replay_with_faults
+
+    bag_path = tmp_path / "gap"
+    _chatter_with_a_gap(bag_path)
+
+    end, faults = replay_with_faults(str(bag_path), _config(), _plugins(), ros_node)
+
+    assert end.offset_s == pytest.approx(22.9)
+    assert end.reports[0].status.severity == Severity.OK
+    (gap,) = [entry for entry in faults if entry.topic == "/chatter"]
+    assert not gap.active and 4.0 < gap.raised_at < gap.cleared_at <= 20.0
