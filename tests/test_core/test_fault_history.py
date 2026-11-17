@@ -58,3 +58,37 @@ def test_latest_per_code_counts_a_flapping_code_once() -> None:
 
 def test_format_ago_uses_one_unit() -> None:
     assert [format_ago(s) for s in (-1, 12.7, 125, 7300)] == ["0s", "12s", "2m", "2h"]
+
+
+def test_entries_show_each_fault_once_active_or_as_its_latest_clearing() -> None:
+    history = FaultHistory()
+    history.update([_report("/gps", Severity.WARN, {"GNSS-002": "a"})], now=10.0)
+    history.update([_report("/gps")], now=12.0)
+    history.update([_report("/gps", Severity.ERROR, {"GNSS-002": "b"}), _report("/odom", Severity.WARN, {"ODOM-001": "c"})], now=20.0)
+    history.update([_report("/gps", Severity.ERROR, {"GNSS-002": "b"}), _report("/odom")], now=25.0)
+
+    gps, odom = history.entries(now=30.0)
+    assert (gps.topic, gps.active, gps.cleared_at, gps.duration_s, gps.times_raised) == ("/gps", True, None, 10.0, 2)
+    assert (odom.topic, odom.active, odom.cleared_at, odom.duration_s, odom.times_raised) == ("/odom", False, 25.0, 5.0, 1)
+
+
+def test_recent_retention_drops_cleared_faults_after_the_window_and_resets_their_count() -> None:
+    from testudo.core.config import FaultRetention
+
+    history = FaultHistory(retention=FaultRetention.RECENT, recent_window_seconds=60.0)
+    history.update([_report("/a", Severity.WARN, {"C-1": "w"})], now=0.0)
+    history.update([_report("/a")], now=1.0)
+    history.update([_report("/a")], now=50.0)
+    assert [entry.code for entry in history.entries(now=50.0)] == ["C-1"]
+    history.update([_report("/a")], now=62.0)
+    assert history.entries(now=62.0) == [] and history.cleared() == ()
+    history.update([_report("/a", Severity.WARN, {"C-1": "w"})], now=70.0)
+    assert history.entries(now=70.0)[0].times_raised == 1
+
+
+def test_session_retention_keeps_old_cleared_faults() -> None:
+    history = FaultHistory()
+    history.update([_report("/a", Severity.WARN, {"C-1": "w"})], now=0.0)
+    history.update([_report("/a")], now=1.0)
+    history.update([_report("/a")], now=100_000.0)
+    assert [entry.code for entry in history.entries(now=100_000.0)] == ["C-1"]

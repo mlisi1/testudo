@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 import rclpy.node
 
-from testudo.core.config import SeverityMode, TestudoConfig
+from testudo.core.config import FaultsConfig, SeverityMode, TestudoConfig
 from testudo.core.fault_history import ClearedFault, FaultHistory
 from testudo.core.replay import ReplayClockSource, bag_duration_s, run_replay
 from testudo.core.subscription_manager import SubscriptionManager
@@ -58,12 +58,15 @@ def frame_interval_for(duration_s: float | None) -> float:
 class FrameRecorder:
     """A `replay.BagTimeHook` that records a frame every `interval_s` of bag time."""
 
-    def __init__(self, interval_s: float, severity_mode: SeverityMode) -> None:
+    def __init__(self, interval_s: float, severity_mode: SeverityMode, faults: FaultsConfig | None = None) -> None:
+        faults = faults or FaultsConfig()
         self._interval_ns = int(interval_s * 1e9)
         self._severity_mode = severity_mode
         self._start_ns: int | None = None
         self._next_ns = 0
-        self._history = FaultHistory()
+        self._history = FaultHistory(
+            retention=faults.retention, recent_window_seconds=faults.recent_window_seconds
+        )
         self._clock_source: ReplayClockSource | None = None
         self.frames: list[ReplayFrame] = []
 
@@ -104,7 +107,7 @@ def replay_timeline(
     Raises:
         FileNotFoundError: `bag_path` doesn't exist or isn't a readable bag.
     """
-    recorder = FrameRecorder(frame_interval_for(bag_duration_s(bag_path)), config.severity_mode)
+    recorder = FrameRecorder(frame_interval_for(bag_duration_s(bag_path)), config.severity_mode, config.faults)
     manager = run_replay(bag_path, config, discovered_plugins, node, on_bag_time=recorder)
     recorder.finish(manager)
     return recorder.frames

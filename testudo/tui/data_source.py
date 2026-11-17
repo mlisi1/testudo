@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
-from testudo.core.config import ExcludeRule, SeverityMode
+from testudo.core.config import ExcludeRule, FaultsConfig, SeverityMode
 from testudo.core.config_writer import write_exclude_rules
 from testudo.core.fault_history import ClearedFault, FaultHistory
 from testudo.core.node_profiling.profiler import NodeProfiler
@@ -69,6 +69,7 @@ class LiveDataSource:
         severity_mode: SeverityMode,
         config_path: str | None = None,
         node_profiler: NodeProfiler | None = None,
+        faults: FaultsConfig | None = None,
     ) -> None:
         self._manager = manager
         self._severity_mode = severity_mode
@@ -80,7 +81,11 @@ class LiveDataSource:
         # None when node_profiling.enabled is False -- poll() then just
         # returns the manager's own reports, unaugmented, same as a replay.
         self._node_profiler = node_profiler
-        self._fault_history = FaultHistory()
+        faults = faults or FaultsConfig()
+        #: Shared with `LiveOutput`, which publishes it after each poll.
+        self.fault_history = FaultHistory(
+            retention=faults.retention, recent_window_seconds=faults.recent_window_seconds
+        )
 
     def poll(self) -> WatchSnapshot:
         self._manager.tick()
@@ -99,17 +104,17 @@ class LiveDataSource:
         # Wall clock, not the (possibly sim) ROS clock: "cleared 2m ago" is
         # read by a person, in their time.
         now = time.time()
-        self._fault_history.update(reports, now)
+        self.fault_history.update(reports, now)
         return WatchSnapshot(
             reports=reports,
             overall=self._manager.overall_status(self._severity_mode),
-            cleared_faults=self._fault_history.cleared(),
+            cleared_faults=self.fault_history.cleared(),
             time_s=now,
         )
 
     def reset_stats(self) -> None:
         self._manager.reset_stats()
-        self._fault_history.reset()
+        self.fault_history.reset()
 
     def is_live(self) -> bool:
         return True

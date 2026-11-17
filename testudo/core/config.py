@@ -46,6 +46,15 @@ class SeverityMode(enum.Enum):
     BOTH = "both"
 
 
+class FaultRetention(enum.Enum):
+    """Which cleared faults the fault history keeps (TUI Cleared list and the faults topic alike)."""
+
+    #: Every fault seen this session, latest occurrence and count, up to a cap.
+    SESSION = "session"
+    #: A cleared fault drops off `recent_window_seconds` after it cleared.
+    RECENT = "recent"
+
+
 class ExcludeMatchType(enum.Enum):
     """How an `ExcludeRule.pattern` is matched against a topic name."""
 
@@ -200,6 +209,23 @@ class NodeProfilingConfig:
 
 
 @dataclass(frozen=True)
+class FaultsConfig:
+    """Fault history: faults (a topic's active code) that were raised, and those that cleared since.
+
+    Shown in the TUI (the Cleared list, a topic's own cleared codes) and
+    published on `publish_topic`, one DiagnosticStatus per (topic, code).
+    `retention` picks which cleared faults stay (see `FaultRetention`);
+    active faults always do.
+    """
+
+    retention: FaultRetention = FaultRetention.SESSION
+    recent_window_seconds: float = 600.0
+    #: Defaults to `<publish.namespace>/faults`, or `<publish.topic>/faults` with
+    #: `publish.per_plugin: false` (see `config_loader.default_faults_topic`).
+    publish_topic: str = "/testudo/faults"
+
+
+@dataclass(frozen=True)
 class TestudoConfig:
     """The full, validated Testudo configuration."""
 
@@ -211,3 +237,4 @@ class TestudoConfig:
     plugins_dir: str | None = None
     exclude_topics: list[ExcludeRule] = field(default_factory=list)
     node_profiling: NodeProfilingConfig = field(default_factory=NodeProfilingConfig)
+    faults: FaultsConfig = field(default_factory=FaultsConfig)

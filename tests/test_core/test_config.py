@@ -532,3 +532,25 @@ def test_publish_per_plugin_and_namespace_parse_and_validate(tmp_path: Path) -> 
         load_config(_write(tmp_path, "publish:\n  per_plugin: yes please\n"))
     with pytest.raises(ConfigError, match="namespace"):
         load_config(_write(tmp_path, "publish:\n  namespace: testudo\n"))
+
+
+def test_faults_section_defaults_follow_publish_settings(tmp_path: Path) -> None:
+    from testudo.core.config import FaultRetention, FaultsConfig
+
+    config = load_config(_write(tmp_path, ""))
+    assert config.faults == FaultsConfig()
+    assert config.faults.retention == FaultRetention.SESSION
+    path = _write(tmp_path, "publish:\n  per_plugin: false\n")
+    assert load_config(path).faults.publish_topic == "/diagnostics/faults"
+
+
+def test_faults_section_parses_recent_retention_and_rejects_bad_values(tmp_path: Path) -> None:
+    from testudo.core.config import FaultRetention
+
+    path = _write(tmp_path, "faults:\n  retention: recent\n  recent_window_seconds: 120\n  publish_topic: /f\n")
+    faults = load_config(path).faults
+    assert (faults.retention, faults.recent_window_seconds, faults.publish_topic) == (FaultRetention.RECENT, 120.0, "/f")
+    with pytest.raises(ConfigError, match="faults.retention must be one of"):
+        load_config(_write(tmp_path, "faults:\n  retention: forever\n"))
+    with pytest.raises(ConfigError, match="unknown key"):
+        load_config(_write(tmp_path, "faults:\n  keep: 3\n"))

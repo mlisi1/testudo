@@ -213,6 +213,18 @@ tf:
 #   exclude_nodes:
 #     - /some_noisy_diagnostic_only_node
 
+# Fault history: every fault (a topic's active code) that was raised, and
+# whether it has cleared since. Published on its own topic, one
+# DiagnosticStatus per (topic, code) -- level = its severity while active,
+# OK once cleared, so each fault plots as its own series -- and shown in the
+# TUI's Cleared list. `retention` decides which cleared faults stay:
+# `session` keeps every one seen this session (up to 200), `recent` drops
+# each `recent_window_seconds` after it cleared. Active faults always stay.
+# faults:
+#   retention: session
+#   recent_window_seconds: 600
+#   publish_topic: /testudo/faults   # default; /diagnostics/faults with publish.per_plugin: false
+
 # A plain string is a literal (exact-name) rule; a mapping opts into a
 # regex searched against the topic name instead (`type: regex` -- `^`/`$`
 # anchor a starts-with/ends-with check, unanchored matches anywhere).

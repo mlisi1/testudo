@@ -13,15 +13,21 @@ import yaml
 from testudo.core.config import (
     ActionConfig,
     ConfigError,
-    ExcludeMatchType,
     ExcludeRule,
-    InvalidExcludePatternError,
+    FaultRetention,
+    FaultsConfig,
     NodeProfilingConfig,
     PublishConfig,
     SeverityMode,
     TestudoConfig,
     TFPairConfig,
     TopicConfig,
+)
+from testudo.core.config_values import (
+    parse_exclude_rules,
+    parse_non_empty_string,
+    parse_positive_number,
+    parse_zone,
 )
 from testudo.plugins.base import ThresholdZone
 
@@ -55,6 +61,7 @@ _TOP_LEVEL_KEYS = {
     "plugins_dir",
     "exclude_topics",
     "node_profiling",
+    "faults",
 }
 
 
@@ -77,59 +84,16 @@ def _parse_config(raw: dict[str, Any], source: str) -> TestudoConfig:
         plugins_dir=plugins_dir,
         exclude_topics=_parse_exclude_topics(raw.get("exclude_topics", []), source),
         node_profiling=_parse_node_profiling(raw.get("node_profiling", {}), source, publish),
+        faults=_parse_faults(raw.get("faults", {}), source, publish),
     )
 
 
-_EXCLUDE_RULE_KEYS = {"pattern", "type"}
-
-
 def _parse_exclude_topics(raw: Any, source: str) -> list[ExcludeRule]:
-    return _parse_exclude_rules(raw, source, key="exclude_topics")
+    return parse_exclude_rules(raw, source, key="exclude_topics")
 
 
 def _parse_exclude_nodes(raw: Any, source: str) -> list[ExcludeRule]:
-    return _parse_exclude_rules(raw, source, key="exclude_nodes")
-
-
-def _parse_exclude_rules(raw: Any, source: str, key: str) -> list[ExcludeRule]:
-    if not isinstance(raw, list):
-        raise ConfigError(f"{source}: '{key}' must be a list of patterns")
-    return [_parse_exclude_rule(entry, source, key) for entry in raw]
-
-
-def _parse_exclude_rule(entry: Any, source: str, key: str = "exclude_topics") -> ExcludeRule:
-    """A plain string is shorthand for a literal rule; a mapping can also opt into `type: regex`.
-
-    `key` names the config section this entry came from (`exclude_topics`
-    or `exclude_nodes`), so a validation error points at the section the
-    user actually wrote rather than always saying "exclude_topics".
-    """
-    if isinstance(entry, str):
-        pattern, match_type = entry, ExcludeMatchType.LITERAL
-    elif isinstance(entry, dict):
-        unknown = set(entry) - _EXCLUDE_RULE_KEYS
-        if unknown:
-            raise ConfigError(f"{source}: {key} entry has unknown key(s): {', '.join(sorted(unknown))}")
-        pattern = entry.get("pattern")
-        match_type = _parse_exclude_match_type(entry.get("type", "literal"), source, key)
-    else:
-        raise ConfigError(f"{source}: {key} entries must be a string or a {{pattern, type}} mapping")
-    if not isinstance(pattern, str) or not pattern:
-        raise ConfigError(f"{source}: {key} entries must have a non-empty string 'pattern'")
-    try:
-        return ExcludeRule(pattern=pattern, match_type=match_type)
-    except InvalidExcludePatternError as exc:
-        raise ConfigError(f"{source}: {key}: {exc}") from exc
-
-
-def _parse_exclude_match_type(raw: Any, source: str, key: str = "exclude_topics") -> ExcludeMatchType:
-    if not isinstance(raw, str):
-        raise ConfigError(f"{source}: {key} entry 'type' must be a string")
-    try:
-        return ExcludeMatchType(raw)
-    except ValueError:
-        valid = ", ".join(t.value for t in ExcludeMatchType)
-        raise ConfigError(f"{source}: {key} entry 'type' must be one of [{valid}], got {raw!r}") from None
+    return parse_exclude_rules(raw, source, key="exclude_nodes")
 
 
 def _parse_topics(raw: Any, source: str) -> dict[str, list[TopicConfig]]:
@@ -189,23 +153,7 @@ def _parse_related_topics(raw: Any, context: str, source: str) -> dict[str, str]
 def _parse_thresholds(raw: Any, context: str, source: str) -> dict[str, ThresholdZone]:
     if not isinstance(raw, dict):
         raise ConfigError(f"{source}: {context}.thresholds must be a mapping")
-    return {metric: _parse_zone(zones, f"{context}.thresholds.{metric}", source) for metric, zones in raw.items()}
-
-
-def _parse_zone(raw: Any, context: str, source: str) -> ThresholdZone:
-    if not isinstance(raw, dict):
-        raise ConfigError(f"{source}: {context} must be a mapping with green/orange/red")
-    unknown = set(raw) - {"green", "orange", "red"}
-    if unknown:
-        raise ConfigError(f"{source}: {context} has unknown key(s): {', '.join(sorted(unknown))}")
-    for key, value in raw.items():
-        if value is not None and not isinstance(value, (int, float)):
-            raise ConfigError(f"{source}: {context}.{key} must be numeric")
-    return ThresholdZone(green=_to_float(raw.get("green")), orange=_to_float(raw.get("orange")), red=_to_float(raw.get("red")))
-
-
-def _to_float(value: Any) -> float | None:
-    return None if value is None else float(value)
+    return {metric: parse_zone(zones, f"{context}.thresholds.{metric}", source) for metric, zones in raw.items()}
 
 
 def _parse_weight(value: Any, context: str, source: str) -> float:
@@ -333,43 +281,60 @@ def _parse_node_profiling(raw: Any, source: str, publish: PublishConfig) -> Node
     default = NodeProfilingConfig()
     return NodeProfilingConfig(
         enabled=enabled,
-        poll_interval_seconds=_parse_positive_number(
+        poll_interval_seconds=parse_positive_number(
             raw.get("poll_interval_seconds", default.poll_interval_seconds), "node_profiling.poll_interval_seconds", source
         ),
-        rediscovery_interval_seconds=_parse_positive_number(
+        rediscovery_interval_seconds=parse_positive_number(
             raw.get("rediscovery_interval_seconds", default.rediscovery_interval_seconds),
             "node_profiling.rediscovery_interval_seconds",
             source,
         ),
         gpu_enabled=gpu_enabled,
         exclude_nodes=_parse_exclude_nodes(raw.get("exclude_nodes", []), source),
-        cpu_percent=_parse_zone(raw["cpu_percent"], "node_profiling.cpu_percent", source)
+        cpu_percent=parse_zone(raw["cpu_percent"], "node_profiling.cpu_percent", source)
         if "cpu_percent" in raw
         else default.cpu_percent,
-        memory_mb=_parse_zone(raw["memory_mb"], "node_profiling.memory_mb", source)
+        memory_mb=parse_zone(raw["memory_mb"], "node_profiling.memory_mb", source)
         if "memory_mb" in raw
         else default.memory_mb,
-        ctx_switches_per_sec=_parse_zone(raw["ctx_switches_per_sec"], "node_profiling.ctx_switches_per_sec", source)
+        ctx_switches_per_sec=parse_zone(raw["ctx_switches_per_sec"], "node_profiling.ctx_switches_per_sec", source)
         if "ctx_switches_per_sec" in raw
         else default.ctx_switches_per_sec,
-        memory_slope_mb_per_min=_parse_zone(
+        memory_slope_mb_per_min=parse_zone(
             raw["memory_slope_mb_per_min"], "node_profiling.memory_slope_mb_per_min", source
         )
         if "memory_slope_mb_per_min" in raw
         else default.memory_slope_mb_per_min,
-        publish_topic=_parse_non_empty_string(
+        publish_topic=parse_non_empty_string(
             raw.get("publish_topic", default_node_profiling_topic(publish)), "node_profiling.publish_topic", source
         ),
     )
 
 
-def _parse_positive_number(value: Any, context: str, source: str) -> float:
-    if not isinstance(value, (int, float)) or value <= 0:
-        raise ConfigError(f"{source}: {context} must be a positive number")
-    return float(value)
+def default_faults_topic(publish: PublishConfig) -> str:
+    """Where fault history publishes unless `faults.publish_topic` is set (like `default_node_profiling_topic`)."""
+    return f"{publish.namespace}/faults" if publish.per_plugin else f"{publish.topic.rstrip('/')}/faults"
 
 
-def _parse_non_empty_string(value: Any, context: str, source: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise ConfigError(f"{source}: {context} must be a non-empty string")
-    return value
+def _parse_faults(raw: Any, source: str, publish: PublishConfig) -> FaultsConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{source}: 'faults' must be a mapping")
+    unknown = set(raw) - {"retention", "recent_window_seconds", "publish_topic"}
+    if unknown:
+        raise ConfigError(f"{source}: faults has unknown key(s): {', '.join(sorted(unknown))}")
+    retention = raw.get("retention", FaultRetention.SESSION.value)
+    try:
+        retention = FaultRetention(retention)
+    except ValueError:
+        valid = ", ".join(mode.value for mode in FaultRetention)
+        raise ConfigError(f"{source}: faults.retention must be one of [{valid}], got {retention!r}") from None
+    return FaultsConfig(
+        retention=retention,
+        recent_window_seconds=parse_positive_number(
+            raw.get("recent_window_seconds", FaultsConfig.recent_window_seconds), "faults.recent_window_seconds", source
+        ),
+        publish_topic=parse_non_empty_string(
+            raw.get("publish_topic", default_faults_topic(publish)), "faults.publish_topic", source
+        ),
+    )
+

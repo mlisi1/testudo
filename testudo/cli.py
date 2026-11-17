@@ -175,13 +175,17 @@ def cmd_watch(args: argparse.Namespace) -> int:
                 # `node`, so its graph calls land on this same spin thread
                 # without any further plumbing here -- see profiler.py.
                 node_profiler.start()
-            output = LiveOutput(node, config, plugins, node_profiler)
             data_source = LiveDataSource(
-                manager, config.severity_mode, config_path=config_path, node_profiler=node_profiler
+                manager,
+                config.severity_mode,
+                config_path=config_path,
+                node_profiler=node_profiler,
+                faults=config.faults,
             )
+            output = LiveOutput(node, config, plugins, node_profiler, data_source.fault_history)
 
             def on_snapshot(snapshot) -> None:
-                output.publish(snapshot.reports, snapshot.overall)
+                output.publish(snapshot.reports, snapshot.overall, snapshot.time_s)
 
             if args.headless:
                 _poll_until_stopped(data_source, on_snapshot, config.publish.rate_hz)

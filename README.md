@@ -270,10 +270,29 @@ By default each plugin publishes its own `DiagnosticArray` under
 | `/testudo/vitals` | topics no plugin checks (rate, age, liveness) |
 | `/testudo/overall` | the roll-up verdict |
 | `/testudo/nodes` | node profiling (CPU, memory, GPU per node) |
+| `/testudo/faults` | fault history: one row per fault (a topic's active code), active or cleared |
 
 A plugin's topic appears once it has something to report. Each row's
 key/values are machine-readable: plain numbers with the unit in the key
 (`rate_hz`, `distance_remaining_m`), ratios as 0..1, booleans as 1/0.
+
+`/testudo/faults` gives every fault its own series, named
+`testudo: <topic> <CODE>`, so a plot shows when each one was active: its
+level is the fault's severity while active and OK once cleared. Its values
+are `topic`, `code`, `active` (1/0), `severity` (the worst it reached),
+`raised_at_s` and `cleared_at_s` (Unix seconds, 0 while active),
+`duration_s`, `times_raised`, and `schema_version`. A new key can be added
+without bumping `schema_version`, so ignore keys you don't know. Which
+cleared faults stay is up to you:
+
+```yaml
+faults:
+  retention: session          # every fault seen this session (default), or:
+  # retention: recent         # a cleared fault drops off after the window
+  recent_window_seconds: 600
+```
+
+The TUI's Cleared list follows the same setting.
 
 rqt_robot_monitor and diagnostic_aggregator listen only on `/diagnostics`.
 To use them, publish everything as one array there instead:

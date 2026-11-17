@@ -224,8 +224,13 @@ class SubscriptionManager:
         self._stale_since_monotonic: float | None = None
 
     def excluded_topics(self) -> set[str]:
-        """Default excludes plus self-exclusion of Testudo's own diagnostics topics (combined and node profiling)."""
-        return set(DEFAULT_EXCLUDED_TOPICS) | {self._config.publish.topic, self._config.node_profiling.publish_topic}
+        """Default excludes plus self-exclusion of Testudo's own output topics (combined, node profiling, faults)."""
+        config = self._config
+        return set(DEFAULT_EXCLUDED_TOPICS) | {
+            config.publish.topic,
+            config.node_profiling.publish_topic,
+            config.faults.publish_topic,
+        }
 
     def is_default_excluded(self, topic_name: str) -> bool:
         """True for ROS graph bookkeeping/self-exclusion -- stays fully invisible, never an Excluded-category row.
