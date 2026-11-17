@@ -164,12 +164,16 @@ def process_full_tier_message(
     state.vitals.record_arrival(now)
     max_check_rate_hz = manager._max_check_rate_hz
     min_check_interval = 1.0 / max_check_rate_hz if max_check_rate_hz > 0 else 0.0
-    if state.last_checked_seconds is not None and (now - state.last_checked_seconds) < min_check_interval:
+    due = state.last_checked_seconds is None or (now - state.last_checked_seconds) >= min_check_interval
+    if not due and not state.plugin.needs_every_message():
         return
-    state.last_checked_seconds = now
     state.plugin.on_tick(now)
     state.plugin.on_message(topic_name, msg)
-    state.debouncer.update(state.plugin.get_status())
+    if due:
+        # Status (and hysteresis) at the decimated rate either way: a
+        # plugin that needs every message still isn't re-evaluated per message.
+        state.last_checked_seconds = now
+        state.debouncer.update(state.plugin.get_status())
 
 
 def subscribe_related_topic(

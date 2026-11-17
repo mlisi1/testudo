@@ -64,6 +64,13 @@ class TFWatchPlugin(CheckPlugin):
         return ("tf2_msgs/msg/TFMessage",)
 
     @classmethod
+    def needs_every_message(cls) -> bool:
+        # /tf multiplexes every broadcaster: a skipped message can be the
+        # only update of its frame pair (seen in a sim as map->odom never
+        # arriving while odom->base_link always did).
+        return True
+
+    @classmethod
     def default_thresholds(cls) -> dict[str, ThresholdZone]:
         return {}
 

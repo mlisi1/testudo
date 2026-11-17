@@ -670,6 +670,58 @@ def test_decimation_skips_plugin_calls_faster_than_max_check_rate() -> None:
     assert vitals.message_count == 3
 
 
+class _EveryMessagePlugin(_RecordingPlugin):
+    """A plugin that opts out of decimation, counting how often its status is evaluated."""
+
+    status_calls = 0
+
+    @classmethod
+    def needs_every_message(cls) -> bool:
+        return True
+
+    def get_status(self) -> CheckStatus:
+        type(self).status_calls += 1
+        return super().get_status()
+
+
+def test_a_plugin_needing_every_message_sees_them_all_but_is_evaluated_at_the_decimated_rate() -> None:
+    node = _FakeNode(
+        topics=[("/odom", ["nav_msgs/msg/Odometry"])],
+        publishers_by_topic={"/odom": [_FakeEndpointInfo(qos_profile=_qos())]},
+    )
+    discovered = [DiscoveredPlugin(name="every", plugin_class=_EveryMessagePlugin, source="packaged")]
+    clock_seconds = [0.0]
+
+    class _MutableClock:
+        def now(self):
+            class _T:
+                nanoseconds = int(clock_seconds[0] * 1e9)
+
+            return _T()
+
+    manager = SubscriptionManager(
+        node, _config(), discovered, clock=TestudoClock(_MutableClock(), sim_time_query=lambda: False),
+        max_check_rate_hz=10.0, **_FAST_SETTLE
+    )
+    manager.start()
+    sub = node.subscriptions[0]
+    plugin = list(manager._full_tier.values())[0].plugin
+    _EveryMessagePlugin.status_calls = 0
+
+    for seconds, msg in ((0.0, "first"), (0.02, "second"), (0.04, "third"), (0.2, "fourth")):
+        clock_seconds[0] = seconds
+        sub.callback(msg)
+
+    assert [msg for _topic, msg in plugin.calls] == ["first", "second", "third", "fourth"]
+    assert _EveryMessagePlugin.status_calls == 2
+
+
+def test_tf_watch_needs_every_message() -> None:
+    from testudo.plugins.builtin.tf_watch import TFWatchPlugin
+
+    assert TFWatchPlugin.needs_every_message()
+
+
 def test_hysteresis_debounces_full_tier_severity_transitions() -> None:
     node = _FakeNode(
         topics=[("/odom", ["nav_msgs/msg/Odometry"])],

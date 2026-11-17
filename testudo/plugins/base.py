@@ -242,6 +242,22 @@ class CheckPlugin(abc.ABC):
         """
         return frozenset()
 
+    @classmethod
+    def needs_every_message(cls) -> bool:
+        """True when skipping a message would lose information, not just a sample.
+
+        High-rate topics are decimated to `max_check_rate_hz` by default:
+        on a sensor stream the next message says much the same as the one
+        skipped. That's false on a multiplexed topic like `/tf`, where each
+        message may be the only update of its own frame pair -- decimating
+        it can starve one publisher's edges entirely (in a simulator, whose
+        timers all fire on the same clock tick, the same publisher every
+        time). Such a plugin returns True: `on_tick` + `on_message` then
+        run for every message, while `get_status` is still only evaluated
+        at the decimated rate, so `on_message` should stay cheap.
+        """
+        return False
+
     @abc.abstractmethod
     def on_message(self, topic: str, msg: Any) -> None:
         """Handle one (possibly decimated) message received on `topic`.
