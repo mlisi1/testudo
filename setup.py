@@ -10,6 +10,7 @@ setup(
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
         (f"share/{package_name}/config", ["config/example_config.yaml"]),
+        (f"share/{package_name}/launch", ["launch/testudo.launch.py"]),
     ],
     # numpy: package.xml declares it as an apt exec_depend (python3-numpy),
     # which colcon/rosdep-based installs satisfy for free -- but a plain
