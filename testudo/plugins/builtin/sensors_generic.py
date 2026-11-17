@@ -17,7 +17,7 @@ from typing import Any
 
 from sensor_msgs.msg import Imu
 
-from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, ThresholdZone, evaluate_zone
+from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, SeverityLevels, ThresholdZone, evaluate_zone
 from testudo.plugins.render import downsample, sparkline
 
 _IMU_TYPE = "sensor_msgs/msg/Imu"
@@ -59,8 +59,10 @@ class GenericSensorPlugin(CheckPlugin):
         self,
         thresholds: dict[str, ThresholdZone] | None = None,
         related_topics: dict[str, str] | None = None,
+        *,
+        levels: dict[str, SeverityLevels] | None = None,
     ) -> None:
-        super().__init__(thresholds, related_topics)
+        super().__init__(thresholds, related_topics, levels=levels)
         self._message_count = 0
         self._last_frame_id: str | None = None
         self._frame_id_changed = False

@@ -30,7 +30,7 @@ from typing import Any
 
 from action_msgs.msg import GoalStatus
 
-from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, ThresholdZone, colorize, evaluate_zone
+from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, SeverityLevels, ThresholdZone, colorize, evaluate_zone
 from testudo.plugins.render import meter, sparkline, strip
 
 _TERMINAL_STATUSES = frozenset({GoalStatus.STATUS_SUCCEEDED, GoalStatus.STATUS_CANCELED, GoalStatus.STATUS_ABORTED})
@@ -95,8 +95,10 @@ class Nav2GoalPlugin(CheckPlugin):
         self,
         thresholds: dict[str, ThresholdZone] | None = None,
         related_topics: dict[str, str] | None = None,
+        *,
+        levels: dict[str, SeverityLevels] | None = None,
     ) -> None:
-        super().__init__(thresholds, related_topics)
+        super().__init__(thresholds, related_topics, levels=levels)
         self._now = 0.0
         self._message_count = 0
         self._goals: dict[bytes, _GoalRecord] = {}

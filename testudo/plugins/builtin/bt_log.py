@@ -21,7 +21,7 @@ from __future__ import annotations
 from collections import deque
 from typing import Any
 
-from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, ThresholdZone, colorize, evaluate_zone
+from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, SeverityLevels, ThresholdZone, colorize, evaluate_zone
 from testudo.plugins.render import sparkline
 
 _RUNNING = "RUNNING"
@@ -70,8 +70,10 @@ class BehaviorTreeLogPlugin(CheckPlugin):
         thresholds: dict[str, ThresholdZone] | None = None,
         related_topics: dict[str, str] | None = None,
         recovery_node_prefixes: frozenset[str] = DEFAULT_RECOVERY_NODE_PREFIXES,
+        *,
+        levels: dict[str, SeverityLevels] | None = None,
     ) -> None:
-        super().__init__(thresholds, related_topics)
+        super().__init__(thresholds, related_topics, levels=levels)
         self._recovery_node_prefixes = recovery_node_prefixes
         self._now = 0.0
         self._event_count = 0

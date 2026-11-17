@@ -9,8 +9,10 @@ from testudo.plugins.base import (
     CheckPlugin,
     CheckStatus,
     Severity,
+    SeverityLevels,
     ThresholdZone,
     code_severity,
+    evaluate_levels,
     evaluate_zone,
 )
 
@@ -138,3 +140,43 @@ def test_code_severity_falls_back_to_the_status_severity() -> None:
     )
     assert code_severity(status, "A-001") == Severity.ERROR
     assert code_severity(status, "A-002") == Severity.WARN
+
+
+def test_evaluate_levels_cuts_are_on_the_good_side_and_missing_cuts_never_fire() -> None:
+    levels = SeverityLevels(warn=1.0, error=10.0)
+    assert evaluate_levels(1.0, levels) == Severity.OK
+    assert evaluate_levels(1.5, levels) == Severity.WARN
+    assert evaluate_levels(10.0, levels) == Severity.WARN
+    assert evaluate_levels(11.0, levels) == Severity.ERROR
+    assert evaluate_levels(1e9, SeverityLevels(warn=1.0)) == Severity.WARN
+    assert evaluate_levels(1e9, SeverityLevels(error=10.0)) == Severity.ERROR
+    assert evaluate_levels(1e9, None) == Severity.OK
+
+
+def test_evaluate_levels_lower_is_worse() -> None:
+    levels = SeverityLevels(warn=0.95, error=0.5)
+    assert evaluate_levels(0.95, levels, higher_is_worse=False) == Severity.OK
+    assert evaluate_levels(0.8, levels, higher_is_worse=False) == Severity.WARN
+    assert evaluate_levels(0.4, levels, higher_is_worse=False) == Severity.ERROR
+
+
+def test_levels_default_to_the_plugin_defaults_and_survive_reset() -> None:
+    class _Levelled(CheckPlugin):
+        @classmethod
+        def msg_types(cls) -> tuple[str, ...]:
+            return ("std_msgs/msg/Empty",)
+
+        @classmethod
+        def default_levels(cls) -> dict[str, SeverityLevels]:
+            return {"x": SeverityLevels(warn=1.0)}
+
+        def on_message(self, topic, msg) -> None:
+            pass
+
+        def get_status(self) -> CheckStatus:
+            return CheckStatus(Severity.OK, "x", "")
+
+    assert _Levelled().levels == {"x": SeverityLevels(warn=1.0)}
+    plugin = _Levelled(levels={"x": SeverityLevels(error=2.0)})
+    plugin.reset()
+    assert plugin.levels == {"x": SeverityLevels(error=2.0)}

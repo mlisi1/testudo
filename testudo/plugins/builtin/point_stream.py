@@ -47,6 +47,7 @@ from testudo.plugins.base import (
     CheckPlugin,
     CheckStatus,
     Severity,
+    SeverityLevels,
     ThresholdZone,
     evaluate_zone,
 )
@@ -122,8 +123,10 @@ class PointStreamPlugin(CheckPlugin):
         self,
         thresholds: dict[str, ThresholdZone] | None = None,
         related_topics: dict[str, str] | None = None,
+        *,
+        levels: dict[str, SeverityLevels] | None = None,
     ) -> None:
-        super().__init__(thresholds, related_topics)
+        super().__init__(thresholds, related_topics, levels=levels)
         self._message_count = 0
         self._last_frame_id: str | None = None
         self._frame_id_changed = False

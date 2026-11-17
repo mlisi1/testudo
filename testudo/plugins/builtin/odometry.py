@@ -25,6 +25,7 @@ from testudo.plugins.base import (
     CheckPlugin,
     CheckStatus,
     Severity,
+    SeverityLevels,
     ThresholdZone,
     colorize,
     evaluate_zone,
@@ -113,8 +114,10 @@ class OdometryPlugin(CheckPlugin):
         self,
         thresholds: dict[str, ThresholdZone] | None = None,
         related_topics: dict[str, str] | None = None,
+        *,
+        levels: dict[str, SeverityLevels] | None = None,
     ) -> None:
-        super().__init__(thresholds, related_topics)
+        super().__init__(thresholds, related_topics, levels=levels)
         self._message_count = 0
         self._position_covariance_trace = 0.0
         self._yaw_variance = 0.0

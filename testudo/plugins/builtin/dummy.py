@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, ThresholdZone
+from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, SeverityLevels, ThresholdZone
 
 
 class DummyPlugin(CheckPlugin):
@@ -18,8 +18,10 @@ class DummyPlugin(CheckPlugin):
         self,
         thresholds: dict[str, ThresholdZone] | None = None,
         related_topics: dict[str, str] | None = None,
+        *,
+        levels: dict[str, SeverityLevels] | None = None,
     ) -> None:
-        super().__init__(thresholds, related_topics)
+        super().__init__(thresholds, related_topics, levels=levels)
         self._message_count = 0
 
     @classmethod

@@ -23,6 +23,7 @@ from testudo.plugins.base import (
     CheckPlugin,
     CheckStatus,
     Severity,
+    SeverityLevels,
     ThresholdZone,
     colorize,
 )
@@ -54,8 +55,10 @@ class TFWatchPlugin(CheckPlugin):
         thresholds: dict[str, ThresholdZone] | None = None,
         related_topics: dict[str, str] | None = None,
         buffer_window_seconds: float = DEFAULT_BUFFER_WINDOW_SECONDS,
+        *,
+        levels: dict[str, SeverityLevels] | None = None,
     ) -> None:
-        super().__init__(thresholds, related_topics)
+        super().__init__(thresholds, related_topics, levels=levels)
         self._buffer_window_seconds = buffer_window_seconds
         self._watched_pairs: list[tuple[str, str]] = []
         self._parents_by_child: dict[str, set[str]] = defaultdict(set)
@@ -99,7 +102,7 @@ class TFWatchPlugin(CheckPlugin):
         silently drop the watched pairs, and every chain check with them.
         """
         watched_pairs = self._watched_pairs
-        self.__init__(self.thresholds, self.related_topics, self._buffer_window_seconds)
+        self.__init__(self.thresholds, self.related_topics, self._buffer_window_seconds, levels=self.levels)
         self._watched_pairs = watched_pairs
 
     def on_tick(self, now_seconds: float) -> None:

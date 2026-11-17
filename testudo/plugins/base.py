@@ -1,8 +1,8 @@
 """The plugin interface that every Testudo check plugin implements.
 
 This is the one piece of API external users build against, so it is kept
-small and stable: message-type declaration, a threshold profile, a message
-callback, a periodic tick, and a single status getter. Built-in plugins use
+small and stable: message-type declaration, severity levels and graphic
+zones, a message callback, a periodic tick, and a single status getter. Built-in plugins use
 this exact interface too, rather than a privileged internal one.
 """
 from __future__ import annotations
@@ -64,16 +64,32 @@ SEVERITY_ICONS: dict[int, str] = {
 
 @dataclass(frozen=True)
 class ThresholdZone:
-    """Boundary values for one metric's green/orange/red zones.
+    """Boundary values for one metric's green/orange/red graphic zones.
 
-    Direction (higher-is-better vs. lower-is-better) is a matter of
-    convention between a plugin and its threshold consumer; this struct only
-    carries the three boundary values.
+    Graphics only: how a meter or trend is colored and scaled
+    (`plugins.render.meter`). Whether a topic is WARN or ERROR is decided by
+    `SeverityLevels`, separately. Direction (higher-is-better vs.
+    lower-is-better) is a matter of convention between a plugin and its
+    threshold consumer; this struct only carries the three boundary values.
     """
 
     green: float | None = None
     orange: float | None = None
     red: float | None = None
+
+
+@dataclass(frozen=True)
+class SeverityLevels:
+    """Where one metric turns a topic WARN and ERROR (`evaluate_levels`).
+
+    ERROR means something has gone wrong (a 9999 placeholder covariance, a
+    frozen driver); a working but degraded reading is a WARN. A missing
+    cut never fires: no `error` means the metric can degrade a topic but
+    never break it. Separate from `ThresholdZone`, which only colors meters.
+    """
+
+    warn: float | None = None
+    error: float | None = None
 
 
 #: `CheckStatus.values` key suffix marking a value's narrow-terminal
@@ -177,8 +193,35 @@ def colorize(text: str, severity: int) -> str:
     return f"[{color}]{text}[/{color}]"
 
 
+def evaluate_levels(value: float, levels: SeverityLevels | None, *, higher_is_worse: bool = True) -> int:
+    """Map `value` to a Severity: past `levels.error` ERROR, past `levels.warn` WARN, else OK.
+
+    "Past" is above for `higher_is_worse=True` (the default: covariance,
+    error counts) and below for `higher_is_worse=False` (a success rate, an
+    update rate). A value exactly on a cut is still on the good side.
+    `levels=None` (nothing configured for this metric) is always OK.
+    """
+    if levels is None:
+        return Severity.OK
+
+    def past(cut: float | None) -> bool:
+        if cut is None:
+            return False
+        return value > cut if higher_is_worse else value < cut
+
+    if past(levels.error):
+        return Severity.ERROR
+    if past(levels.warn):
+        return Severity.WARN
+    return Severity.OK
+
+
 def evaluate_zone(value: float, zone: ThresholdZone | None, *, higher_is_worse: bool = True) -> int:
     """Map `value` to a Severity using `zone`'s green/orange cut points.
+
+    Kept for plugins written before `SeverityLevels` (built-ins use
+    `evaluate_levels`, so their zones only color meters); new code should
+    judge severity with `evaluate_levels` instead.
 
     `higher_is_worse=True` (the default) treats `value <= green` as OK,
     `value <= orange` as WARN, and anything past that as ERROR -- for
@@ -227,11 +270,13 @@ class CheckPlugin(abc.ABC):
         self,
         thresholds: dict[str, ThresholdZone] | None = None,
         related_topics: dict[str, str] | None = None,
+        *,
+        levels: dict[str, SeverityLevels] | None = None,
     ) -> None:
         """Construct a plugin instance.
 
         Args:
-            thresholds: this instance's effective threshold profile --
+            thresholds: this instance's graphic zones (meter colors) --
                 the caller (SubscriptionManager) has already merged any
                 per-topic config overrides over `default_thresholds()`.
                 Defaults to `default_thresholds()` if not given.
@@ -239,9 +284,13 @@ class CheckPlugin(abc.ABC):
                 delivered via `on_message`, as {logical_name: topic_name},
                 resolved from the declaring topic's config. Empty if this
                 plugin doesn't use any (most don't).
+            levels: this instance's severity levels, config overrides
+                already merged over `default_levels()` (which it defaults to).
+                A plugin overriding `__init__` must accept and pass it on.
         """
         self.thresholds = thresholds if thresholds is not None else self.default_thresholds()
         self.related_topics = related_topics or {}
+        self.levels = levels if levels is not None else self.default_levels()
 
     @classmethod
     @abc.abstractmethod
@@ -250,7 +299,16 @@ class CheckPlugin(abc.ABC):
 
     @classmethod
     def default_thresholds(cls) -> dict[str, ThresholdZone]:
-        """Default threshold profile, keyed by metric name. Empty unless overridden."""
+        """Default graphic zones (meter colors), keyed by metric name. Empty unless overridden."""
+        return {}
+
+    @classmethod
+    def default_levels(cls) -> dict[str, SeverityLevels]:
+        """Default severity levels, keyed by metric name: what turns a topic WARN/ERROR.
+
+        Users override them per topic (`thresholds: {metric: {warn: .., error: ..}}`).
+        Empty unless overridden.
+        """
         return {}
 
     @classmethod
@@ -311,12 +369,12 @@ class CheckPlugin(abc.ABC):
         """Return the plugin's current rolled-up status."""
 
     def reset(self) -> None:
-        """Clear accumulated rolling-window state, keeping thresholds/related_topics.
+        """Clear accumulated rolling-window state, keeping thresholds/related_topics/levels.
 
         Backs the TUI's 'reset stats' keybind. The default just re-runs
-        `__init__` with the current thresholds/related_topics -- correct
-        for any plugin (every built-in) whose state lives entirely in
-        instance attributes set there. Override only if a plugin needs
+        `__init__` with the current thresholds/related_topics/levels --
+        correct for any plugin (every built-in) whose state lives entirely
+        in instance attributes set there. Override only if a plugin needs
         different reset semantics.
         """
-        self.__init__(self.thresholds, self.related_topics)
+        self.__init__(self.thresholds, self.related_topics, levels=self.levels)
