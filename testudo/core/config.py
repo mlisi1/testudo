@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from testudo.plugins.base import ThresholdZone
+from testudo.plugins.base import SeverityLevels, ThresholdZone
 
 
 def default_config_path() -> Path:
@@ -112,13 +112,40 @@ class ExcludeRule:
 
 
 @dataclass(frozen=True)
+class LevelsOverride:
+    """A metric's `warn`/`error` as written in config, over the plugin's default levels.
+
+    Only the keys actually written override (`given`): `{warn: 0.05}` keeps
+    the default `error`; an explicit `error: null` removes it.
+    """
+
+    warn: float | None = None
+    error: float | None = None
+    given: frozenset[str] = frozenset()
+
+    def over(self, default: SeverityLevels | None) -> SeverityLevels:
+        """`default` with this override's written keys replacing its own."""
+        base = default if default is not None else SeverityLevels()
+        return SeverityLevels(
+            warn=self.warn if "warn" in self.given else base.warn,
+            error=self.error if "error" in self.given else base.error,
+        )
+
+
+@dataclass(frozen=True)
 class TopicConfig:
-    """One declared topic: gets the full (typed, content-checked) subscription tier."""
+    """One declared topic: gets the full (typed, content-checked) subscription tier.
+
+    `thresholds` holds each metric's graphic zones (green/orange/red: meter
+    colors), `levels` its severity levels (warn/error), both from the same
+    `thresholds:` block in YAML.
+    """
 
     name: str
     msg_type: str
     weight: float = 1.0
     thresholds: dict[str, ThresholdZone] = field(default_factory=dict)
+    levels: dict[str, LevelsOverride] = field(default_factory=dict)
     related_topics: dict[str, str] = field(default_factory=dict)
     # Publishes only when something happens (e.g. a controller's cmd_vel):
     # silence reads as "idle", never STALE.
@@ -133,6 +160,7 @@ class ActionConfig:
     action_type: str
     weight: float = 1.0
     thresholds: dict[str, ThresholdZone] = field(default_factory=dict)
+    levels: dict[str, LevelsOverride] = field(default_factory=dict)
     # e.g. {"feedback": "/navigate_to_pose/_action/feedback"} -- routed to
     # the same Nav2GoalPlugin instance as the derived status topic, exactly
     # like a declared topic's related_topics (see TopicConfig above).
@@ -175,20 +203,23 @@ class NodeProfilingConfig:
     topic/TF/Nav2 diagnostics stream -- process health is a different axis
     of data with its own natural cadence (`poll_interval_seconds` in
     `watch`), decoupled from
-    `publish.rate_hz` above. `cpu_percent`'s default zone is generous
-    (150/300, not 80/95): `psutil`'s cpu_percent can legitimately exceed
+    `publish.rate_hz` above. The four metrics are severity levels only
+    (warn/error; nothing here draws a meter), and none has a default
+    `error`: a busy or leaking node is degraded, not broken -- a dead or
+    zombie process is what's ERROR. `cpu_percent`'s default is generous
+    (warn past 150, not 80): `psutil`'s cpu_percent can legitimately exceed
     100% for a multi-threaded process (matches `top`/`htop`), so a
     single-core-normalized default would false-positive on any busy,
-    healthy multi-threaded Nav2 node. `ctx_switches_per_sec` zones the
+    healthy multi-threaded Nav2 node. `ctx_switches_per_sec` judges the
     *involuntary* context-switch rate (the OS scheduler preempting a
     process against its will) -- the direct "is this node CPU-starved"
     signal, distinct from and complementary to `cpu_percent`: a starved
     node's CPU% can look perfectly normal (it isn't getting time to *use*
-    the CPU) while this rate climbs. Defaults (50/200 per second) are
+    the CPU) while this rate climbs. The default (warn past 50/s) is
     deliberately conservative -- a *voluntary* switch (blocking on IPC,
     the vast majority of a healthy ROS node's switches) isn't counted at
     all, so even a chatty node shouldn't approach these under normal load.
-    `memory_slope_mb_per_min` zones RSS growth over the last ~2 minutes of
+    `memory_slope_mb_per_min` judges RSS growth over the last ~2 minutes of
     samples (a least-squares slope, judged only once the window spans a
     minute and the process has been up 5 minutes, past its startup
     allocation) -- leak detection, which a single memory reading can't do.
@@ -199,10 +230,10 @@ class NodeProfilingConfig:
     rediscovery_interval_seconds: float = 5.0
     gpu_enabled: bool = True
     exclude_nodes: list[ExcludeRule] = field(default_factory=list)
-    cpu_percent: ThresholdZone = field(default_factory=lambda: ThresholdZone(green=150.0, orange=300.0))
-    memory_mb: ThresholdZone = field(default_factory=lambda: ThresholdZone(green=500.0, orange=1500.0))
-    ctx_switches_per_sec: ThresholdZone = field(default_factory=lambda: ThresholdZone(green=50.0, orange=200.0))
-    memory_slope_mb_per_min: ThresholdZone = field(default_factory=lambda: ThresholdZone(green=10.0, orange=50.0))
+    cpu_percent: SeverityLevels = SeverityLevels(warn=150.0)
+    memory_mb: SeverityLevels = SeverityLevels(warn=500.0)
+    ctx_switches_per_sec: SeverityLevels = SeverityLevels(warn=50.0)
+    memory_slope_mb_per_min: SeverityLevels = SeverityLevels(warn=10.0)
     #: Defaults to `<publish.namespace>/nodes`, or `<publish.topic>/nodes` with
     #: `publish.per_plugin: false` (see `config_loader.default_node_profiling_topic`).
     publish_topic: str = "/testudo/nodes"

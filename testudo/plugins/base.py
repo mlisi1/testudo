@@ -284,9 +284,11 @@ class CheckPlugin(abc.ABC):
                 delivered via `on_message`, as {logical_name: topic_name},
                 resolved from the declaring topic's config. Empty if this
                 plugin doesn't use any (most don't).
-            levels: this instance's severity levels, config overrides
-                already merged over `default_levels()` (which it defaults to).
-                A plugin overriding `__init__` must accept and pass it on.
+            levels: this instance's severity levels, defaulting to
+                `default_levels()`. Testudo itself assigns `self.levels`
+                (config overrides merged over the defaults) right after
+                construction instead, so a plugin overriding `__init__`
+                doesn't need to accept this keyword.
         """
         self.thresholds = thresholds if thresholds is not None else self.default_thresholds()
         self.related_topics = related_topics or {}
@@ -377,4 +379,6 @@ class CheckPlugin(abc.ABC):
         in instance attributes set there. Override only if a plugin needs
         different reset semantics.
         """
-        self.__init__(self.thresholds, self.related_topics, levels=self.levels)
+        levels = self.levels
+        self.__init__(self.thresholds, self.related_topics)
+        self.levels = levels

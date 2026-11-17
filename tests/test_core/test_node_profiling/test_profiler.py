@@ -13,7 +13,7 @@ import pytest
 
 from testudo.core.config import NodeProfilingConfig
 from testudo.core.node_profiling.profiler import NodeProfiler
-from testudo.plugins.base import Severity, ThresholdZone
+from testudo.plugins.base import Severity, SeverityLevels
 
 _CtxSwitches = namedtuple("ctxsw", ["voluntary", "involuntary"])
 
@@ -109,8 +109,8 @@ def _patch_psutil_process(monkeypatch: pytest.MonkeyPatch):
 
 def _config(**overrides) -> NodeProfilingConfig:
     defaults = dict(
-        cpu_percent=ThresholdZone(green=50.0, orange=90.0),
-        memory_mb=ThresholdZone(green=100.0, orange=500.0),
+        cpu_percent=SeverityLevels(warn=50.0, error=90.0),
+        memory_mb=SeverityLevels(warn=100.0, error=500.0),
         gpu_enabled=False,
     )
     defaults.update(overrides)
@@ -282,7 +282,7 @@ def test_starving_node_flagged_via_involuntary_ctx_switches(monkeypatch: pytest.
     monkeypatch.setattr(sampler_module.time, "monotonic", lambda: fake_time["now"])
     node = _FakeNode(node_names=[])
     profiler = NodeProfiler(
-        node, _config(ctx_switches_per_sec=ThresholdZone(green=10.0, orange=50.0)), hysteresis_required_consecutive=1
+        node, _config(ctx_switches_per_sec=SeverityLevels(warn=10.0, error=50.0)), hysteresis_required_consecutive=1
     )
     profiler.start()
     profiler.tick()  # warming up -- seeds both cpu and ctx-switch baselines

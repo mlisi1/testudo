@@ -101,9 +101,9 @@ class TFWatchPlugin(CheckPlugin):
         accumulated state -- the base class's re-run of `__init__` would
         silently drop the watched pairs, and every chain check with them.
         """
-        watched_pairs = self._watched_pairs
-        self.__init__(self.thresholds, self.related_topics, self._buffer_window_seconds, levels=self.levels)
-        self._watched_pairs = watched_pairs
+        watched_pairs, levels = self._watched_pairs, self.levels
+        self.__init__(self.thresholds, self.related_topics, self._buffer_window_seconds)
+        self._watched_pairs, self.levels = watched_pairs, levels
 
     def on_tick(self, now_seconds: float) -> None:
         self._now = now_seconds

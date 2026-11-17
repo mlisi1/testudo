@@ -32,7 +32,8 @@ from testudo.core.discovery import (
 )
 from testudo.core.exclusion import maybe_record_excluded
 from testudo.core.vitals import TopicVitals
-from testudo.plugins.base import CheckPlugin, ThresholdZone
+from testudo.core.plugin_settings import build_plugin
+from testudo.plugins.base import CheckPlugin
 
 if TYPE_CHECKING:
     from testudo.core.subscription_manager import SubscriptionManager
@@ -105,24 +106,13 @@ def subscribe_topic(
 
     topic_config = manager._topic_config_by_name.get(topic_name)
     action_config = manager._action_config_by_status_topic.get(topic_name)
-    thresholds = dict(plugin_class.default_thresholds())
     related_topics: dict[str, str] = {}
     if topic_config is not None:
-        thresholds.update(topic_config.thresholds)
         related_topics = topic_config.related_topics
     if action_config is not None:
-        thresholds.update(action_config.thresholds)
         related_topics = {**related_topics, **action_config.related_topics}
-    subscribe_full_tier(
-        manager,
-        topic_name,
-        msg_class,
-        qos,
-        plugin_class,
-        thresholds,
-        related_topics,
-        topics_by_name,
-    )
+    plugin = build_plugin(plugin_class, related_topics, topic_config, action_config)
+    subscribe_full_tier(manager, topic_name, msg_class, qos, plugin, topics_by_name)
 
 
 def subscribe_vitals_tier(manager: SubscriptionManager, topic_name: str, msg_class: type, qos_profile) -> None:
@@ -146,13 +136,10 @@ def subscribe_full_tier(
     topic_name: str,
     msg_class: type,
     qos_profile,
-    plugin_class: type[CheckPlugin],
-    thresholds: dict[str, ThresholdZone],
-    related_topics: dict[str, str],
+    plugin: CheckPlugin,
     topics_by_name: dict[str, TopicInfo],
 ) -> FullTierState:
-    """A typed subscription feeding a fresh `plugin_class` instance, plus its related topics."""
-    plugin = plugin_class(thresholds=thresholds, related_topics=related_topics)
+    """A typed subscription feeding `plugin` (freshly built), plus subscriptions to its related topics."""
     state = FullTierState(
         plugin=plugin,
         vitals=TopicVitals(topic=topic_name),
@@ -167,7 +154,7 @@ def subscribe_full_tier(
         msg_class, topic_name, _on_message, qos_profile
     )
 
-    for related_topic_name in related_topics.values():
+    for related_topic_name in plugin.related_topics.values():
         manager._related_topic_targets[related_topic_name] = (plugin, topic_name)
         subscribe_related_topic(manager, related_topic_name, plugin, topics_by_name)
 

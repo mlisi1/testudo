@@ -16,6 +16,7 @@ from testudo.core.config import (
     ActionConfig,
     ExcludeMatchType,
     ExcludeRule,
+    LevelsOverride,
     PublishConfig,
     SeverityMode,
     TestudoConfig,
@@ -1180,7 +1181,7 @@ def test_rate_hz_threshold_flags_slow_vitals_topic() -> None:
                 TopicConfig(
                     name="/local_costmap/costmap",
                     msg_type="nav_msgs/msg/OccupancyGrid",
-                    thresholds={"rate_hz": ThresholdZone(green=4.0, orange=1.0)},
+                    levels={"rate_hz": LevelsOverride(warn=4.0, error=1.0, given=frozenset({"warn", "error"}))},
                 )
             ]
         }

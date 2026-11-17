@@ -35,6 +35,7 @@ from testudo.core.clock import TestudoClock
 from testudo.core.config import TestudoConfig
 from testudo.core.global_watches import TF_STATIC_TOPIC, TF_TOPIC, TF_TYPE
 from testudo.core.exclusion import maybe_record_excluded
+from testudo.core.plugin_settings import build_plugin
 from testudo.core.subscription_manager import SubscriptionManager
 from testudo.core.tier_subscription import FullTierState, process_full_tier_message
 from testudo.core.topic_report import TopicReport
@@ -117,15 +118,8 @@ def _track_for_replay(manager: SubscriptionManager, topic_name: str, msg_type_st
 
     topic_config = manager._topic_config_by_name.get(topic_name)
     action_config = manager._action_config_by_status_topic.get(topic_name)
-    thresholds = dict(plugin_class.default_thresholds())
-    related_topics: dict[str, str] = {}
-    if topic_config is not None:
-        thresholds.update(topic_config.thresholds)
-        related_topics = topic_config.related_topics
-    if action_config is not None:
-        thresholds.update(action_config.thresholds)
-
-    plugin = plugin_class(thresholds=thresholds, related_topics=related_topics)
+    related_topics: dict[str, str] = topic_config.related_topics if topic_config is not None else {}
+    plugin = build_plugin(plugin_class, related_topics, topic_config, action_config)
     state = FullTierState(
         plugin=plugin,
         vitals=TopicVitals(topic=topic_name),

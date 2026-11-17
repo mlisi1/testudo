@@ -10,11 +10,11 @@ from testudo.core.node_profiling.report import (
     node_stat_to_topic_report,
 )
 from testudo.core.node_profiling.sampler import ProcessSample
-from testudo.plugins.base import Severity, ThresholdZone
+from testudo.plugins.base import Severity, SeverityLevels
 
-_CPU_ZONE = ThresholdZone(green=50.0, orange=90.0)
-_MEM_ZONE = ThresholdZone(green=100.0, orange=500.0)
-_CTX_ZONE = ThresholdZone(green=50.0, orange=200.0)
+_CPU_LEVELS = SeverityLevels(warn=50.0, error=90.0)
+_MEM_LEVELS = SeverityLevels(warn=100.0, error=500.0)
+_CTX_LEVELS = SeverityLevels(warn=50.0, error=200.0)
 
 
 def _sample(**overrides) -> ProcessSample:
@@ -38,8 +38,8 @@ def _sample(**overrides) -> ProcessSample:
     return ProcessSample(**defaults)
 
 
-def _build(sample, cpu_zone=_CPU_ZONE, memory_zone=_MEM_ZONE, ctx_zone=_CTX_ZONE, **kwargs):
-    return build_status(sample, 123, "controller_server", cpu_zone, memory_zone, ctx_zone, **kwargs)
+def _build(sample, cpu_levels=_CPU_LEVELS, memory_levels=_MEM_LEVELS, ctx_levels=_CTX_LEVELS, **kwargs):
+    return build_status(sample, 123, "controller_server", cpu_levels, memory_levels, ctx_levels, **kwargs)
 
 
 def test_warming_up_sample_is_ok_but_still_shows_immediately_available_info() -> None:
@@ -147,7 +147,7 @@ def test_gpu_memory_absent_when_none() -> None:
     assert "gpu_memory_mb" not in status.values
 
 
-def test_no_zone_configured_is_always_ok() -> None:
+def test_no_levels_configured_is_always_ok() -> None:
     status = _build(_sample(cpu_percent=999.0, memory_rss_mb=999.0, ctx_switches_involuntary_per_sec=99999.0), None, None, None)
     assert status.severity == Severity.OK
 
@@ -219,10 +219,10 @@ def test_detail_panel_values_add_trends_and_memory_slope() -> None:
     assert shown["memory"].endswith("+2.5 MB/min")
 
 
-def test_memory_slope_above_zone_flags_a_possible_leak() -> None:
-    zone = ThresholdZone(green=10.0, orange=50.0)
-    assert "NODE-003" not in _build(_sample(), memory_slope_mb_per_min=5.0, memory_slope_zone=zone).codes
-    status = _build(_sample(uptime_seconds=600.0), memory_slope_mb_per_min=30.0, memory_slope_zone=zone)
+def test_memory_slope_past_warn_flags_a_possible_leak() -> None:
+    levels = SeverityLevels(warn=10.0, error=50.0)
+    assert "NODE-003" not in _build(_sample(), memory_slope_mb_per_min=5.0, memory_slope_levels=levels).codes
+    status = _build(_sample(uptime_seconds=600.0), memory_slope_mb_per_min=30.0, memory_slope_levels=levels)
     assert status.severity == Severity.WARN
     assert "NODE-003" in status.codes
     assert status.values["memory_slope_mb_per_min"] == "+30.0"
@@ -230,8 +230,8 @@ def test_memory_slope_above_zone_flags_a_possible_leak() -> None:
 
 
 def test_memory_slope_not_judged_during_startup_grace() -> None:
-    zone = ThresholdZone(green=10.0, orange=50.0)
-    status = _build(_sample(uptime_seconds=120.0), memory_slope_mb_per_min=30.0, memory_slope_zone=zone)
+    levels = SeverityLevels(warn=10.0, error=50.0)
+    status = _build(_sample(uptime_seconds=120.0), memory_slope_mb_per_min=30.0, memory_slope_levels=levels)
     assert status.severity == Severity.OK
     assert "NODE-003" not in status.codes
     assert status.values["memory_slope_mb_per_min"] == "+30.0"

@@ -4,6 +4,7 @@ All synthetic YAML — no live ROS graph or robot needed.
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -12,11 +13,13 @@ from testudo.core.config import (
     ConfigError,
     ExcludeMatchType,
     ExcludeRule,
+    LevelsOverride,
     NodeProfilingConfig,
     SeverityMode,
     default_config_path,
 )
 from testudo.core.config_loader import load_config
+from testudo.plugins.base import SeverityLevels, ThresholdZone
 
 
 def _write(tmp_path: Path, text: str) -> Path:
@@ -420,14 +423,13 @@ def test_node_profiling_full(tmp_path: Path) -> None:
           gpu_enabled: false
           publish_topic: /diagnostics/my_nodes
           cpu_percent:
-            green: 50
-            orange: 90
+            warn: 50
+            error: 90
           memory_mb:
-            green: 200
-            orange: 800
+            warn: 200
           memory_slope_mb_per_min:
-            green: 5
-            orange: 20
+            warn: 5
+            error: 20
           exclude_nodes:
             - /noisy_node
             - pattern: "_debug$"
@@ -441,12 +443,9 @@ def test_node_profiling_full(tmp_path: Path) -> None:
     assert np.rediscovery_interval_seconds == 10.0
     assert np.gpu_enabled is False
     assert np.publish_topic == "/diagnostics/my_nodes"
-    assert np.cpu_percent.green == 50.0
-    assert np.cpu_percent.orange == 90.0
-    assert np.memory_mb.green == 200.0
-    assert np.memory_mb.orange == 800.0
-    assert np.memory_slope_mb_per_min.green == 5.0
-    assert np.memory_slope_mb_per_min.orange == 20.0
+    assert np.cpu_percent == SeverityLevels(warn=50.0, error=90.0)
+    assert np.memory_mb == SeverityLevels(warn=200.0)
+    assert np.memory_slope_mb_per_min == SeverityLevels(warn=5.0, error=20.0)
     assert np.exclude_nodes == [
         ExcludeRule("/noisy_node"),
         ExcludeRule("_debug$", ExcludeMatchType.REGEX),
@@ -554,3 +553,79 @@ def test_faults_section_parses_recent_retention_and_rejects_bad_values(tmp_path:
         load_config(_write(tmp_path, "faults:\n  retention: forever\n"))
     with pytest.raises(ConfigError, match="unknown key"):
         load_config(_write(tmp_path, "faults:\n  keep: 3\n"))
+
+
+def test_thresholds_split_into_severity_levels_and_graphic_zones(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        """
+        topics:
+          nav_msgs/msg/Odometry:
+            - name: /odom
+              thresholds:
+                position_covariance_trace: {warn: 0.05, error: 1000, green: 0.01, orange: 0.1}
+                yaw_variance: {warn: 0.5}
+                covariance_growth_rate: {error: null}
+        """,
+    )
+    odom = load_config(path).topics["nav_msgs/msg/Odometry"][0]
+    assert odom.thresholds == {"position_covariance_trace": ThresholdZone(green=0.01, orange=0.1)}
+    trace = odom.levels["position_covariance_trace"]
+    assert (trace.warn, trace.error, trace.given) == (0.05, 1000.0, frozenset({"warn", "error"}))
+    # Only the written keys override: yaw keeps its default error, growth loses its.
+    assert odom.levels["yaw_variance"].over(SeverityLevels(warn=0.01, error=10.0)) == SeverityLevels(0.5, 10.0)
+    assert odom.levels["covariance_growth_rate"].over(SeverityLevels(warn=0.01, error=1.0)) == SeverityLevels(0.01)
+
+
+def test_zone_only_threshold_logs_that_it_no_longer_sets_severity(tmp_path: Path, caplog) -> None:
+    path = _write(
+        tmp_path,
+        """
+        topics:
+          nav_msgs/msg/Odometry:
+            - name: /odom
+              thresholds:
+                position_covariance_trace: {green: 0.05, orange: 0.2}
+        """,
+    )
+    # Attached directly: earlier tests can leave the "testudo" logger non-propagating.
+    logger = logging.getLogger("testudo.core.config_values")
+    logger.addHandler(caplog.handler)
+    try:
+        odom = load_config(path).topics["nav_msgs/msg/Odometry"][0]
+    finally:
+        logger.removeHandler(caplog.handler)
+    assert odom.levels == {}
+    assert "only color meters" in caplog.text and "position_covariance_trace" in caplog.text
+
+
+def test_threshold_values_must_be_numbers(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        """
+        topics:
+          nav_msgs/msg/Odometry:
+            - name: /odom
+              thresholds:
+                yaw_variance: {warn: true}
+        """,
+    )
+    with pytest.raises(ConfigError, match="yaw_variance.warn must be numeric"):
+        load_config(path)
+
+
+def test_node_profiling_refuses_zones_it_cannot_draw(tmp_path: Path) -> None:
+    path = _write(tmp_path, "node_profiling:\n  cpu_percent: {green: 50, orange: 90}\n")
+    with pytest.raises(ConfigError, match="node_profiling.cpu_percent takes warn/error"):
+        load_config(path)
+
+
+def test_node_profiling_levels_override_key_by_key(tmp_path: Path) -> None:
+    path = _write(tmp_path, "node_profiling:\n  cpu_percent: {error: 400}\n")
+    assert load_config(path).node_profiling.cpu_percent == SeverityLevels(warn=150.0, error=400.0)
+
+
+def test_levels_override_keeps_unwritten_keys() -> None:
+    override = LevelsOverride(warn=2.0, given=frozenset({"warn"}))
+    assert override.over(None) == SeverityLevels(warn=2.0)
+    assert override.over(SeverityLevels(warn=1.0, error=9.0)) == SeverityLevels(warn=2.0, error=9.0)

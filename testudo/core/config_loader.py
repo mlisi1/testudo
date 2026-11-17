@@ -16,6 +16,7 @@ from testudo.core.config import (
     ExcludeRule,
     FaultRetention,
     FaultsConfig,
+    LevelsOverride,
     NodeProfilingConfig,
     PublishConfig,
     SeverityMode,
@@ -27,9 +28,9 @@ from testudo.core.config_values import (
     parse_exclude_rules,
     parse_non_empty_string,
     parse_positive_number,
-    parse_zone,
+    parse_metric,
 )
-from testudo.plugins.base import ThresholdZone
+from testudo.plugins.base import SeverityLevels, ThresholdZone
 
 
 def load_config(path: str | Path) -> TestudoConfig:
@@ -122,7 +123,7 @@ def _parse_topic_entry(entry: Any, msg_type: str, source: str) -> TopicConfig:
     if not isinstance(name, str) or not name:
         raise ConfigError(f"{source}: topics.{msg_type} entry missing required string 'name'")
     weight = _parse_weight(entry.get("weight", 1.0), f"topics.{msg_type}[{name}]", source)
-    thresholds = _parse_thresholds(entry.get("thresholds", {}), f"topics.{msg_type}[{name}]", source)
+    thresholds, levels = _parse_thresholds(entry.get("thresholds", {}), f"topics.{msg_type}[{name}]", source)
     related_topics = _parse_related_topics(entry.get("related_topics", {}), f"topics.{msg_type}[{name}]", source)
     event_driven = entry.get("event_driven", False)
     if not isinstance(event_driven, bool):
@@ -132,6 +133,7 @@ def _parse_topic_entry(entry: Any, msg_type: str, source: str) -> TopicConfig:
         msg_type=msg_type,
         weight=weight,
         thresholds=thresholds,
+        levels=levels,
         related_topics=related_topics,
         event_driven=event_driven,
     )
@@ -150,10 +152,21 @@ def _parse_related_topics(raw: Any, context: str, source: str) -> dict[str, str]
     return result
 
 
-def _parse_thresholds(raw: Any, context: str, source: str) -> dict[str, ThresholdZone]:
+def _parse_thresholds(
+    raw: Any, context: str, source: str
+) -> tuple[dict[str, ThresholdZone], dict[str, LevelsOverride]]:
+    """A `thresholds:` block as (graphic zones, severity levels), each keyed by metric."""
     if not isinstance(raw, dict):
         raise ConfigError(f"{source}: {context}.thresholds must be a mapping")
-    return {metric: parse_zone(zones, f"{context}.thresholds.{metric}", source) for metric, zones in raw.items()}
+    zones: dict[str, ThresholdZone] = {}
+    levels: dict[str, LevelsOverride] = {}
+    for metric, entry in raw.items():
+        zone, level = parse_metric(entry, f"{context}.thresholds.{metric}", source)
+        if zone is not None:
+            zones[metric] = zone
+        if level is not None:
+            levels[metric] = level
+    return zones, levels
 
 
 def _parse_weight(value: Any, context: str, source: str) -> float:
@@ -182,11 +195,16 @@ def _parse_actions(raw: Any, source: str) -> list[ActionConfig]:
         if not isinstance(action_type, str) or not action_type:
             raise ConfigError(f"{source}: action '{name}' missing required string 'action_type'")
         weight = _parse_weight(entry.get("weight", 1.0), f"actions[{name}]", source)
-        thresholds = _parse_thresholds(entry.get("thresholds", {}), f"actions[{name}]", source)
+        thresholds, levels = _parse_thresholds(entry.get("thresholds", {}), f"actions[{name}]", source)
         related_topics = _parse_related_topics(entry.get("related_topics", {}), f"actions[{name}]", source)
         result.append(
             ActionConfig(
-                name=name, action_type=action_type, weight=weight, thresholds=thresholds, related_topics=related_topics
+                name=name,
+                action_type=action_type,
+                weight=weight,
+                thresholds=thresholds,
+                levels=levels,
+                related_topics=related_topics,
             )
         )
     return result
@@ -255,6 +273,18 @@ _NODE_PROFILING_KEYS = {
 }
 
 
+def _parse_node_levels(raw: dict, metric: str, default: SeverityLevels, source: str) -> SeverityLevels:
+    """A node-profiling metric's warn/error over `default`; green/orange/red are refused, since no meter uses them."""
+    if metric not in raw:
+        return default
+    if isinstance(raw[metric], dict) and any(key in raw[metric] for key in ("green", "orange", "red")):
+        raise ConfigError(
+            f"{source}: node_profiling.{metric} takes warn/error (green/orange/red would color nothing here)"
+        )
+    _zone, levels = parse_metric(raw[metric], f"node_profiling.{metric}", source)
+    return levels.over(default) if levels is not None else default
+
+
 def default_node_profiling_topic(publish: PublishConfig) -> str:
     """Where node profiling publishes unless `publish_topic` is set: next to the rest of the output.
 
@@ -291,20 +321,12 @@ def _parse_node_profiling(raw: Any, source: str, publish: PublishConfig) -> Node
         ),
         gpu_enabled=gpu_enabled,
         exclude_nodes=_parse_exclude_nodes(raw.get("exclude_nodes", []), source),
-        cpu_percent=parse_zone(raw["cpu_percent"], "node_profiling.cpu_percent", source)
-        if "cpu_percent" in raw
-        else default.cpu_percent,
-        memory_mb=parse_zone(raw["memory_mb"], "node_profiling.memory_mb", source)
-        if "memory_mb" in raw
-        else default.memory_mb,
-        ctx_switches_per_sec=parse_zone(raw["ctx_switches_per_sec"], "node_profiling.ctx_switches_per_sec", source)
-        if "ctx_switches_per_sec" in raw
-        else default.ctx_switches_per_sec,
-        memory_slope_mb_per_min=parse_zone(
-            raw["memory_slope_mb_per_min"], "node_profiling.memory_slope_mb_per_min", source
-        )
-        if "memory_slope_mb_per_min" in raw
-        else default.memory_slope_mb_per_min,
+        cpu_percent=_parse_node_levels(raw, "cpu_percent", default.cpu_percent, source),
+        memory_mb=_parse_node_levels(raw, "memory_mb", default.memory_mb, source),
+        ctx_switches_per_sec=_parse_node_levels(raw, "ctx_switches_per_sec", default.ctx_switches_per_sec, source),
+        memory_slope_mb_per_min=_parse_node_levels(
+            raw, "memory_slope_mb_per_min", default.memory_slope_mb_per_min, source
+        ),
         publish_topic=parse_non_empty_string(
             raw.get("publish_topic", default_node_profiling_topic(publish)), "node_profiling.publish_topic", source
         ),

@@ -11,7 +11,7 @@ from dataclasses import dataclass, replace
 
 from testudo.core.lifecycle import LifecycleTracker
 from testudo.core.vitals import TopicVitals
-from testudo.plugins.base import ActiveCodes, CheckStatus, Severity, ThresholdZone, colorize, evaluate_zone
+from testudo.plugins.base import ActiveCodes, CheckStatus, Severity, SeverityLevels, colorize, evaluate_levels
 
 
 @dataclass(frozen=True)
@@ -186,7 +186,7 @@ def vitals_report(
     vitals: TopicVitals,
     now: float,
     stale_after_seconds: float,
-    rate_threshold: ThresholdZone | None = None,
+    rate_levels: SeverityLevels | None = None,
     monitor_hz: bool = True,
     *,
     latched: bool = False,
@@ -194,8 +194,9 @@ def vitals_report(
 ) -> TopicReport:
     """Build a vitals-tier report: liveness verdict, or "alive" (optionally rate-checked).
 
-    `rate_threshold`, when given (from a declared topic's `thresholds.rate_hz`
-    in config), checks the observed rate against it -- lower is worse. This
+    `rate_levels`, when given (from a declared topic's `thresholds.rate_hz:
+    {warn: .., error: ..}` in config), checks the observed rate against it --
+    lower is worse. This
     is how "actual vs. configured rate" checks (e.g. a costmap/planner/
     controller publishing slower than expected) work: no dedicated plugin,
     just a threshold on the vitals tier every topic already has.
@@ -220,8 +221,8 @@ def vitals_report(
     severity = Severity.OK
     message = "alive"
     codes = ActiveCodes()
-    if monitor_hz and rate_threshold is not None and rate is not None:
-        severity = evaluate_zone(rate, rate_threshold, higher_is_worse=False)
+    if monitor_hz and rate_levels is not None and rate is not None:
+        severity = evaluate_levels(rate, rate_levels, higher_is_worse=False)
         if severity != Severity.OK:
             message = f"rate {rate:.2f}Hz below configured threshold"
             codes.add("LIVE-004", message, severity)

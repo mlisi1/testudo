@@ -26,6 +26,7 @@ from testudo.core.discovery import (
     resolve_subscription_qos,
     subscription_qos,
 )
+from testudo.core.plugin_settings import build_plugin
 from testudo.core.tier_subscription import subscribe_full_tier
 
 if TYPE_CHECKING:
@@ -91,9 +92,6 @@ def subscribe_tf_watch(manager: "SubscriptionManager", topics_by_name: dict[str,
         return claimed
 
     topic_config = manager._topic_config_by_name.get(TF_TOPIC)
-    thresholds = dict(plugin_class.default_thresholds())
-    if topic_config is not None:
-        thresholds.update(topic_config.thresholds)
     related_topics = {"tf_static": TF_STATIC_TOPIC} if TF_STATIC_TOPIC in topics_by_name else {}
 
     state = subscribe_full_tier(
@@ -101,9 +99,7 @@ def subscribe_tf_watch(manager: "SubscriptionManager", topics_by_name: dict[str,
         TF_TOPIC,
         msg_class,
         subscription_qos([info.qos_profile for info in publisher_infos]),
-        plugin_class,
-        thresholds,
-        related_topics,
+        build_plugin(plugin_class, related_topics, topic_config),
         topics_by_name,
     )
 

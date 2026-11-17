@@ -7,6 +7,16 @@
 # thresholds merged over the plugin's own defaults, so you only need to
 # override the metrics you actually want to change.
 #
+# A metric's threshold takes two kinds of keys, both optional:
+#   warn / error         -- severity: past `warn` the topic is WARN, past
+#                           `error` ERROR. ERROR means something has gone
+#                           wrong (a placeholder covariance, a frozen
+#                           driver); a degraded but working reading is WARN.
+#                           Only the keys you write replace the plugin's
+#                           default (`error: null` removes one).
+#   green / orange / red -- graphics only: where the Detail Panel's meters
+#                           turn color. They never change a severity.
+#
 # Exception: sensor_msgs/msg/Image, sensor_msgs/msg/CompressedImage,
 # sensor_msgs/msg/PointCloud2, and theora_image_transport/msg/Packet
 # topics default to presence-only (a publisher exists, but nothing
@@ -44,14 +54,16 @@ topics:
       related_topics:
         cmd_vel: /cmd_vel
       thresholds:
-        # This robot's EKF is noisier than the plugin default tolerates.
+        # This robot's EKF is noisier than the plugin default tolerates:
+        # warn later, and stretch the meter to match. The default `error`
+        # (1000 m^2, an "unknown" placeholder) still applies.
         position_covariance_trace:
+          warn: 0.02
           green: 0.02
           orange: 0.2
         # ...but heading precision matters more here, so tighten yaw.
         yaw_variance:
-          green: 0.005
-          orange: 0.05
+          warn: 0.005
         # covariance_growth_rate isn't overridden: the plugin default applies.
 
   sensor_msgs/msg/LaserScan:
@@ -61,8 +73,7 @@ topics:
         # A rough outdoor lidar returns more out-of-range readings than
         # the plugin's indoor-tuned default tolerates.
         invalid_ratio:
-          green: 0.02
-          orange: 0.1
+          warn: 0.02
 
   sensor_msgs/msg/Imu:
     - name: /imu/data
@@ -70,8 +81,8 @@ topics:
       thresholds:
         # A frozen IMU is a serious fault on this robot -- flag it fast.
         stuck_count:
-          green: 1
-          orange: 5
+          warn: 1
+          error: 5
 
   # ImageStreamPlugin covers both sensor_msgs/msg/Image and
   # sensor_msgs/msg/CompressedImage -- declare whichever one your driver
@@ -83,8 +94,7 @@ topics:
         # This camera's bitrate is naturally spiky (auto-exposure changes),
         # so only flag a much steeper drop than the plugin default.
         size_drop_ratio:
-          green: 0.4
-          orange: 0.15
+          warn: 0.4
 
   sensor_msgs/msg/NavSatFix:
     - name: /gps/fix
@@ -92,15 +102,15 @@ topics:
       thresholds:
         # This receiver is consumer/SBAS-grade, not RTK -- a few meters of
         # std per axis is normal here, well past the plugin's RTK-tuned
-        # default (green=1e-4, orange=0.01 m^2).
+        # default (warn past 1e-4 m^2).
         position_covariance:
+          warn: 1.0
           green: 1.0
           orange: 9.0
         # ...but under the canopy on this site, losing fix for a couple of
         # readings in twenty is normal; only flag heavier dropout than that.
         fix_dropout_ratio:
-          green: 0.15
-          orange: 0.35
+          warn: 0.15
         # stuck_count, invalid_ratio, and jump_speed_mps aren't overridden:
         # the plugin defaults apply.
 
@@ -114,8 +124,8 @@ topics:
       weight: 2
       thresholds:
         rate_hz:
-          green: 4.0
-          orange: 1.0
+          warn: 4.0
+          error: 1.0
 
   # BehaviorTreeLogPlugin: currently-active BT node(s) plus trigger
   # frequency for recovery nodes wired directly into the tree (e.g.
@@ -125,9 +135,9 @@ topics:
     - name: /behavior_tree_log
       weight: 1
       thresholds:
+        # No default: how often recovery is normal depends on the site.
         recovery_frequency_per_min:
-          green: 2.0
-          orange: 6.0
+          warn: 2.0
 
   # A topic that only publishes while something is happening -- here the
   # controller's velocity output, silent whenever the robot isn't driving
@@ -150,9 +160,9 @@ actions:
       feedback: /navigate_to_pose/_action/feedback
     thresholds:
       # succeeded / (succeeded + aborted); a canceled goal counts toward neither.
+      # The default `error` (under 0.5: most goals failing) still applies.
       success_rate:
-        green: 0.9
-        orange: 0.7
+        warn: 0.9
 
   # Recovery-behavior frequency, via the same action-tracking mechanism as
   # navigate_to_pose above. A high spin rate usually means the planner
@@ -164,8 +174,7 @@ actions:
     weight: 1
     thresholds:
       frequency_per_min:
-        green: 2.0
-        orange: 6.0
+        warn: 2.0
 
 tf:
   - parent: map
@@ -187,29 +196,27 @@ tf:
 #   poll_interval_seconds: 2.0   # how often `watch` samples each process
 #   gpu_enabled: true   # NVIDIA + pynvml only; silently unavailable otherwise
 #   publish_topic: /testudo/nodes   # default; /diagnostics/nodes with publish.per_plugin: false
+#   # warn/error only (no meters here). The defaults have no `error`: a busy
+#   # or leaking node is degraded; a dead or zombie process is the ERROR.
 #   cpu_percent:
 #     # psutil's cpu_percent can exceed 100% for a multi-threaded process
-#     # (matches top/htop) -- these are generous on purpose.
-#     green: 150
-#     orange: 300
+#     # (matches top/htop) -- generous on purpose.
+#     warn: 150
 #   memory_mb:
-#     green: 500
-#     orange: 1500
+#     warn: 500
 #   ctx_switches_per_sec:
 #     # The *involuntary* context-switch rate -- the OS scheduler preempting
 #     # a process against its will -- is the direct "is this node being
 #     # starved of CPU time" signal, distinct from cpu_percent: a starved
 #     # node's CPU% can look normal (it isn't getting time to *use* the
 #     # CPU). A *voluntary* switch (blocking on IPC, most of a healthy
-#     # node's switches) isn't counted, so these can stay conservative.
-#     green: 50
-#     orange: 200
+#     # node's switches) isn't counted, so this can stay conservative.
+#     warn: 50
 #   memory_slope_mb_per_min:
 #     # Leak detection: RSS growth over the last ~2 minutes of samples,
 #     # judged once the window spans a minute and the process has been up
 #     # 5 minutes (startup allocation isn't a leak).
-#     green: 10
-#     orange: 50
+#     warn: 10
 #   exclude_nodes:
 #     - /some_noisy_diagnostic_only_node
 

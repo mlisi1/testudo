@@ -53,14 +53,15 @@ def build_reports(manager: "SubscriptionManager") -> list[TopicReport]:
         reports.append(excluded_report(topic_name, msg_type, rule_text))
     for topic_name, vitals in manager._vitals.items():
         topic_config = manager._topic_config_by_name.get(topic_name)
-        rate_threshold = topic_config.thresholds.get("rate_hz") if topic_config is not None else None
+        rate_override = topic_config.levels.get("rate_hz") if topic_config is not None else None
+        rate_levels = rate_override.over(None) if rate_override is not None else None
         report = vitals_report(
             topic_name,
             manager._msg_type_by_topic[topic_name],
             vitals,
             now,
             manager._stale_after_seconds,
-            rate_threshold,
+            rate_levels,
             manager._monitor_hz,
             **_quiet_flags(manager, topic_name),
         )

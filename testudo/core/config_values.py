@@ -1,4 +1,4 @@
-"""Value-level config parsers shared by every config section: zones, exclude rules, numbers, strings.
+"""Value-level config parsers shared by every config section: thresholds, exclude rules, numbers, strings.
 
 Each raises `ConfigError` naming the file (`source`) and the key it
 failed on, so a malformed config fails loudly at load time (ground rule 5).
@@ -6,10 +6,16 @@ The section structure itself is `config_loader`'s.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
-from testudo.core.config import ConfigError, ExcludeMatchType, ExcludeRule, InvalidExcludePatternError
+from testudo.core.config import ConfigError, ExcludeMatchType, ExcludeRule, InvalidExcludePatternError, LevelsOverride
 from testudo.plugins.base import ThresholdZone
+
+_logger = logging.getLogger(__name__)
+
+_ZONE_KEYS = ("green", "orange", "red")
+_LEVEL_KEYS = ("warn", "error")
 
 
 _EXCLUDE_RULE_KEYS = {"pattern", "type"}
@@ -56,16 +62,35 @@ def parse_exclude_match_type(raw: Any, source: str, key: str = "exclude_topics")
         raise ConfigError(f"{source}: {key} entry 'type' must be one of [{valid}], got {raw!r}") from None
 
 
-def parse_zone(raw: Any, context: str, source: str) -> ThresholdZone:
+def parse_metric(raw: Any, context: str, source: str) -> tuple[ThresholdZone | None, LevelsOverride | None]:
+    """One metric's thresholds entry: its graphic zone and its severity levels, either optional.
+
+    `{warn: 0.05, error: 1000, green: 0.01, orange: 0.1}` -- warn/error decide
+    severity, green/orange/red only color meters. An entry with zones but no
+    levels logs a WARNING: before levels existed, green/orange decided severity.
+    """
     if not isinstance(raw, dict):
-        raise ConfigError(f"{source}: {context} must be a mapping with green/orange/red")
-    unknown = set(raw) - {"green", "orange", "red"}
+        raise ConfigError(f"{source}: {context} must be a mapping with warn/error and/or green/orange/red")
+    unknown = set(raw) - set(_ZONE_KEYS) - set(_LEVEL_KEYS)
     if unknown:
-        raise ConfigError(f"{source}: {context} has unknown key(s): {', '.join(sorted(unknown))}")
+        raise ConfigError(f"{source}: {context} has unknown key(s): {', '.join(sorted(map(str, unknown)))}")
     for key, value in raw.items():
-        if value is not None and not isinstance(value, (int, float)):
-            raise ConfigError(f"{source}: {context}.{key} must be numeric")
-    return ThresholdZone(green=_to_float(raw.get("green")), orange=_to_float(raw.get("orange")), red=_to_float(raw.get("red")))
+        if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))):
+            raise ConfigError(f"{source}: {context}.{key} must be numeric (or null)")
+    zone = (
+        ThresholdZone(green=_to_float(raw.get("green")), orange=_to_float(raw.get("orange")), red=_to_float(raw.get("red")))
+        if any(key in raw for key in _ZONE_KEYS)
+        else None
+    )
+    given = frozenset(key for key in _LEVEL_KEYS if key in raw)
+    levels = LevelsOverride(warn=_to_float(raw.get("warn")), error=_to_float(raw.get("error")), given=given) if given else None
+    if zone is not None and levels is None:
+        _logger.warning(
+            "%s: %s sets only green/orange/red, which now only color meters; add warn/error to set when it is WARN/ERROR",
+            source,
+            context,
+        )
+    return zone, levels
 
 
 def _to_float(value: Any) -> float | None:

@@ -8,7 +8,7 @@ from diagnostic_msgs.msg import DiagnosticArray
 from testudo.core.node_profiling.sampler import ProcessSample
 from testudo.core.publisher import to_diagnostic_status
 from testudo.core.topic_report import TopicReport
-from testudo.plugins.base import ActiveCodes, CheckStatus, Severity, ThresholdZone, colorize, evaluate_zone
+from testudo.plugins.base import ActiveCodes, CheckStatus, Severity, SeverityLevels, colorize, evaluate_levels
 from testudo.plugins.render import downsample, sparkline
 
 
@@ -81,13 +81,13 @@ def build_status(
     sample: ProcessSample,
     pid: int,
     process_name: str,
-    cpu_zone: ThresholdZone | None,
-    memory_zone: ThresholdZone | None,
-    ctx_switch_zone: ThresholdZone | None,
+    cpu_levels: SeverityLevels | None,
+    memory_levels: SeverityLevels | None,
+    ctx_switch_levels: SeverityLevels | None,
     gpu_memory_mb: float | None = None,
     num_children: int = 0,
     memory_slope_mb_per_min: float | None = None,
-    memory_slope_zone: ThresholdZone | None = None,
+    memory_slope_levels: SeverityLevels | None = None,
 ) -> CheckStatus:
     """Roll `sample`'s readings up into one CheckStatus, including starvation checks.
 
@@ -111,8 +111,8 @@ def build_status(
     enough window) is the leak check: steady RSS growth, `NODE-003` --
     shown from the start, but judged only after `LEAK_GRACE_SECONDS` of uptime.
     """
-    cpu_severity = Severity.OK if sample.warming_up else evaluate_zone(sample.cpu_percent, cpu_zone)
-    memory_severity = evaluate_zone(sample.memory_rss_mb, memory_zone)
+    cpu_severity = Severity.OK if sample.warming_up else evaluate_levels(sample.cpu_percent, cpu_levels)
+    memory_severity = evaluate_levels(sample.memory_rss_mb, memory_levels)
     status_severity = _STATUS_SEVERITY.get(sample.status, Severity.OK)
     ctx_switch_severity = Severity.OK
 
@@ -124,7 +124,7 @@ def build_status(
     if sample.status in _STATUS_CODES:
         codes.add("NODE-002", _STATUS_CODES[sample.status], status_severity)
     if sample.ctx_switches_involuntary_per_sec is not None:
-        ctx_switch_severity = evaluate_zone(sample.ctx_switches_involuntary_per_sec, ctx_switch_zone)
+        ctx_switch_severity = evaluate_levels(sample.ctx_switches_involuntary_per_sec, ctx_switch_levels)
         if ctx_switch_severity >= Severity.WARN:
             codes.add(
                 "NODE-001", # Kept short: a message wider than the Detail Panel wraps,
@@ -135,7 +135,7 @@ def build_status(
 
     slope_severity = Severity.OK
     if memory_slope_mb_per_min is not None and sample.uptime_seconds >= LEAK_GRACE_SECONDS:
-        slope_severity = evaluate_zone(memory_slope_mb_per_min, memory_slope_zone)
+        slope_severity = evaluate_levels(memory_slope_mb_per_min, memory_slope_levels)
         if slope_severity >= Severity.WARN:
             codes.add(
                 "NODE-003", f"memory growing {memory_slope_mb_per_min:+.1f} MB/min -- possible leak", slope_severity
