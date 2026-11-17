@@ -139,11 +139,26 @@ def test_subscription_qos_matches_the_offer_but_never_keeps_a_shallow_history() 
     from testudo.core.discovery import LATCHED_SUBSCRIPTION_DEPTH, MIN_SUBSCRIPTION_DEPTH, subscription_qos
 
     sensor = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT, durability=DurabilityPolicy.VOLATILE)
-    qos = subscription_qos(sensor)
+    qos = subscription_qos([sensor])
     assert qos.depth == MIN_SUBSCRIPTION_DEPTH and qos.history == HistoryPolicy.KEEP_LAST
     assert qos.reliability == ReliabilityPolicy.BEST_EFFORT and qos.durability == DurabilityPolicy.VOLATILE
 
     # /tf_static: several static broadcasters' latched messages share one keyless instance.
     static = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
-    assert subscription_qos(static).depth == LATCHED_SUBSCRIPTION_DEPTH
-    assert subscription_qos(QoSProfile(depth=500)).depth == 500
+    assert subscription_qos([static]).depth == LATCHED_SUBSCRIPTION_DEPTH
+    assert subscription_qos([QoSProfile(depth=500)]).depth == 500
+
+
+def test_subscription_qos_receives_from_every_publisher_when_their_offers_differ() -> None:
+    from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+
+    from testudo.core.discovery import subscription_qos
+
+    reliable_latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+    best_effort = QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT, durability=DurabilityPolicy.VOLATILE)
+    qos = subscription_qos([reliable_latched, best_effort])
+    # Best effort if any publisher is; transient local only if all are.
+    assert qos.reliability == ReliabilityPolicy.BEST_EFFORT
+    assert qos.durability == DurabilityPolicy.VOLATILE
+    both_latched = subscription_qos([reliable_latched, reliable_latched])
+    assert (both_latched.reliability, both_latched.durability) == (ReliabilityPolicy.RELIABLE, DurabilityPolicy.TRANSIENT_LOCAL)

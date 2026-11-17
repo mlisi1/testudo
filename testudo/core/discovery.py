@@ -6,10 +6,11 @@ incompatibility. The same call flags zero-publisher topics immediately.
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import rclpy.node
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.topic_endpoint_info import TopicEndpointInfo
 
 ACTION_STATUS_SUFFIX = "/_action/status"
@@ -93,7 +94,9 @@ def resolve_subscription_qos(node: rclpy.node.Node, topic_name: str) -> QoSProfi
         NoPublishersError: the topic currently has no publishers, so callers
             can flag it immediately rather than silently failing to receive data.
     """
-    return subscription_qos(resolve_publisher_info(node, topic_name).qos_profile)
+    infos = node.get_publishers_info_by_topic(topic_name)
+    first_publisher_info(infos, topic_name)  # raises NoPublishersError when there are none
+    return subscription_qos([info.qos_profile for info in infos])
 
 
 #: Smallest reader history Testudo subscribes with, whatever the publisher
@@ -110,25 +113,33 @@ MIN_SUBSCRIPTION_DEPTH = 10
 LATCHED_SUBSCRIPTION_DEPTH = 100
 
 
-def subscription_qos(offered: QoSProfile) -> QoSProfile:
-    """The QoS to subscribe with, given a publisher's offered profile.
+def subscription_qos(offers: Sequence[QoSProfile]) -> QoSProfile:
+    """The QoS to subscribe with so that every one of a topic's publishers (`offers`) is received.
 
-    Reliability, durability, deadline, lifespan and liveliness are matched
-    as offered (that's what makes the subscription compatible); history
-    is Testudo's own: KEEP_LAST, never shallower than
-    `MIN_SUBSCRIPTION_DEPTH` (`LATCHED_SUBSCRIPTION_DEPTH` when latched).
+    Matched the way rosbag2 adapts to a topic's offers, since a topic can
+    have several publishers offering different QoS (copying the first one
+    silently dropped the rest whenever they differed):
+
+    - reliability: BEST_EFFORT if any publisher is best effort -- a best
+      effort reader still receives from reliable writers, while a reliable
+      reader receives nothing from a best effort one;
+    - durability: TRANSIENT_LOCAL only if every publisher is -- a transient
+      local reader is incompatible with a volatile writer;
+    - deadline, lifespan and liveliness: left at their defaults, which no
+      offer can be incompatible with;
+    - history: Testudo's own, KEEP_LAST never shallower than
+      `MIN_SUBSCRIPTION_DEPTH` (`LATCHED_SUBSCRIPTION_DEPTH` when latched).
     """
-    latched = offered.durability == DurabilityPolicy.TRANSIENT_LOCAL
+    if not offers:
+        raise ValueError("subscription_qos needs at least one offered profile")
+    best_effort = any(offer.reliability == ReliabilityPolicy.BEST_EFFORT for offer in offers)
+    latched = all(offer.durability == DurabilityPolicy.TRANSIENT_LOCAL for offer in offers)
     floor = LATCHED_SUBSCRIPTION_DEPTH if latched else MIN_SUBSCRIPTION_DEPTH
     return QoSProfile(
         history=HistoryPolicy.KEEP_LAST,
-        depth=max(offered.depth or 0, floor),
-        reliability=offered.reliability,
-        durability=offered.durability,
-        deadline=offered.deadline,
-        lifespan=offered.lifespan,
-        liveliness=offered.liveliness,
-        liveliness_lease_duration=offered.liveliness_lease_duration,
+        depth=max(max(offer.depth or 0 for offer in offers), floor),
+        reliability=ReliabilityPolicy.BEST_EFFORT if best_effort else ReliabilityPolicy.RELIABLE,
+        durability=DurabilityPolicy.TRANSIENT_LOCAL if latched else DurabilityPolicy.VOLATILE,
     )
 
 

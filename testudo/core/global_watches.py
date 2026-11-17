@@ -20,9 +20,9 @@ from testudo.core.discovery import (
     LIFECYCLE_TRANSITION_EVENT_SUFFIX,
     NoPublishersError,
     TopicInfo,
+    first_publisher_info,
     fully_qualified_node_name,
     list_lifecycle_nodes,
-    resolve_publisher_info,
     resolve_subscription_qos,
     subscription_qos,
 )
@@ -72,7 +72,8 @@ def subscribe_tf_watch(manager: "SubscriptionManager", topics_by_name: dict[str,
 
     manager._msg_type_by_topic[TF_TOPIC] = TF_TYPE
     try:
-        publisher_info = resolve_publisher_info(manager._node, TF_TOPIC)
+        publisher_infos = manager._node.get_publishers_info_by_topic(TF_TOPIC)
+        publisher_info = first_publisher_info(publisher_infos, TF_TOPIC)
     except NoPublishersError:
         _logger.warning("'%s' has no publishers", TF_TOPIC)
         manager._no_publishers.add(TF_TOPIC)
@@ -99,7 +100,7 @@ def subscribe_tf_watch(manager: "SubscriptionManager", topics_by_name: dict[str,
         manager,
         TF_TOPIC,
         msg_class,
-        subscription_qos(publisher_info.qos_profile),
+        subscription_qos([info.qos_profile for info in publisher_infos]),
         plugin_class,
         thresholds,
         related_topics,

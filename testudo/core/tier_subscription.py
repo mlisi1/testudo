@@ -75,7 +75,8 @@ def subscribe_topic(
     manager._owning_node_by_topic[topic_name] = fully_qualified_node_name(
         publisher_info.node_namespace, publisher_info.node_name
     )
-    if publisher_info.qos_profile.durability == DurabilityPolicy.TRANSIENT_LOCAL:
+    qos = subscription_qos([info.qos_profile for info in publisher_infos])
+    if qos.durability == DurabilityPolicy.TRANSIENT_LOCAL:
         manager._latched.add(topic_name)
     else:
         manager._latched.discard(topic_name)
@@ -99,7 +100,7 @@ def subscribe_topic(
 
     plugin_class = manager._plugin_class_by_msg_type.get(msg_type_str)
     if plugin_class is None:
-        subscribe_vitals_tier(manager, topic_name, msg_class, subscription_qos(publisher_info.qos_profile))
+        subscribe_vitals_tier(manager, topic_name, msg_class, qos)
         return
 
     topic_config = manager._topic_config_by_name.get(topic_name)
@@ -116,7 +117,7 @@ def subscribe_topic(
         manager,
         topic_name,
         msg_class,
-        subscription_qos(publisher_info.qos_profile),
+        qos,
         plugin_class,
         thresholds,
         related_topics,
