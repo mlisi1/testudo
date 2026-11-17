@@ -62,20 +62,30 @@ def test_nominal_zero_covariance_is_ok() -> None:
     assert status.severity == Severity.OK
 
 
-def test_position_covariance_trace_beyond_orange_is_error() -> None:
+def test_high_but_real_position_covariance_is_a_warning() -> None:
     plugin = OdometryPlugin()
-    plugin.on_message("/odom", _odometry(xx=0.2, yy=0.2, zz=0.2))  # trace 0.6 >> default orange 0.1
+    plugin.on_message("/odom", _odometry(xx=0.2, yy=0.2, zz=0.2))  # trace 0.6: degraded, not broken
     status = plugin.get_status()
-    assert status.severity == Severity.ERROR
+    assert status.severity == Severity.WARN
     assert "position covariance trace" in status.message
 
 
-def test_yaw_variance_beyond_orange_is_error() -> None:
+def test_placeholder_position_covariance_is_an_error() -> None:
+    plugin = OdometryPlugin()
+    plugin.on_message("/odom", _odometry(xx=9999.0, yy=9999.0, zz=9999.0))  # "unknown" placeholders
+    status = plugin.get_status()
+    assert status.severity == Severity.ERROR
+    assert status.code_severities["ODOM-001"] == Severity.ERROR
+
+
+def test_yaw_variance_is_a_warning_until_the_heading_is_unknown() -> None:
     plugin = OdometryPlugin()
     plugin.on_message("/odom", _odometry(yaw_variance=0.5))
     status = plugin.get_status()
-    assert status.severity == Severity.ERROR
+    assert status.severity == Severity.WARN
     assert "yaw variance" in status.message
+    plugin.on_message("/odom", _odometry(yaw_variance=20.0))  # σ > π
+    assert plugin.get_status().severity == Severity.ERROR
 
 
 def test_negative_diagonal_covariance_fails_psd_check() -> None:
@@ -99,7 +109,8 @@ def test_rapid_covariance_growth_is_flagged() -> None:
     plugin.on_message("/odom", _odometry(stamp_sec=0, xx=0.0))
     plugin.on_message("/odom", _odometry(stamp_sec=0, stamp_nanosec=10_000_000, xx=0.05))  # +0.05 in 10ms = 5/s
     status = plugin.get_status()
-    assert status.severity == Severity.ERROR
+    # Growth never breaks a topic on its own: a diverging filter trips the trace.
+    assert status.severity == Severity.WARN
     assert "covariance growing" in status.message
 
 
@@ -159,12 +170,12 @@ def test_topic_panel_column_is_horizontal_sigma() -> None:
     assert _plain(status.topic_panel_value) == "±0.19"
 
 
-def test_topic_panel_value_is_colored_by_its_own_zone_with_a_growth_arrow() -> None:
+def test_topic_panel_value_is_colored_by_the_trace_severity_with_a_growth_arrow() -> None:
     plugin = OdometryPlugin()
     plugin.on_message("/odom", _odometry(stamp_sec=0, xx=0.0))
-    plugin.on_message("/odom", _odometry(stamp_sec=1, xx=0.2, yy=0.2, zz=0.2))  # trace 0.6 >> orange 0.1, growing
+    plugin.on_message("/odom", _odometry(stamp_sec=1, xx=0.2, yy=0.2, zz=0.2))  # trace 0.6 past warn, growing
     status = plugin.get_status()
-    assert "[bold red]" in status.topic_panel_value
+    assert "[yellow]" in status.topic_panel_value
     assert _plain(status.topic_panel_value).endswith("↑")
 
 
@@ -232,7 +243,7 @@ def test_codes_go_in_the_generic_code_lines() -> None:
     plugin.on_message("/odom", _odometry(xx=0.2, yy=0.2, zz=0.2, linear_x=0.0))  # trace over + cmd_vel mismatch
     status = plugin.get_status()
     assert set(status.codes) == {"ODOM-001", "ODOM-006"}
-    assert "[bold red]" in status.codes["ODOM-001"]
+    assert "[yellow]" in status.codes["ODOM-001"]
 
 
 def test_quaternion_to_euler_recovers_a_quarter_turn_yaw() -> None:

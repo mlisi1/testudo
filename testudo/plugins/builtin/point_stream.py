@@ -49,7 +49,7 @@ from testudo.plugins.base import (
     Severity,
     SeverityLevels,
     ThresholdZone,
-    evaluate_zone,
+    evaluate_levels,
 )
 from testudo.plugins.builtin.point_stream_layout import (
     format_points,
@@ -168,6 +168,14 @@ class PointStreamPlugin(CheckPlugin):
             "stuck_count": ThresholdZone(green=2, orange=10),
         }
 
+    @classmethod
+    def default_levels(cls) -> dict[str, SeverityLevels]:
+        # ERROR once most readings are invalid, or the driver has frozen.
+        return {
+            "invalid_ratio": SeverityLevels(warn=0.01, error=0.5),
+            "stuck_count": SeverityLevels(warn=2, error=10),
+        }
+
     def on_message(self, topic: str, msg: Any) -> None:
         self._message_count += 1
         self._check_frame_id(msg.header.frame_id)
@@ -242,8 +250,8 @@ class PointStreamPlugin(CheckPlugin):
 
         empty_severity = Severity.ERROR if self._empty_payload else Severity.OK
         malformed_severity = Severity.ERROR if self._malformed else Severity.OK
-        invalid_severity = evaluate_zone(self._invalid_ratio, self.thresholds.get("invalid_ratio"))
-        stuck_severity = evaluate_zone(float(self._stuck_count), self.thresholds.get("stuck_count"))
+        invalid_severity = evaluate_levels(self._invalid_ratio, self.levels.get("invalid_ratio"))
+        stuck_severity = evaluate_levels(float(self._stuck_count), self.levels.get("stuck_count"))
         plausibility_severity = Severity.OK if self._plausibility_ok else Severity.WARN
         # Usually also out of range_min..range_max, but not when range_min is 0.
         all_zero_severity = Severity.WARN if self._all_zero else Severity.OK

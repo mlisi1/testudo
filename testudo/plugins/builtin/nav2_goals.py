@@ -30,7 +30,7 @@ from typing import Any
 
 from action_msgs.msg import GoalStatus
 
-from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, SeverityLevels, ThresholdZone, colorize, evaluate_zone
+from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, SeverityLevels, ThresholdZone, colorize, evaluate_levels
 from testudo.plugins.render import meter, sparkline, strip
 
 _TERMINAL_STATUSES = frozenset({GoalStatus.STATUS_SUCCEEDED, GoalStatus.STATUS_CANCELED, GoalStatus.STATUS_ABORTED})
@@ -125,6 +125,12 @@ class Nav2GoalPlugin(CheckPlugin):
         # navigate_to_pose goal legitimately takes far longer than a spin
         # recovery) to have a sane universal default; success_rate doesn't.
         return {"success_rate": ThresholdZone(green=0.95, orange=0.8)}
+
+    @classmethod
+    def default_levels(cls) -> dict[str, SeverityLevels]:
+        # Duration and frequency: user-configured only (see default_thresholds).
+        # ERROR once most goals fail.
+        return {"success_rate": SeverityLevels(warn=0.95, error=0.5)}
 
     def on_tick(self, now_seconds: float) -> None:
         self._now = now_seconds
@@ -274,13 +280,13 @@ class Nav2GoalPlugin(CheckPlugin):
         success_severity = (
             Severity.OK
             if success_rate is None
-            else evaluate_zone(success_rate, self.thresholds.get("success_rate"), higher_is_worse=False)
+            else evaluate_levels(success_rate, self.levels.get("success_rate"), higher_is_worse=False)
         )
         duration_severity = (
-            Severity.OK if mean_duration is None else evaluate_zone(mean_duration, self.thresholds.get("avg_duration_s"))
+            Severity.OK if mean_duration is None else evaluate_levels(mean_duration, self.levels.get("avg_duration_s"))
         )
         frequency_severity = (
-            Severity.OK if frequency is None else evaluate_zone(frequency, self.thresholds.get("frequency_per_min"))
+            Severity.OK if frequency is None else evaluate_levels(frequency, self.levels.get("frequency_per_min"))
         )
         worst = max(success_severity, duration_severity, frequency_severity)
 

@@ -40,7 +40,7 @@ from testudo.plugins.base import (
     SeverityLevels,
     ThresholdZone,
     colorize,
-    evaluate_zone,
+    evaluate_levels,
 )
 from testudo.plugins.render import fmt_size, meter, sparkline
 
@@ -165,6 +165,14 @@ class ImageStreamPlugin(CheckPlugin):
             "size_drop_ratio": ThresholdZone(green=0.6, orange=0.3),
         }
 
+    @classmethod
+    def default_levels(cls) -> dict[str, SeverityLevels]:
+        # ERROR for a frozen driver, or a frame a tenth of the usual size (near-empty).
+        return {
+            "stuck_count": SeverityLevels(warn=2, error=10),
+            "size_drop_ratio": SeverityLevels(warn=0.6, error=0.1),
+        }
+
     def on_tick(self, now_seconds: float) -> None:
         self._now = now_seconds
 
@@ -225,9 +233,9 @@ class ImageStreamPlugin(CheckPlugin):
 
         empty_severity = Severity.ERROR if self._empty_payload else Severity.OK
         malformed_severity = Severity.ERROR if self._malformed else Severity.OK
-        stuck_severity = evaluate_zone(float(self._stuck_count), self.thresholds.get("stuck_count"))
-        size_drop_severity = evaluate_zone(
-            self._size_drop_ratio, self.thresholds.get("size_drop_ratio"), higher_is_worse=False
+        stuck_severity = evaluate_levels(float(self._stuck_count), self.levels.get("stuck_count"))
+        size_drop_severity = evaluate_levels(
+            self._size_drop_ratio, self.levels.get("size_drop_ratio"), higher_is_worse=False
         )
         frame_id_severity = Severity.WARN if self._frame_id_changed else Severity.OK
 

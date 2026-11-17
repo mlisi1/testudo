@@ -28,7 +28,7 @@ from testudo.plugins.base import (
     SeverityLevels,
     ThresholdZone,
     colorize,
-    evaluate_zone,
+    evaluate_levels,
 )
 from testudo.plugins.builtin.odometry_layout import (
     ORIENTATION_AXES,
@@ -151,6 +151,17 @@ class OdometryPlugin(CheckPlugin):
             "covariance_growth_rate": ThresholdZone(green=0.01, orange=0.1),
         }
 
+    @classmethod
+    def default_levels(cls) -> dict[str, SeverityLevels]:
+        # ERROR is for broken, not degraded: a 1000 m² trace is an "unknown"
+        # placeholder (9999-style), a yaw variance of 10 rad² (σ > π) means
+        # no heading at all. Growth has no ERROR: a diverging filter trips the trace.
+        return {
+            "position_covariance_trace": SeverityLevels(warn=0.01, error=1000.0),
+            "yaw_variance": SeverityLevels(warn=0.01, error=10.0),
+            "covariance_growth_rate": SeverityLevels(warn=0.01),
+        }
+
     def on_tick(self, now_seconds: float) -> None:
         self._now = now_seconds
         if self._message_count == 0:
@@ -234,9 +245,9 @@ class OdometryPlugin(CheckPlugin):
         if self._message_count == 0:
             return CheckStatus(severity=Severity.OK, label="odometry", message="no odometry received yet")
 
-        trace_severity = evaluate_zone(self._position_covariance_trace, self.thresholds.get("position_covariance_trace"))
-        yaw_severity = evaluate_zone(self._yaw_variance, self.thresholds.get("yaw_variance"))
-        growth_severity = evaluate_zone(abs(self._growth_rate), self.thresholds.get("covariance_growth_rate"))
+        trace_severity = evaluate_levels(self._position_covariance_trace, self.levels.get("position_covariance_trace"))
+        yaw_severity = evaluate_levels(self._yaw_variance, self.levels.get("yaw_variance"))
+        growth_severity = evaluate_levels(abs(self._growth_rate), self.levels.get("covariance_growth_rate"))
         psd_severity = Severity.OK if (self._pose_psd_ok and self._twist_psd_ok) else Severity.ERROR
         cmd_vel_severity, cmd_vel_message = self._cmd_vel_cross_check()
 

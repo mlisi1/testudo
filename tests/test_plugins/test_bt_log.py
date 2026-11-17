@@ -5,7 +5,7 @@ from nav2_msgs.msg import BehaviorTreeLog, BehaviorTreeStatusChange
 
 from rich.text import Text
 
-from testudo.plugins.base import Severity, ThresholdZone
+from testudo.plugins.base import Severity, SeverityLevels
 from testudo.plugins.builtin.bt_log import BehaviorTreeLogPlugin
 
 
@@ -105,14 +105,14 @@ def test_repeated_running_without_leaving_is_not_a_new_trigger() -> None:
 
 
 def test_recovery_frequency_threshold_flags_frequent_triggers() -> None:
-    plugin = BehaviorTreeLogPlugin(thresholds={"recovery_frequency_per_min": ThresholdZone(green=2.0, orange=6.0)})
+    plugin = BehaviorTreeLogPlugin(levels={"recovery_frequency_per_min": SeverityLevels(warn=2.0, error=6.0)})
     for t in (0.0, 5.0, 10.0):
         plugin.on_tick(t)
         plugin.on_message("/behavior_tree_log", _log(_change("Spin", "SUCCESS", "RUNNING")))
         plugin.on_tick(t + 0.1)
         plugin.on_message("/behavior_tree_log", _log(_change("Spin", "RUNNING", "SUCCESS")))
     status = plugin.get_status()
-    # 3 triggers over 10s = 2 intervals/10s * 60 = 12/min -> above orange(6.0)
+    # 3 triggers over 10s = 2 intervals/10s * 60 = 12/min -> above error (6.0)
     assert status.severity == Severity.ERROR
     assert "recovery frequency" in status.message
     assert "BT-001" in status.codes

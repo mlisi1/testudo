@@ -62,10 +62,10 @@ def test_laser_scan_nominal_is_ok() -> None:
 
 def test_laser_scan_nan_counts_as_invalid() -> None:
     plugin = PointStreamPlugin()
-    ranges = [1.0] * 9 + [float("nan")]  # 1/10 = 0.1 > default orange 0.05
+    ranges = [1.0] * 9 + [float("nan")]  # 1/10 = 0.1: past warn (0.01), under error (0.5)
     plugin.on_message("/scan", _laser_scan(ranges))
     status = plugin.get_status()
-    assert status.severity == Severity.ERROR
+    assert status.severity == Severity.WARN
     assert "invalid ratio" in status.message
 
 
@@ -83,7 +83,7 @@ def test_laser_scan_negative_inf_counts_as_invalid() -> None:
     ranges = [1.0] * 9 + [float("-inf")]
     plugin.on_message("/scan", _laser_scan(ranges))
     status = plugin.get_status()
-    assert status.severity == Severity.ERROR
+    assert status.severity == Severity.WARN
 
 
 def test_laser_scan_out_of_bounds_value_flags_plausibility() -> None:
@@ -138,10 +138,10 @@ def test_point_cloud_nominal_is_ok() -> None:
 
 def test_point_cloud_nan_coordinate_counts_as_invalid() -> None:
     plugin = PointStreamPlugin()
-    points = [(1.0, 2.0, 3.0)] * 9 + [(float("nan"), 0.0, 0.0)]  # 1/10 = 0.1 > default orange 0.05
+    points = [(1.0, 2.0, 3.0)] * 9 + [(float("nan"), 0.0, 0.0)]  # 1/10 = 0.1: past warn (0.01), under error (0.5)
     plugin.on_message("/points", _point_cloud(points))
     status = plugin.get_status()
-    assert status.severity == Severity.ERROR
+    assert status.severity == Severity.WARN
     assert "invalid ratio" in status.message
 
 
@@ -160,7 +160,7 @@ def test_point_cloud_inf_in_non_dense_cloud_is_still_invalid() -> None:
     points = [(1.0, 2.0, 3.0)] * 9 + [(float("inf"), 0.0, 0.0)]
     plugin.on_message("/points", _point_cloud(points, is_dense=False))
     status = plugin.get_status()
-    assert status.severity == Severity.ERROR
+    assert status.severity == Severity.WARN
     assert _legend(status) == "90% valid · 0% no return · 10% invalid"
 
 
@@ -251,3 +251,9 @@ def test_metrics_publish_the_returns_breakdown_as_ratios() -> None:
     assert metrics["points"] == 4
     assert metrics["valid_ratio"] + metrics["no_return_ratio"] + metrics["out_of_range_ratio"] + metrics["invalid_ratio"] == 1.0
     assert metrics["frame_id"] == "laser"
+
+
+def test_a_mostly_invalid_scan_is_an_error() -> None:
+    plugin = PointStreamPlugin()
+    plugin.on_message("/scan", _laser_scan([1.0] * 4 + [float("nan")] * 6))
+    assert plugin.get_status().severity == Severity.ERROR

@@ -17,7 +17,7 @@ from typing import Any
 
 from sensor_msgs.msg import Imu
 
-from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, SeverityLevels, ThresholdZone, evaluate_zone
+from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, SeverityLevels, ThresholdZone, evaluate_levels
 from testudo.plugins.render import downsample, sparkline
 
 _IMU_TYPE = "sensor_msgs/msg/Imu"
@@ -90,6 +90,14 @@ class GenericSensorPlugin(CheckPlugin):
             "stuck_count": ThresholdZone(green=2, orange=10),
         }
 
+    @classmethod
+    def default_levels(cls) -> dict[str, SeverityLevels]:
+        # ERROR once most readings are invalid, or the driver has frozen.
+        return {
+            "invalid_ratio": SeverityLevels(warn=0.01, error=0.5),
+            "stuck_count": SeverityLevels(warn=2, error=10),
+        }
+
     def on_tick(self, now_seconds: float) -> None:
         self._now = now_seconds
         if self._message_count == 0:
@@ -150,8 +158,8 @@ class GenericSensorPlugin(CheckPlugin):
         if self._message_count == 0:
             return CheckStatus(severity=Severity.OK, label="sensor", message="no messages received yet")
 
-        invalid_severity = evaluate_zone(self._invalid_ratio, self.thresholds.get("invalid_ratio"))
-        stuck_severity = evaluate_zone(float(self._stuck_count), self.thresholds.get("stuck_count"))
+        invalid_severity = evaluate_levels(self._invalid_ratio, self.levels.get("invalid_ratio"))
+        stuck_severity = evaluate_levels(float(self._stuck_count), self.levels.get("stuck_count"))
         plausibility_severity = Severity.OK if self._plausibility_ok else Severity.WARN
         frame_id_severity = Severity.WARN if self._frame_id_changed else Severity.OK
 

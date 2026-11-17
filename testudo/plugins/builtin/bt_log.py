@@ -21,7 +21,7 @@ from __future__ import annotations
 from collections import deque
 from typing import Any
 
-from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, SeverityLevels, ThresholdZone, colorize, evaluate_zone
+from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, SeverityLevels, ThresholdZone, colorize, evaluate_levels
 from testudo.plugins.render import sparkline
 
 _RUNNING = "RUNNING"
@@ -210,7 +210,7 @@ class BehaviorTreeLogPlugin(CheckPlugin):
         severity = (
             Severity.OK
             if frequency is None
-            else evaluate_zone(frequency, self.thresholds.get("recovery_frequency_per_min"))
+            else evaluate_levels(frequency, self.levels.get("recovery_frequency_per_min"))
         )
         message = f"recovery frequency {frequency:.1f}/min" if severity != Severity.OK else "nominal"
         codes = ActiveCodes()

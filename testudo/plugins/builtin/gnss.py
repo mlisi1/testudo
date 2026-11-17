@@ -34,7 +34,7 @@ from testudo.plugins.base import (
     SeverityLevels,
     ThresholdZone,
     colorize,
-    evaluate_zone,
+    evaluate_levels,
 )
 from testudo.plugins.builtin.gnss_layout import (
     fix_history,
@@ -144,6 +144,19 @@ class GnssPlugin(CheckPlugin):
             "fix_dropout_ratio": ThresholdZone(green=0.05, orange=0.2),
         }
 
+    @classmethod
+    def default_levels(cls) -> dict[str, SeverityLevels]:
+        # WARN where the zones turn orange; ERROR only for a broken receiver:
+        # σ 100 m per axis (an "unknown" placeholder), fixes nearly always
+        # dropped, frozen output, mostly NaN. A jump is a glitch, never ERROR.
+        return {
+            "position_covariance": SeverityLevels(warn=0.0001, error=1e4),
+            "stuck_count": SeverityLevels(warn=2, error=10),
+            "invalid_ratio": SeverityLevels(warn=0.01, error=0.5),
+            "jump_speed_mps": SeverityLevels(warn=15.0),
+            "fix_dropout_ratio": SeverityLevels(warn=0.05, error=0.9),
+        }
+
     def on_tick(self, now_seconds: float) -> None:
         if self._message_count == 0:
             return
@@ -216,21 +229,22 @@ class GnssPlugin(CheckPlugin):
         covariance_label = _COVARIANCE_TYPE_LABELS.get(self._covariance_type, str(self._covariance_type))
         covariance_known = self._covariance_known()
         covariance_zone = self.thresholds.get("position_covariance")
+        covariance_levels = self.levels.get("position_covariance")
         axis_severities = (
-            [evaluate_zone(value, covariance_zone) for value in self._position_covariance]
+            [evaluate_levels(value, covariance_levels) for value in self._position_covariance]
             if covariance_known
             else [Severity.OK] * len(_POSITION_AXES)
         )
         covariance_severity = max(axis_severities)
 
-        stuck_severity = evaluate_zone(float(self._stuck_count), self.thresholds.get("stuck_count"))
-        invalid_severity = evaluate_zone(self._invalid_ratio, self.thresholds.get("invalid_ratio"))
+        stuck_severity = evaluate_levels(float(self._stuck_count), self.levels.get("stuck_count"))
+        invalid_severity = evaluate_levels(self._invalid_ratio, self.levels.get("invalid_ratio"))
         jump_severity = (
-            evaluate_zone(self._jump_speed_mps, self.thresholds.get("jump_speed_mps"))
+            evaluate_levels(self._jump_speed_mps, self.levels.get("jump_speed_mps"))
             if self._jump_speed_mps is not None
             else Severity.OK
         )
-        dropout_severity = evaluate_zone(self._dropout_ratio, self.thresholds.get("fix_dropout_ratio"))
+        dropout_severity = evaluate_levels(self._dropout_ratio, self.levels.get("fix_dropout_ratio"))
         frame_id_severity = Severity.WARN if self._frame_id_changed else Severity.OK
 
         worst = max(
@@ -275,10 +289,14 @@ class GnssPlugin(CheckPlugin):
                 for axis, value, severity in zip(_POSITION_AXES, self._position_covariance, axis_severities)
                 if severity != Severity.OK
             ]
+            # The limit crossed: the error level when it's broken, else the warn level.
+            limit = None
+            if covariance_levels is not None:
+                limit = covariance_levels.error if covariance_severity >= Severity.ERROR else covariance_levels.warn
             codes.add(
                 "GNSS-002",
-                f"position σ high ({', '.join(bad_sigmas)}; per-axis limit {fmt_sigma(covariance_zone.orange)})"
-                if covariance_zone is not None and covariance_zone.orange is not None
+                f"position σ high ({', '.join(bad_sigmas)}; per-axis limit {fmt_sigma(limit)})"
+                if limit is not None
                 else f"position σ high ({', '.join(bad_sigmas)})",
                 covariance_severity,
             )

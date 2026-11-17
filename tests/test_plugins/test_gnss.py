@@ -89,14 +89,23 @@ def test_unknown_covariance_type_does_not_penalize_zero_covariance() -> None:
 
 def test_known_covariance_above_threshold_is_flagged() -> None:
     plugin = GnssPlugin()
-    # 0.1 m^2 (~32cm std) is well past the RTK-tuned orange bound (0.01).
+    # 0.1 m^2 (~32cm std) is degraded for RTK (warn past 1e-4), not broken.
     plugin.on_message("/gps/fix", _fix(covariance=(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1)))
     status = plugin.get_status()
-    assert status.severity == Severity.ERROR
+    assert status.severity == Severity.WARN
     assert "position covariance out of bounds" in status.message
     assert "GNSS-002" in status.codes
     # The code speaks σ like the meters above it, not the raw m² variance.
-    assert _plain(status.codes["GNSS-002"]) == "position σ high (σx ±0.32m, σy ±0.32m, σz ±0.32m; per-axis limit ±0.10m)"
+    assert _plain(status.codes["GNSS-002"]) == "position σ high (σx ±0.32m, σy ±0.32m, σz ±0.32m; per-axis limit ±0.01m)"
+
+
+def test_placeholder_covariance_is_an_error_quoting_the_error_limit() -> None:
+    plugin = GnssPlugin()
+    plugin.on_message("/gps/fix", _fix(covariance=(99999.0, 0, 0, 0, 99999.0, 0, 0, 0, 99999.0)))
+    status = plugin.get_status()
+    assert status.severity == Severity.ERROR
+    assert status.code_severities["GNSS-002"] == Severity.ERROR
+    assert "per-axis limit ±100m" in _plain(status.codes["GNSS-002"])
 
 
 def test_placeholder_variance_axis_is_dimmed_rather_than_perfect() -> None:
@@ -115,11 +124,11 @@ def test_covariance_flags_the_specific_bad_axis() -> None:
     plugin = GnssPlugin()
     plugin.on_message("/gps/fix", _fix(covariance=(0.0001, 0, 0, 0, 0.0001, 0, 0, 0, 0.5)))
     status = plugin.get_status()
-    assert status.severity == Severity.ERROR
+    assert status.severity == Severity.WARN
     assert "z=" in status.message
     assert "x=" not in status.message
     assert "y=" not in status.message
-    # The vertical meter judges z; the horizontal one stays green.
+    # The vertical meter judges z (zones color it red); the horizontal one stays green.
     assert "σ vert ±0.71m [bold red]▮" in status.values["fix"]
     assert "σ horiz ±0.01m [green]▮▮▮▮▮▮" in status.values["fix"]
 
@@ -156,11 +165,11 @@ def test_frame_id_change_is_flagged() -> None:
 def test_implausible_jump_between_real_fixes_is_flagged() -> None:
     plugin = GnssPlugin()
     plugin.on_message("/gps/fix", _fix(lat=45.0, lon=9.0, stamp_sec=0))
-    # ~1.11 km north in 1s => ~1110 m/s, well past the 30 m/s orange bound.
+    # ~1.11 km north in 1s => ~1110 m/s: a glitch, past warn (15 m/s); jumps never ERROR.
     jumped_lat = 45.0 + (1000.0 / _METERS_PER_DEGREE_LAT)
     plugin.on_message("/gps/fix", _fix(lat=jumped_lat, lon=9.0, stamp_sec=1))
     status = plugin.get_status()
-    assert status.severity == Severity.ERROR
+    assert status.severity == Severity.WARN
     assert "implausible jump" in status.message
 
 

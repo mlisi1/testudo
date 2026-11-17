@@ -36,7 +36,9 @@ def test_imu_nan_field_counts_as_invalid() -> None:
     plugin = GenericSensorPlugin()
     plugin.on_message("/imu", _imu(linear_accel=(float("nan"), 0.0, 9.81)))
     status = plugin.get_status()
-    assert status.severity == Severity.ERROR
+    # 1 of 6 fields: past warn (0.01), under error (0.5).
+    assert status.severity == Severity.WARN
+    assert "SENS-001" in status.codes
 
 
 def test_imu_implausible_acceleration_is_flagged() -> None:
