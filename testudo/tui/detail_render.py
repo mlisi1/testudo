@@ -26,8 +26,11 @@ from __future__ import annotations
 
 import math
 
+from rich.markup import escape
 from rich.text import Text
 
+from testudo.core.fault_history import ClearedFault, format_ago, latest_per_code
+from testudo.core.plain_values import strip_markup
 from testudo.core.topic_report import TopicReport
 from testudo.plugins.base import (
     COMPACT_VALUE_SUFFIX,
@@ -74,6 +77,9 @@ _LABEL_GAP = 2
 #: How many of a grid's widest values `_fitted_body_lines` will move onto
 #: full-width lines of their own while looking for a layout that fits.
 _MAX_VALUES_MOVED_OUT_OF_GRID = 3
+
+#: At most this many of the topic's cleared codes, under its active ones.
+MAX_CLEARED_LINES = 3
 
 #: Rows the grid aims to stay within when the pane's height isn't known.
 _DEFAULT_GRID_ROWS = 6
@@ -330,7 +336,32 @@ def _body_entries(report: TopicReport, values: dict[str, str], width: int, is_ta
     return entries
 
 
-def render_detail(report: TopicReport, width: int, height: int | None = None) -> str:
+def cleared_fault_line(fault: ClearedFault, times: int, now: float, width: int) -> str:
+    """One dim row for a cleared code: `✗ [ODOM-001] cleared 2m ago, lasted 5s ×3 · message`.
+
+    The icon is the worst severity it reached; the message is the code's
+    last, without its markup (it's history, not an alarm), cut to `width`.
+    """
+    color = SEVERITY_COLORS.get(fault.severity, "white")
+    repeat = f" ×{times}" if times > 1 else ""
+    text = (
+        f"[{fault.code}] cleared {format_ago(now - fault.cleared_at)} ago, "
+        f"lasted {format_ago(fault.lasted_s)}{repeat} · {strip_markup(fault.message)}"
+    )
+    room = max(1, width - 2)
+    if len(text) > room:
+        text = text[: room - 1] + "…"
+    icon = SEVERITY_ICONS.get(fault.severity, "?")
+    return f"[dim {color}]{icon}[/dim {color}] [dim]{escape(text)}[/dim]"
+
+
+def render_detail(
+    report: TopicReport,
+    width: int,
+    height: int | None = None,
+    cleared: tuple[ClearedFault, ...] | list[ClearedFault] = (),
+    now: float = 0.0,
+) -> str:
     """The Detail Panel's full markup for `report`, laid out for a `width` x `height` pane.
 
     `status.message` (the single rolled-up free-text summary) is
@@ -339,6 +370,10 @@ def render_detail(report: TopicReport, width: int, height: int | None = None) ->
     independently of the others, rather than one string with them all
     run together. `height=None` (unknown) falls back to a fixed row
     budget for the value grid, and leaves `_more` values out.
+
+    `cleared` (this topic's cleared faults, newest first, aged against
+    `now`) come last, one dim line per code, only in rows nothing else
+    needs: history never pushes a current reading or code out of view.
     """
     lines = [_header_line(report, width)]
     # A header still wider than the pane wraps; those rows aren't the grid's to use.
@@ -371,4 +406,12 @@ def render_detail(report: TopicReport, width: int, height: int | None = None) ->
         if height is None or header_rows - 1 + len(lines) + 1 + code_rows <= height:
             lines.append("")
         lines.extend(code_lines)
+
+    past = latest_per_code(cleared)[:MAX_CLEARED_LINES]
+    if past:
+        used = header_rows - 1 + sum(line.count("\n") + 1 for line in lines) + code_rows - len(code_lines)
+        room = MAX_CLEARED_LINES + 1 if height is None else height - used
+        if room >= 2:
+            lines.append("")
+            lines += [cleared_fault_line(fault, times, now, width) for fault, times in past[: room - 1]]
     return "\n".join(lines)

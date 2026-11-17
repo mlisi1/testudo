@@ -114,8 +114,13 @@ class DashboardScreen(Screen):
     def refresh_attention(self) -> None:
         """Fill the Plugin Panel's free rows with the "Needs attention" list (hidden when there are none)."""
         attention = self.query_one("#attention", Static)
+        snapshot = self.app.latest_snapshot
         text = attention_text(
-            self.app.latest_snapshot.reports, attention.content_size.width, attention.content_size.height
+            snapshot.reports,
+            attention.content_size.width,
+            attention.content_size.height,
+            snapshot.cleared_faults,
+            snapshot.time_s,
         )
         attention.update(text or "")
 
@@ -143,16 +148,22 @@ class DashboardScreen(Screen):
             return
         width = detail.size.width
         available = self.query_one("#panes").outer_size.height + detail.outer_size.height
+        snapshot = self.app.latest_snapshot
+        cleared = [fault for fault in snapshot.cleared_faults if fault.topic == report.topic]
+
+        def render(height: int | None) -> str:
+            return render_detail(report, width, height, cleared, snapshot.time_s)
+
         if available <= 0 or width <= 0:
             # Not laid out yet (see on_mount): render for an unknown height.
-            detail.update(render_detail(report, width, detail.size.height or None))
+            detail.update(render(detail.size.height or None))
             return
 
         panes_wanted = 1 + max(
             self.query_one(CategorySummaryTable).row_count, self.query_one(TopicDetailTable).row_count
         )
         cap = detail_cap(available, panes_wanted)
-        markup = render_detail(report, width, cap - DETAIL_CHROME_ROWS)
+        markup = render(cap - DETAIL_CHROME_ROWS)
         previous = self._detail_sizing[1] if self._detail_sizing and self._detail_sizing[0] == report.topic else None
         height = detail_height(cap, rendered_rows(markup, width), previous)
         self._detail_sizing = (report.topic, height)
@@ -160,7 +171,7 @@ class DashboardScreen(Screen):
             detail.styles.height = height
             # The Plugin Panel's free rows (the "Needs attention" list) change with it.
             self.call_after_refresh(self.refresh_attention)
-        detail.update(render_detail(report, width, height - DETAIL_CHROME_ROWS))
+        detail.update(render(height - DETAIL_CHROME_ROWS))
 
     def on_resize(self, event) -> None:
         # The detail pane's size (which render_detail lays out for) just

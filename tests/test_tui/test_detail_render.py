@@ -180,3 +180,24 @@ def test_publishers_lead_a_presence_report_but_trail_a_full_one_only_when_tall()
     full = _report({"a": "1"}, publishers=("/x (reliable, volatile)", "/y (reliable, volatile)"))
     assert not any("publishers" in line for line in _plain(render_detail(full, width=100, height=6)))
     assert _plain(render_detail(full, width=100, height=12))[-1] == "publishers  /x (reliable, volatile), /y (reliable, volatile)"
+
+
+def test_cleared_faults_come_last_one_dim_line_per_code() -> None:
+    from testudo.core.fault_history import ClearedFault
+
+    report = _report(values={"a": "1"}, codes={"ODOM-001": "[red]now bad[/red]"})
+    cleared = [
+        ClearedFault("/odom", "ODOM-002", Severity.WARN, "[yellow]σ high[/yellow]", 80.0, 90.0),
+        ClearedFault("/odom", "ODOM-002", Severity.WARN, "older", 10.0, 20.0),
+    ]
+    lines = _plain(render_detail(report, 80, 20, cleared, now=100.0))
+    assert lines[-1] == "▲ [ODOM-002] cleared 10s ago, lasted 10s ×2 · σ high"
+    assert lines[-3].startswith("[ODOM-001]")
+
+
+def test_cleared_faults_never_take_rows_the_codes_need() -> None:
+    from testudo.core.fault_history import ClearedFault
+
+    report = _report(values={"a": "1"}, codes={"ODOM-001": "bad"})
+    cleared = [ClearedFault("/odom", "ODOM-002", Severity.WARN, "w", 80.0, 90.0)]
+    assert not any("ODOM-002" in line for line in _plain(render_detail(report, 80, 4, cleared, now=100.0)))

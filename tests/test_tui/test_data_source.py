@@ -192,3 +192,17 @@ def test_live_data_source_without_config_path_still_mutates_manager() -> None:
     source = LiveDataSource(manager, SeverityMode.WORST)  # config_path=None
     assert source.add_exclude_rule(ExcludeRule("/x", ExcludeMatchType.LITERAL)) == 0
     assert manager.exclude_rules() == [ExcludeRule("/x")]
+
+
+def test_live_data_source_carries_cleared_faults_until_reset() -> None:
+    manager = _FakeManager()
+    source = LiveDataSource(manager, SeverityMode.WORST)
+    manager._reports = [TopicReport("/a", "t", "full", CheckStatus(Severity.WARN, "l", "m", codes={"X-001": "w"}))]
+    source.poll()
+    manager._reports = [TopicReport("/a", "t", "full", CheckStatus(Severity.OK, "l", "m"))]
+    snapshot = source.poll()
+    assert [fault.code for fault in snapshot.cleared_faults] == ["X-001"]
+    assert snapshot.time_s >= snapshot.cleared_faults[0].cleared_at
+
+    source.reset_stats()
+    assert source.poll().cleared_faults == ()

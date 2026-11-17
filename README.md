@@ -111,7 +111,11 @@ panels, `Esc` refocuses the plugin panel (or clears an active search).
 can find a topic without knowing its category; from the topic panel it
 filters that category. `n`/`N` jump to the next/previous topic that
 needs attention, in the plugin panel's "Needs attention" order, whatever
-its category. `s` toggles the focused panel's sort (worst first
+its category. Faults that were raised and have since cleared aren't
+lost: the rows left under "Needs attention" list the most recent ones
+(with how long ago), and the detail panel ends with the highlighted
+topic's own (when it cleared, how long it lasted, its last message); `r`
+clears that history too. `s` toggles the focused panel's sort (worst first
 ▼ or by name ▲), `y` copies the highlighted topic's name, `p` pauses,
 `r` resets accumulated stats, `o` opens the options menu (currently:
 manage `exclude_topics` rules live), and `?` shows help. Any

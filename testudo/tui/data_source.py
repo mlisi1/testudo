@@ -4,11 +4,13 @@ on a fixed timer without needing to know which kind it has.
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Protocol
 
 from testudo.core.config import ExcludeRule, SeverityMode
 from testudo.core.config_writer import write_exclude_rules
+from testudo.core.fault_history import ClearedFault, FaultHistory
 from testudo.core.node_profiling.profiler import NodeProfiler
 from testudo.core.node_profiling.report import node_stat_to_topic_report
 from testudo.core.subscription_manager import SubscriptionManager, TopicReport
@@ -17,10 +19,18 @@ from testudo.plugins.base import CheckStatus
 
 @dataclass(frozen=True)
 class WatchSnapshot:
-    """One poll's worth of data: every current report, plus the aggregated overall status."""
+    """One poll's worth of data: every current report, plus the aggregated overall status.
+
+    `cleared_faults` are the faults that were active earlier and have
+    since cleared, newest first; `time_s` is when this snapshot was taken,
+    on the same time base as their `raised_at`/`cleared_at` (wall clock
+    live, bag time in a replay), so "how long ago" is `time_s - cleared_at`.
+    """
 
     reports: list[TopicReport]
     overall: CheckStatus
+    cleared_faults: tuple[ClearedFault, ...] = ()
+    time_s: float = 0.0
 
 
 class WatchDataSource(Protocol):
@@ -59,6 +69,7 @@ class LiveDataSource:
         # None when node_profiling.enabled is False -- poll() then just
         # returns the manager's own reports, unaugmented, same as a replay.
         self._node_profiler = node_profiler
+        self._fault_history = FaultHistory()
 
     def poll(self) -> WatchSnapshot:
         self._manager.tick()
@@ -74,10 +85,20 @@ class LiveDataSource:
             # `overall` below stays topic-only (unaffected), matching
             # `/diagnostics`'s existing scope.
             reports = reports + [node_stat_to_topic_report(stat) for stat in self._node_profiler.reports()]
-        return WatchSnapshot(reports=reports, overall=self._manager.overall_status(self._severity_mode))
+        # Wall clock, not the (possibly sim) ROS clock: "cleared 2m ago" is
+        # read by a person, in their time.
+        now = time.time()
+        self._fault_history.update(reports, now)
+        return WatchSnapshot(
+            reports=reports,
+            overall=self._manager.overall_status(self._severity_mode),
+            cleared_faults=self._fault_history.cleared(),
+            time_s=now,
+        )
 
     def reset_stats(self) -> None:
         self._manager.reset_stats()
+        self._fault_history.reset()
 
     def is_live(self) -> bool:
         return True

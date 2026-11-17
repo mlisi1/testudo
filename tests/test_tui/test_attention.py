@@ -1,6 +1,7 @@
 """Needs-attention list: synthetic reports, no app needed."""
 from __future__ import annotations
 
+from testudo.core.fault_history import ClearedFault
 from testudo.core.topic_report import TopicReport
 from testudo.plugins.base import CheckStatus, Severity
 from testudo.tui.widgets.attention import attention_entries, attention_line, attention_text, problem_topics
@@ -64,3 +65,28 @@ def test_problem_topics_follow_the_list_order_once_each() -> None:
         _report("/a", Severity.STALE, {"LIVE-003": "s"}),
     ]
     assert problem_topics(reports) == ["/a", "/b", "/gps", "/odom"]
+
+
+def test_cleared_codes_fill_the_rows_the_active_ones_leave() -> None:
+    reports = [_report("/gps", Severity.ERROR, {"GNSS-001": "e"})]
+    cleared = (
+        ClearedFault("/odom", "ODOM-002", Severity.WARN, "w", 50.0, 70.0),
+        ClearedFault("/a", "LIVE-003", Severity.STALE, "s", 10.0, 40.0),
+        ClearedFault("/b", "LIVE-003", Severity.STALE, "s", 10.0, 20.0),
+    )
+    lines = _plain(attention_text(reports, 30, 10, cleared, now=100.0)).splitlines()
+    assert lines == [
+        "Needs attention",
+        "✗ GNSS-001 /gps",
+        "",
+        "Cleared",
+        "▲ ODOM-002 30s /odom",
+        "■ LIVE-003 1m 2 topics",
+    ]
+    # No room for the blank line, the title and one entry: the cleared list is left out.
+    assert len(_plain(attention_text(reports, 30, 4, cleared, now=100.0)).splitlines()) == 2
+
+
+def test_cleared_codes_show_on_their_own_when_nothing_is_active() -> None:
+    cleared = (ClearedFault("/odom", "ODOM-002", Severity.WARN, "w", 50.0, 70.0),)
+    assert _plain(attention_text([], 30, 5, cleared, now=75.0)).splitlines() == ["Cleared", "▲ ODOM-002 5s /odom"]
