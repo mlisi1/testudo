@@ -6,337 +6,111 @@
 
 **Black-box diagnostics for ROS 2 navigation stacks — neofetch for your nav stack.**
 
-Testudo watches a running robot from the outside: no instrumentation of
-existing nodes required. It reports on topic health, sensor sanity,
-odometry/covariance quality, TF integrity, and Nav2 goal/action outcomes,
-then shows you the result in a live terminal UI, a report over a recorded
-bag, or (with or without the TUI) a standard `diagnostic_msgs/DiagnosticArray` you can pipe into
-rqt_robot_monitor, Foxglove, or PlotJuggler.
+Testudo watches a running robot from the outside, with no changes to its
+nodes. It checks every topic's health (is it alive, at the right rate),
+what the sensors and odometry actually report (covariance, stuck or
+invalid readings, frame ids), the TF tree, and Nav2's goals and behavior
+tree. Results show up in a live terminal dashboard and on standard
+`diagnostic_msgs/DiagnosticArray` topics you can plot in PlotJuggler or
+Foxglove.
 
-It fills the gap `diagnostic_updater`/`diagnostic_aggregator` leave for
-everything you *can't* or don't want to instrument — drivers, Nav2
-internals, third-party nodes — and for semantic checks (goal outcomes,
-covariance sanity, TF tree health) those tools don't cover out of the box.
+<p align="center">
+  <img src="docs/media/testudo_replay.gif" alt="Testudo's TUI playing back a recorded field run, then jumping between problems" width="960">
+</p>
 
-## Features
+## What it does
 
-- **Two-tier subscription model, with a presence-only escape hatch for
-  heavy topics.** Every topic on the graph gets watched for liveness and
-  frequency for free (raw subscriptions, no deserialization). Topics you
-  declare — or that a plugin recognizes by message type — additionally
-  get full content checks. A plugin can mark specific message types as
-  presence-only by default instead (`CheckPlugin.presence_only_msg_types`)
-  when even a raw subscription is too heavy to auto-watch on every
-  undeclared topic: no subscription at all, just the publisher-exists
-  check every topic already gets, unless you declare that topic under
-  `topics:`. Image/CompressedImage (`ImageStreamPlugin`) and 3D
-  PointCloud2 (`PointStreamPlugin`) default this way; 2D LaserScan stays
-  on the normal full tier. `theora_image_transport/msg/Packet` is
-  presence-only too (no dedicated plugin) — subscribing to a lazy
-  `image_transport` republisher can wake up an otherwise-idle encoder. An
-  `exclude_topics:` list in config (literal names or regex patterns) drops
-  matching topics from real monitoring entirely; they still show up, name
-  only, in their own **Excluded Topics** category rather than vanishing,
-  and can be managed live from the TUI's Options screen (`o`), which
-  persists a rule back to the config file so it survives a restart.
-- **Quiet is not dead.** A latched (transient_local) topic like
-  `/robot_description` reads `● latched`, not STALE. A topic that only
-  publishes when something happens (behavior tree logs, action goal
-  statuses and feedback, planned paths, costmap updates, or anything you
-  declare with `event_driven: true`) reads `◌ idle`. A topic other nodes
-  subscribe to but nobody publishes (`/goal_pose`, a teleop `cmd_vel`)
-  reads `◌ input`: an input nobody is driving right now. It's still an
-  error when the topic is declared, or when it had a publisher earlier
-  and lost it.
-- **Built-in content checks**, all through the same plugin interface
-  external users build against:
+- **Every topic, cheaply.** Undeclared topics get liveness and rate
+  checks from raw subscriptions; topics you declare get full content
+  checks from a plugin (odometry, IMU, GNSS, lidar, cameras, TF, Nav2
+  actions, behavior tree).
+- **Quiet is not dead.** Latched topics, event-driven ones (paths, action
+  feedback, costmap updates) and inputs nobody is driving right now are
+  told apart from a publisher that died.
+- **A dashboard you read at a glance.** Categories, their topics and the
+  highlighted topic's detail are all on screen at once, with a "Needs
+  attention" list, `n` to jump to the next problem, and a history of
+  faults that came and went.
+- **Live, headless, or from a bag.** `watch` for the dashboard, `watch
+  --headless` (or the launch file) on a robot, `replay` for a recorded bag:
+  a report, or the dashboard to play back and scrub.
+- **Extensible.** Checks are plugins behind one small interface; the
+  built-in ones use the same interface yours would.
 
-  | Plugin | Message type | Checks |
-  |---|---|---|
-  | Odometry | `nav_msgs/msg/Odometry` | covariance threshold zones, positive-semi-definiteness, growth-rate sanity, optional `cmd_vel` cross-check |
-  | Generic sensor | `sensor_msgs/msg/Imu` | NaN/Inf, stuck values, magnitude plausibility, `frame_id` consistency |
-  | Point stream | `sensor_msgs/msg/LaserScan` (2D, full tier), `sensor_msgs/msg/PointCloud2` (3D, presence-only by default) | NaN/Inf/out-of-range ratio, stuck reading, `frame_id` consistency, malformed/empty payload (3D only) |
-  | Image stream | `sensor_msgs/msg/Image`, `sensor_msgs/msg/CompressedImage` (both presence-only by default) | stuck/empty frame, malformed payload, size-drop, `frame_id` consistency, rolling bandwidth |
-  | GNSS | `sensor_msgs/msg/NavSatFix` | fix status and dropout ratio, per-axis covariance zones, shown as σ in metres (skipped when the driver reports unknown covariance; a sub-millimetre placeholder σ is dimmed rather than shown as perfect), NaN/Inf, stuck fix, implausible position jumps, `frame_id` consistency |
-  | Nav2 goals | `action_msgs/msg/GoalStatusArray` | goal lifecycle, success rate, mean duration, invocation frequency — covers both navigation goals and recovery behaviors |
-  | BT log | `nav2_msgs/msg/BehaviorTreeLog` | currently running nodes, recovery-node trigger frequency (including recoveries wired into the tree as plain service calls) |
-  | TF watch | `tf2_msgs/msg/TFMessage` | missing chains, multi-parent frames, stale-edge (extrapolation-risk) detection |
+<p align="center">
+  <img src="docs/media/testudo_dashboard.png" alt="The dashboard on an odometry topic: per-axis covariance meters, active codes, a fault that cleared" width="960">
+</p>
 
-  Actual-vs-configured *rate* checks (a planner/controller/costmap
-  publishing slower than expected) need no dedicated plugin at all —
-  declare a `rate_hz` threshold on any topic.
-- **Node profiling.** CPU, memory, involuntary context switches, a
-  memory-growth slope (leak detection) and, on NVIDIA, GPU memory for every
-  ROS node whose process can be resolved, plus Testudo itself. Shown in the
-  TUI's **Nodes** category and published on `/testudo/nodes`. Live only.
-- **Lifecycle-aware.** Diagnostics for a topic owned by an
-  `inactive`/`unconfigured` lifecycle node are suppressed rather than
-  flagged red.
-- **`use_sim_time`-aware** staleness/frequency checks: in a simulator, pass
-  it as a ROS argument (`testudo watch --ros-args -p use_sim_time:=true`,
-  or `parameters=[{'use_sim_time': True}]` from a launch file).
-- **Hysteresis debouncing** so a single noisy sample doesn't flap a
-  status, plus configurable **worst / weighted / both** severity
-  aggregation.
-- **A live TUI** (`testudo watch`) — four panes visible at once (status
-  bar, plugin panel, topic panel, detail panel), all updating as you move
-  the cursor rather than a list you drill into one entry at a time —
-  search topics across categories, sort, copy a topic name, pause, reset
-  stats — and the same view for a recorded bag (`testudo replay --watch`),
-  played back or scrubbed frame by frame (`p` play/pause, `[`/`]` one
-  frame, `{`/`}` ten).
-- **Standard output.** Publishes `diagnostic_msgs/DiagnosticArray`, one
-  topic per plugin by default, carrying raw numbers you can plot in
-  PlotJuggler or Foxglove. Publishing runs at its own rate, separate from
-  each check's sampling, and the output is bag-recordable for free (see
-  [Output](#output)).
-- **Extensible.** Drop a `.py` file with a decorated class into a
-  configured directory (no packaging needed), or ship a plugin as its own
-  installable package via a `testudo.checks` entry point. Built-in
-  plugins use the exact same interface external users get.
+## Install
 
-## Example
-
-```
-$ testudo replay my_bag/
-ERROR /odometry/gps                  [full    ] nav_msgs/msg/Odometry
-position covariance trace 0.2221 out of bounds (σxy=▆▆▆▇██▇▇▇▇▇▇▇▆▆▆▆▇▆▆ (60 s)
-growth -0.010 m²/s ▮▮▮▮▮▮   map → ?)
-ERROR /tf                            [full    ] tf2_msgs/msg/TFMessage
-missing chain(s): base_link->gps_link (frames=40  3 dynamic · 35 static edges,
-roots=utm (38) · none (2), multi_parent=–, stale_dynamic=–)
-WARN  /behavior_tree_log             [full    ] nav2_msgs/msg/BehaviorTreeLog
-recovery frequency 5.8/min (running=▶ NavigateRecovery › NavigateWithReplanning
-› RateController › ComputePathToPose › RecoveryFallback › RecoveryActions › Spin
-› Wait › BackUp, recoveries=▁██ 5.8/min  last: Spin 9s ago, recovery_counts=Spin
-7 · BackUp 2 · Wait 2, last_failure=FollowPath  0s ago, idle_for_s=9.9)
-OK    /front_camera/camera/color/image_raw/compressed [full    ]
-sensor_msgs/msg/CompressedImage     139.9KB (stream=jpeg  139.9KB/frame ·
-1.33MB/s checked, sizes=████████████████████ (last 20)   100% of avg ▮▮▮▮▮▮,
-stuck=0, payload=✓ jpeg, frame=front_camera_color_optical_frame)
-...
-
-[STALE] 47 topic(s): OK=38, WARN=2, ERROR=4, STALE=3 (topics_checked=47,
-weighted_score=0.404)
-```
-
-`testudo watch` shows the same data live, in four panes visible at once:
-a **status bar** (ROS distro, domain, uptime, pause state, and the overall
-verdict with per-severity counts), a **plugin
-panel** (one row per category with a per-severity icon+count breakdown),
-a **topic panel** (every topic in the highlighted category, with its
-status, publish rate in Hz, and one plugin-specific column such as
-odometry's covariance or, for Other Topics, the message type), and a
-**detail panel** (the highlighted topic's full status, as tall as that
-status needs, with the panes above taking the rest). Moving the cursor —
-not pressing `Enter` — is what drives the other panes live; `Enter`,
-`Tab`/`Shift+Tab`, or `←`/`→` switch focus between the plugin and topic
-panels, `Esc` refocuses the plugin panel (or clears an active search).
-`/` searches: from the plugin panel it matches topic names too, so you
-can find a topic without knowing its category; from the topic panel it
-filters that category. `n`/`N` jump to the next/previous topic that
-needs attention, in the plugin panel's "Needs attention" order, whatever
-its category. Faults that were raised and have since cleared aren't
-lost: the rows left under "Needs attention" list the most recent ones
-(with how long ago), and the detail panel ends with the highlighted
-topic's own (when it cleared, how long it lasted, its last message); `r`
-clears that history too. `s` toggles the focused panel's sort (worst first
-▼ or by name ▲), `y` copies the highlighted topic's name, `p` pauses,
-`r` resets accumulated stats, `o` opens the options menu (currently:
-manage `exclude_topics` rules live), and `?` shows help. Any
-warning/error logged while the TUI has the terminal (most commonly a
-message type whose interface package isn't installed) is buffered rather
-than printed live — a stray write to the terminal while Textual is
-rendering corrupts the display — and summarized once the session ends
-(deduplicated, with a repeat count).
-
-## Requirements
-
-- ROS 2 Humble or newer (primary development/test target: **Jazzy**)
-- Python 3.10+
-- [Textual](https://github.com/Textualize/textual) for `testudo watch` —
-  `rosdep`'s `python3-textual` resolves to an apt package far too old to
-  work; install a current one with `pip install textual` (also pulled in
-  automatically by `pip install -e .`).
-
-## Installation
+ROS 2 Humble or newer (developed on Jazzy), Python 3.10+.
 
 ```bash
 cd ~/your_ws/src
 git clone git@github.com:mlisi1/testudo.git
 cd ~/your_ws
 rosdep install --from-paths src --ignore-src -r -y
-pip install textual   # see note above
+pip install textual   # rosdep's python3-textual is too old for the TUI
 colcon build --packages-select testudo
 source install/setup.bash
 ```
 
 ## Quick start
 
-Every command reads `~/.config/testudo/config.yaml` (or
-`$XDG_CONFIG_HOME/testudo/config.yaml`) by default, or a path given via
-`-c`/`--config`. No file at either location isn't an error — every config
-section is optional, so it's the same as an empty one: vitals tier only,
-nothing declared or excluded. The Options screen's live exclude rules
-(`o` in `watch`) are written back to whichever config is in effect,
-creating that default file and its parent directory the first time you
-add one if neither exists yet.
-
 ```bash
-# Live TUI.
-testudo watch
+testudo watch                    # live dashboard (? for keys, q to quit)
+testudo watch --headless         # same checks, no TUI: publishes until Ctrl-C
+testudo replay my_bag/           # report over a bag; exit code 0 OK, 1 WARN, 2 ERROR
+testudo replay --watch my_bag/   # play the bag back in the dashboard ([ ] to scrub, p to play)
+testudo plugins                  # which checks exist, and what they cover
 
-# The same monitoring without the TUI: keeps publishing the diagnostics
-# topics until Ctrl-C/SIGTERM. For a robot with no terminal, a launch
-# file, or CI (read the results from /testudo/*).
-testudo watch --headless
-
-# Report over a recorded bag (exit codes: 0 OK, 1 WARN, 2 ERROR/STALE),
-# or --watch to play it back / scrub it in the TUI.
-testudo replay --watch my_bag/
-
-# What plugins are available, and what they cover.
-testudo plugins
-
-# Point at a specific config instead of the default -- e.g. this repo's
-# own reference example, to see a realistic set of declared topics/
-# actions/tf pairs and threshold overrides.
-testudo watch -c config/example_config.yaml
+# In a simulator, or from a launch file:
+testudo watch --ros-args -p use_sim_time:=true
+ros2 launch testudo testudo.launch.py config:=/path/to/testudo.yaml use_sim_time:=true
 ```
 
-Every command validates its config up front and fails loudly with a
-specific error if it's malformed, rather than failing three modules deep
-with a `KeyError`.
-
-## Configuration
-
-Three top-level sections, all optional — anything you don't declare still
-gets the cheap vitals tier automatically:
+With no config, Testudo watches every topic at the cheap tier. Declare the
+topics you care about in `~/.config/testudo/config.yaml` (or pass `-c`) to
+get their content checks:
 
 ```yaml
-severity_mode: worst   # worst | weighted | both
-
 topics:
   nav_msgs/msg/Odometry:
     - name: /odom
-      weight: 2
-      related_topics:
-        cmd_vel: /cmd_vel
       thresholds:
         position_covariance_trace: {green: 0.02, orange: 0.2}
+  sensor_msgs/msg/Imu:
+    - name: /imu/data
 
 actions:
   - name: navigate_to_pose
     action_type: nav2_msgs/action/NavigateToPose
-    thresholds:
-      success_rate: {green: 0.9, orange: 0.7}
 
 tf:
   - {parent: map, child: base_link}
-
-# A plain string is a literal (exact-name) rule; a mapping opts into a
-# regex searched against the topic name (`^` / `$` anchor a starts-with /
-# ends-with check). A matching topic gets no subscription of any kind --
-# just a name-only row in the TUI's "Excluded Topics" category, distinct
-# from a topic Testudo never even attempts (its own /parameter_events,
-# /rosout self-exclusion, which stays fully invisible). Nothing needs to
-# be listed here out of the box -- ImageStream/PointStream already default
-# their own heavy message types to presence-only (see above); this is for
-# topics *you* want dropped, e.g. one whose interface package isn't
-# installed on this host. Rules added live from the TUI's Options screen
-# (`o`) are appended here automatically.
-#
-# A literal pattern containing a character no ROS topic name can have
-# (`$ ^ * . + ? ( ) [ ] { } |`, etc.) fails loudly at load time rather
-# than silently matching nothing -- that combination almost always means
-# a regex rule that forgot `type: regex`.
-exclude_topics:
-  - /velodyne_packets
-  - pattern: "_debug$"
-    type: regex
 ```
 
-See [`config/example_config.yaml`](config/example_config.yaml) for a
-complete, commented example.
+[`config/example_config.yaml`](config/example_config.yaml) is a complete,
+commented reference.
 
 ## Output
 
-By default each plugin publishes its own `DiagnosticArray` under
-`/testudo`, so a consumer subscribes only to what it needs:
-
-| Topic | Contents |
+| Topic | What's on it |
 |---|---|
-| `/testudo/<plugin>` | one row per topic that plugin checks, e.g. `/testudo/odometry`, `/testudo/nav2_goals` |
+| `/testudo/<plugin>` | one status per topic that plugin checks, e.g. `/testudo/odometry` |
 | `/testudo/vitals` | topics no plugin checks (rate, age, liveness) |
 | `/testudo/overall` | the roll-up verdict |
-| `/testudo/nodes` | node profiling (CPU, memory, GPU per node) |
-| `/testudo/faults` | fault history: one row per fault (a topic's active code), active or cleared |
+| `/testudo/faults` | one status per fault, active or cleared: plot when each was active |
+| `/testudo/nodes` | CPU, memory and GPU per node |
 
-A plugin's topic appears once it has something to report. Each row's
-key/values are machine-readable: plain numbers with the unit in the key
-(`rate_hz`, `distance_remaining_m`), ratios as 0..1, booleans as 1/0.
+Values are plain numbers with the unit in the key (`rate_hz`,
+`duration_s`), ready to plot. `publish: {per_plugin: false}` puts
+everything on `/diagnostics` instead, for rqt_robot_monitor.
 
-`/testudo/faults` gives every fault its own series, named
-`testudo: <topic> <CODE>`, so a plot shows when each one was active: its
-level is the fault's severity while active and OK once cleared. Its values
-are `topic`, `code`, `active` (1/0), `severity` (the worst it reached),
-`raised_at_s` and `cleared_at_s` (Unix seconds, 0 while active),
-`duration_s`, `times_raised`, and `schema_version`. A new key can be added
-without bumping `schema_version`, so ignore keys you don't know. Which
-cleared faults stay is up to you:
+## Documentation
 
-```yaml
-faults:
-  retention: session          # every fault seen this session (default), or:
-  # retention: recent         # a cleared fault drops off after the window
-  recent_window_seconds: 600
-```
-
-The TUI's Cleared list follows the same setting.
-
-rqt_robot_monitor and diagnostic_aggregator listen only on `/diagnostics`.
-To use them, publish everything as one array there instead:
-
-```yaml
-publish:
-  per_plugin: false   # everything on `topic`; node profiling on /diagnostics/nodes
-  topic: /diagnostics
-```
-
-Testudo never monitors its own output topics.
-
-## Extending Testudo
-
-A check plugin is a small, stable interface:
-
-```python
-class CheckPlugin(abc.ABC):
-    def msg_types(cls) -> tuple[str, ...]: ...
-    def default_thresholds(cls) -> dict[str, ThresholdZone]: ...
-    def on_message(self, topic: str, msg: Any) -> None: ...
-    def on_tick(self, now_seconds: float) -> None: ...
-    def get_status(self) -> CheckStatus: ...
-```
-
-`CheckStatus` carries a severity and message, `values` for people (shown
-in the TUI and the text report, Rich markup allowed) and `metrics` for
-machines (raw numbers, units in the key, what gets published). A plugin
-that sets no `metrics` still publishes its `values`, with markup stripped.
-
-Register it two ways: drop a `.py` file decorated with `@register_plugin`
-into the directory named by `plugins_dir` in your config (no packaging
-needed), or expose it via a `testudo.checks` entry point in your own
-installable package. A full plugin-authoring guide is planned; in the
-meantime the built-in plugins in
-[`testudo/plugins/builtin/`](testudo/plugins/builtin/) are real,
-representative examples to build from.
-
-## Status
-
-Testudo is under active development. Discovery, the two-tier subscription
-core, the built-in content plugins, `DiagnosticArray` publishing,
-severity aggregation, bag replay, and the TUI are implemented and tested.
-Node profiling and per-plugin, plottable diagnostics output are in too.
+Configuration in depth, the output schema, writing your own check plugin:
+the full documentation is being written in [`docs/`](docs/).
 
 ## License
 
