@@ -91,12 +91,18 @@ class DashboardScreen(Screen):
         # One line even at 101 columns (the narrowest typical terminal):
         # `r` (reset) is left to the help overlay, the rest is what a
         # first-time user needs to find their way around.
+        if self.app.timeline is not None:
+            # A replay's options are read-only: its slot goes to scrubbing.
+            return "j/k move · tab/←→ pane · / search · n problem · s sort · p play · [ ] scrub · ? help · q quit"
         return "j/k move · tab/←→ pane · / search · n problem · s sort · p pause · o options · ? help · q quit"
 
     def sync_header(self) -> None:
         header = self.query_one(TestudoHeader)
         header.sim_time_active = self.app.sim_time_active
         header.paused = self.app.paused
+        timeline = self.app.timeline
+        if timeline is not None:
+            header.replay = (timeline.position_s, timeline.duration_s, timeline.playing)
         snapshot = self.app.latest_snapshot
         # Same scope as `overall` itself: topics only, not node-profiling rows.
         counts = Counter(report.status.severity for report in snapshot.reports if report.tier != "node")

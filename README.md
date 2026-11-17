@@ -72,8 +72,9 @@ covariance sanity, TF tree health) those tools don't cover out of the box.
   bar, plugin panel, topic panel, detail panel), all updating as you move
   the cursor rather than a list you drill into one entry at a time —
   search topics across categories, sort, copy a topic name, pause, reset
-  stats — and the same view for a finished
-  bag (`testudo replay --watch`).
+  stats — and the same view for a recorded bag (`testudo replay --watch`),
+  played back or scrubbed frame by frame (`p` play/pause, `[`/`]` one
+  frame, `{`/`}` ten).
 - **Standard output.** Publishes `diagnostic_msgs/DiagnosticArray`, one
   topic per plugin by default, carrying raw numbers you can plot in
   PlotJuggler or Foxglove. Publishing runs at its own rate, separate from
@@ -164,7 +165,7 @@ testudo check
 # Live TUI.
 testudo watch
 
-# Batch report over a recorded bag, or --watch to browse it in the TUI.
+# Batch report over a recorded bag, or --watch to play it back / scrub it in the TUI.
 testudo replay --watch my_bag/
 
 # What plugins are available, and what they cover.

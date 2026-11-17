@@ -20,6 +20,11 @@ APP_BINDINGS = [
     Binding("r", "reset_stats", "Reset stats"),
     Binding("o", "show_options", "Options"),
     Binding("question_mark", "show_help", "Help", key_display="?"),
+    # replay --watch only (no-ops otherwise): step through the bag's frames.
+    Binding("left_square_bracket", "step_frames(-1)", "Back a frame", key_display="["),
+    Binding("right_square_bracket", "step_frames(1)", "Forward a frame", key_display="]"),
+    Binding("left_curly_bracket", "step_frames(-10)", "Back 10 frames", key_display="{"),
+    Binding("right_curly_bracket", "step_frames(10)", "Forward 10 frames", key_display="}"),
 ]
 
 #: Screen-level bindings (only meaningful where there's a table to filter/sort).
@@ -54,7 +59,8 @@ HELP_TEXT = """\
 [b]Testudo -- keybindings[/b]
 
   q                quit
-  p                pause / resume the live view
+  p                pause / resume the live view (replay --watch: play / pause the bag)
+  [ / ]            replay --watch: one frame back / forward ({ / }: ten frames)
   r                reset stats (clear accumulated history, keep watching)
   o                options menu (exclude topics -- literal or regex)
   /                search: on categories, topic names too; on topics, this category

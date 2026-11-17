@@ -8,12 +8,14 @@ constructed with -- the app itself doesn't know or care which.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Callable
 
 from textual.app import App
 from textual.css.query import NoMatches
 
 from testudo.tui.data_source import WatchDataSource, WatchSnapshot
+from testudo.tui.replay_source import ReplayTimeline
 from testudo.tui.keybinds import APP_BINDINGS
 from testudo.tui.options_screen import OptionsMenuScreen
 from testudo.tui.screens import DashboardScreen, HelpScreen
@@ -129,6 +131,7 @@ class TestudoApp(App):
         self._poll_rate_hz = poll_rate_hz
         self._on_snapshot = on_snapshot
         self.latest_snapshot: WatchSnapshot = data_source.poll()
+        self._last_playback_monotonic = time.monotonic()
 
     def on_mount(self) -> None:
         self.register_theme(TESTUDO_THEME)
@@ -136,6 +139,21 @@ class TestudoApp(App):
         self.push_screen(DashboardScreen())
         if self.data_source.is_live():
             self.set_interval(1.0 / self._poll_rate_hz, self._poll)
+        elif self.timeline is not None:
+            self.set_interval(1.0 / self._poll_rate_hz, self._advance_playback)
+
+    @property
+    def timeline(self) -> "ReplayTimeline | None":
+        """The data source's replay timeline; None live (or for a source that predates it)."""
+        return getattr(self.data_source, "timeline", None)
+
+    def _advance_playback(self) -> None:
+        """Move a playing replay on by the wall time since the last call (1x bag time)."""
+        now = time.monotonic()
+        elapsed = now - self._last_playback_monotonic
+        self._last_playback_monotonic = now
+        if self.timeline.advance(elapsed):
+            self._poll(force=True)
 
     def _poll(self, *, force: bool = False) -> None:
         if self.paused and not force:
@@ -157,12 +175,28 @@ class TestudoApp(App):
                     return
 
     def action_toggle_pause(self) -> None:
+        timeline = self.timeline
+        if timeline is not None:
+            # A replay has nothing live to pause: `p` plays/pauses the bag instead.
+            timeline.toggle_play()
+            self._last_playback_monotonic = time.monotonic()
+            self._poll(force=True)
+            return
         if not self.data_source.is_live():
             return
         self.paused = not self.paused
         for screen in self.screen_stack:
             if isinstance(screen, DashboardScreen):
                 screen.sync_header()
+
+    def action_step_frames(self, frames: int) -> None:
+        """`[`/`]` (`{`/`}`): step a replay's frames back/forward, pausing playback. No-op live."""
+        timeline = self.timeline
+        if timeline is None:
+            return
+        timeline.step(frames)
+        # Polled even when already at an end: playback just stopped, and the Status Bar shows it.
+        self._poll(force=True)
 
     def action_reset_stats(self) -> None:
         self.data_source.reset_stats()

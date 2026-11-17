@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Callable
 
 import rclpy.node
 import rosbag2_py
@@ -44,13 +45,13 @@ from testudo.plugins.registry import DiscoveredPlugin
 _logger = logging.getLogger(__name__)
 
 
-class _ReplayClockSource:
+class ReplayClockSource:
     """A clock source whose `now()` reflects the latest bag timestamp fed to it."""
 
     def __init__(self) -> None:
         self.nanoseconds = 0
 
-    def now(self) -> "_ReplayClockSource":
+    def now(self) -> "ReplayClockSource":
         return self
 
     def advance_to(self, nanoseconds: int) -> None:
@@ -185,6 +186,12 @@ def _wire_tf_watch_for_replay(manager: SubscriptionManager, topic_types: dict[st
         state.plugin.set_watched_pairs([(pair.parent, pair.child) for pair in manager._config.tf])
 
 
+#: Called with every message's recorded time, *before* that message is fed
+#: (see `replay_timeline.FrameRecorder`): the manager, the replay clock it
+#: reads, and the timestamp in nanoseconds.
+BagTimeHook = Callable[[SubscriptionManager, ReplayClockSource, int], None]
+
+
 def replay_bag(
     bag_path: str,
     config: TestudoConfig,
@@ -196,6 +203,38 @@ def replay_bag(
     Raises:
         FileNotFoundError: `bag_path` doesn't exist or isn't a readable bag.
     """
+    manager = run_replay(bag_path, config, discovered_plugins, node)
+    return manager.reports(), manager.overall_status(config.severity_mode)
+
+
+def bag_duration_s(bag_path: str) -> float | None:
+    """The bag's recorded duration from its metadata, or None when it can't be read."""
+    try:
+        duration = _open_reader(bag_path).get_metadata().duration
+    except Exception:
+        return None
+    # A datetime.timedelta on recent rosbag2_py, a Duration with `nanoseconds` on older ones.
+    if hasattr(duration, "total_seconds"):
+        return duration.total_seconds()
+    nanoseconds = getattr(duration, "nanoseconds", None)
+    return None if nanoseconds is None else nanoseconds / 1e9
+
+
+def run_replay(
+    bag_path: str,
+    config: TestudoConfig,
+    discovered_plugins: list[DiscoveredPlugin],
+    node: rclpy.node.Node,
+    on_bag_time: BagTimeHook | None = None,
+) -> SubscriptionManager:
+    """Feed every message in `bag_path` through a fresh manager, tick it once at the end, and return it.
+
+    `on_bag_time` sees the bag's time advance message by message, so a
+    caller can sample the manager mid-bag (`replay_timeline`).
+
+    Raises:
+        FileNotFoundError: `bag_path` doesn't exist or isn't a readable bag.
+    """
     try:
         reader = _open_reader(bag_path)
     except RuntimeError as exc:
@@ -203,7 +242,7 @@ def replay_bag(
 
     topic_types = {topic.name: topic.type for topic in reader.get_all_topics_and_types()}
 
-    clock_source = _ReplayClockSource()
+    clock_source = ReplayClockSource()
     clock = TestudoClock(clock_source, sim_time_query=lambda: True)
     manager = SubscriptionManager(node, config, discovered_plugins, clock=clock)
     manager._latched = _latched_topics(bag_path)
@@ -220,6 +259,8 @@ def replay_bag(
 
     while reader.has_next():
         topic_name, data, timestamp_ns = reader.read_next()
+        if on_bag_time is not None:
+            on_bag_time(manager, clock_source, timestamp_ns)
         if manager.is_default_excluded(topic_name):
             continue
         msg_type_str = topic_types.get(topic_name)
@@ -256,7 +297,4 @@ def replay_bag(
 
     manager.tick()
     _logger.info("replayed %d message(s) from '%s'", message_count, bag_path)
-
-    reports = manager.reports()
-    overall = manager.overall_status(config.severity_mode)
-    return reports, overall
+    return manager

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from testudo.core.config import ExcludeRule, SeverityMode
 from testudo.core.config_writer import write_exclude_rules
@@ -15,6 +15,9 @@ from testudo.core.node_profiling.profiler import NodeProfiler
 from testudo.core.node_profiling.report import node_stat_to_topic_report
 from testudo.core.subscription_manager import SubscriptionManager, TopicReport
 from testudo.plugins.base import CheckStatus
+
+if TYPE_CHECKING:
+    from testudo.tui.replay_source import ReplayTimeline
 
 
 @dataclass(frozen=True)
@@ -34,7 +37,13 @@ class WatchSnapshot:
 
 
 class WatchDataSource(Protocol):
-    """What the TUI needs from either a live or a replayed data source."""
+    """What the TUI needs from either a live or a replayed data source.
+
+    `timeline` is the playback state of a scrubbable replay
+    (`replay_source.ReplayDataSource`), None for every other source.
+    """
+
+    timeline: "ReplayTimeline | None"
 
     def poll(self) -> WatchSnapshot: ...
 
@@ -51,6 +60,8 @@ class WatchDataSource(Protocol):
 
 class LiveDataSource:
     """Polls a live SubscriptionManager, advancing plugins' time-based state each poll."""
+
+    timeline = None
 
     def __init__(
         self,
@@ -131,6 +142,8 @@ class StaticDataSource:
     file bound to this data source to persist a change into either.
     `exclude_rules()` just reflects whatever `replay_bag` ran with.
     """
+
+    timeline = None
 
     def __init__(
         self, reports: list[TopicReport], overall: CheckStatus, exclude_rules: list[ExcludeRule] | None = None

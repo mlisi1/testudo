@@ -112,6 +112,12 @@ def format_duration(seconds: float) -> str:
     return f"{secs}s"
 
 
+def replay_segment(position_s: float, duration_s: float, playing: bool) -> str:
+    """`bag ▶ 1m42s/2m35s`: where a replay is, and whether it's playing (`▶`) or paused (`‖`: `⏸` is drawn two cells wide by some terminals)."""
+    state = "▶" if playing else "‖"
+    return f"[dim]bag[/dim] {state} {format_duration(position_s)}/{format_duration(duration_s)}"
+
+
 class TestudoHeader(Static):
     """A one-line status bar refreshed by the app's poll timer.
 
@@ -124,6 +130,8 @@ class TestudoHeader(Static):
     uptime_seconds: reactive[float] = reactive(0.0)
     sim_time_active: reactive[bool] = reactive(False)
     paused: reactive[bool] = reactive(False)
+    #: replay --watch only: (position, duration, playing), seconds into the bag.
+    replay: reactive[tuple[float, float, bool] | None] = reactive(None)
     #: (overall status, per-severity topic counts), from the latest poll.
     verdict: reactive[tuple[CheckStatus, dict[int, int]] | None] = reactive(None)
 
@@ -173,6 +181,8 @@ class TestudoHeader(Static):
         ]
         if self.sim_time_active:
             segments.append("[dim]clock[/dim] sim")
+        if self.replay is not None:
+            segments.append(replay_segment(*self.replay))
         flags = "  [b reverse] PAUSED [/b reverse]" if self.paused else ""
         return f"[b]testudo[/b]  {_SEGMENT_SEPARATOR.join(segments)}{flags}"
 
@@ -183,6 +193,9 @@ class TestudoHeader(Static):
         self.update(self._render_text())
 
     def watch_paused(self) -> None:
+        self.update(self._render_text())
+
+    def watch_replay(self) -> None:
         self.update(self._render_text())
 
     def watch_verdict(self) -> None:

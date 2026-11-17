@@ -330,35 +330,42 @@ def cmd_replay(args: argparse.Namespace) -> int:
     rclpy.init()
     node = rclpy.create_node("testudo_replay")
     try:
+        if args.watch:
+            return _watch_replay(args.bag, config, plugins, node)
         try:
             reports, overall = replay_bag(args.bag, config, plugins, node)
         except FileNotFoundError as exc:
             _logger.error("%s", exc)
             return 2
-
-        if args.watch:
-            from testudo.tui.app import TestudoApp
-            from testudo.tui.data_source import StaticDataSource
-            from testudo.tui.log_summary import suppressed_terminal_logging
-
-            # A finished batch replay, browsable in the same TUI as `watch`
-            # (drill-down/filter/sort all work) -- not a frame-exact time
-            # scrub, which is a reasonable follow-up rather than core here.
-            app = TestudoApp(
-                data_source=StaticDataSource(reports, overall, config.exclude_topics),
-                ros_distro=os.environ.get("ROS_DISTRO", "unknown"),
-                ros_domain_id=os.environ.get("ROS_DOMAIN_ID", "0"),
-                dds_implementation=_dds_implementation(),
-                sim_time_active=True,
-            )
-            with suppressed_terminal_logging():
-                app.run()
-            return 0
     finally:
         node.destroy_node()
         rclpy.shutdown()
 
     return print_report(reports, overall)
+
+
+def _watch_replay(bag: str, config: TestudoConfig, plugins: list, node: rclpy.node.Node) -> int:
+    """`replay --watch`: the bag sampled into frames (`replay_timeline`), played back and scrubbed in the TUI."""
+    from testudo.core.replay_timeline import replay_timeline
+    from testudo.tui.app import TestudoApp
+    from testudo.tui.log_summary import suppressed_terminal_logging
+    from testudo.tui.replay_source import ReplayDataSource
+
+    try:
+        frames = replay_timeline(bag, config, plugins, node)
+    except FileNotFoundError as exc:
+        _logger.error("%s", exc)
+        return 2
+    app = TestudoApp(
+        data_source=ReplayDataSource(frames, config.exclude_topics),
+        ros_distro=os.environ.get("ROS_DISTRO", "unknown"),
+        ros_domain_id=os.environ.get("ROS_DOMAIN_ID", "0"),
+        dds_implementation=_dds_implementation(),
+        sim_time_active=True,
+    )
+    with suppressed_terminal_logging():
+        app.run()
+    return 0
 
 
 def cmd_plugins(args: argparse.Namespace) -> int:
