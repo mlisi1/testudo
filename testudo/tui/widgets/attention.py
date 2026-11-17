@@ -16,7 +16,7 @@ from rich.markup import escape
 
 from testudo.core.fault_history import ClearedFault, format_ago
 from testudo.core.topic_report import TopicReport
-from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_ICONS, Severity
+from testudo.plugins.base import SEVERITY_COLORS, SEVERITY_ICONS, Severity, code_severity
 from testudo.tui.widgets.topic_cells import tail_first
 
 ATTENTION_TITLE = "Needs attention"
@@ -35,9 +35,8 @@ def attention_entries(reports: list[TopicReport]) -> list[tuple[int, str, list[s
 
     One entry per code, not per topic: six silent topics sharing LIVE-003
     are one thing to look at, and listing each would push every other code
-    off the list. A code takes its worst report's severity -- a code
-    doesn't carry a severity of its own beyond its message's color, and the
-    report's is what the Topic Panel shows next to the same topic anyway.
+    off the list. A code takes its own severity (`code_severity`: a WARN
+    code on a topic in ERROR stays WARN), the worst across its topics.
     """
     by_code: dict[str, tuple[int, list[str]]] = {}
     for report in reports:
@@ -45,7 +44,7 @@ def attention_entries(reports: list[TopicReport]) -> list[tuple[int, str, list[s
             continue
         for code in report.status.codes:
             severity, topics = by_code.get(code, (Severity.OK, []))
-            by_code[code] = (max(severity, report.status.severity), topics + [report.topic])
+            by_code[code] = (max(severity, code_severity(report.status, code)), topics + [report.topic])
     entries = [(severity, code, sorted(topics)) for code, (severity, topics) in by_code.items()]
     entries.sort(key=lambda entry: (-entry[0], -len(entry[2]), entry[1]))
     return entries

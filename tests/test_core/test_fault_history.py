@@ -92,3 +92,16 @@ def test_session_retention_keeps_old_cleared_faults() -> None:
     history.update([_report("/a")], now=1.0)
     history.update([_report("/a")], now=100_000.0)
     assert [entry.code for entry in history.entries(now=100_000.0)] == ["C-1"]
+
+
+def test_a_fault_records_its_own_code_severity_not_its_topics() -> None:
+    history = FaultHistory()
+    status = CheckStatus(
+        Severity.ERROR, "x", "", codes={"GNSS-001": "e", "GNSS-007": "w"}, code_severities={"GNSS-007": Severity.WARN}
+    )
+    history.update([TopicReport("/gps", "pkg/msg/T", "full", status)], now=1.0)
+    history.update([_report("/gps")], now=2.0)
+    assert {fault.code: fault.severity for fault in history.cleared()} == {
+        "GNSS-001": Severity.ERROR,
+        "GNSS-007": Severity.WARN,
+    }

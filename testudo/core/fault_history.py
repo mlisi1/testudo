@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 from testudo.core.config import FaultRetention
 from testudo.core.topic_report import TopicReport
-from testudo.plugins.base import Severity
+from testudo.plugins.base import Severity, code_severity
 
 #: Cleared faults kept, newest first: enough for a flapping topic not to
 #: push every other one out, without growing for the whole session.
@@ -29,7 +29,7 @@ DEFAULT_MAX_CLEARED = 200
 class ClearedFault:
     """One fault from when it was raised to when it cleared.
 
-    `severity` is the worst its report reached while the code was active;
+    `severity` is the worst the code itself reached while active (`code_severity`);
     `message` is the code's last message (plugin markup included).
     """
 
@@ -101,7 +101,7 @@ class FaultHistory:
             if report.status.severity <= Severity.OK:
                 continue
             for code, message in report.status.codes.items():
-                current[(report.topic, code)] = (report.status.severity, message)
+                current[(report.topic, code)] = (code_severity(report.status, code), message)
 
         for key in list(self._active):
             if key in current:

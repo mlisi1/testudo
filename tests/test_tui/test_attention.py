@@ -90,3 +90,11 @@ def test_cleared_codes_fill_the_rows_the_active_ones_leave() -> None:
 def test_cleared_codes_show_on_their_own_when_nothing_is_active() -> None:
     cleared = (ClearedFault("/odom", "ODOM-002", Severity.WARN, "w", 50.0, 70.0),)
     assert _plain(attention_text([], 30, 5, cleared, now=75.0)).splitlines() == ["Cleared", "▲ ODOM-002 5s /odom"]
+
+
+def test_a_warn_code_on_a_topic_in_error_is_listed_as_warn() -> None:
+    status = CheckStatus(
+        Severity.ERROR, "x", "", codes={"GNSS-001": "e", "GNSS-007": "w"}, code_severities={"GNSS-007": Severity.WARN}
+    )
+    reports = [TopicReport(topic="/gps", msg_type="pkg/msg/T", tier="full", status=status, rate_hz=None)]
+    assert attention_entries(reports) == [(Severity.ERROR, "GNSS-001", ["/gps"]), (Severity.WARN, "GNSS-007", ["/gps"])]
