@@ -280,7 +280,14 @@ def run_replay(
             try:
                 msg_class = get_message(msg_type_str)
             except Exception:
-                _logger.exception("could not resolve message class for '%s' (%s)", topic_name, msg_type_str)
+                # Routine (a bag or robot using a package not installed here): one
+                # line, not a traceback per topic; `-v` still shows the traceback.
+                _logger.warning(
+                    "could not resolve message class for '%s' (%s): its interface package isn't installed",
+                    topic_name,
+                    msg_type_str,
+                    exc_info=_logger.isEnabledFor(logging.DEBUG),
+                )
                 unresolvable.add(topic_name)
                 continue
             msg_classes[topic_name] = msg_class

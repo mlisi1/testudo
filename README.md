@@ -99,11 +99,25 @@ covariance sanity, TF tree health) those tools don't cover out of the box.
 
 ```
 $ testudo replay my_bag/
-ERROR /local_costmap/costmap         [vitals  ] nav_msgs/msg/OccupancyGrid          rate 0.50Hz below configured threshold
-WARN  /odom                          [full    ] nav_msgs/msg/Odometry               position covariance trace 0.06 out of bounds
-OK    /scan                          [full    ] sensor_msgs/msg/LaserScan           0 invalid, 0 out-of-bounds of 8
+ERROR /odometry/gps                  [full    ] nav_msgs/msg/Odometry
+position covariance trace 0.2221 out of bounds (σxy=▆▆▆▇██▇▇▇▇▇▇▇▆▆▆▆▇▆▆ (60 s)
+growth -0.010 m²/s ▮▮▮▮▮▮   map → ?)
+ERROR /tf                            [full    ] tf2_msgs/msg/TFMessage
+missing chain(s): base_link->gps_link (frames=40  3 dynamic · 35 static edges,
+roots=utm (38) · none (2), multi_parent=–, stale_dynamic=–)
+WARN  /behavior_tree_log             [full    ] nav2_msgs/msg/BehaviorTreeLog
+recovery frequency 5.8/min (running=▶ NavigateRecovery › NavigateWithReplanning
+› RateController › ComputePathToPose › RecoveryFallback › RecoveryActions › Spin
+› Wait › BackUp, recoveries=▁██ 5.8/min  last: Spin 9s ago, recovery_counts=Spin
+7 · BackUp 2 · Wait 2, last_failure=FollowPath  0s ago, idle_for_s=9.9)
+OK    /front_camera/camera/color/image_raw/compressed [full    ]
+sensor_msgs/msg/CompressedImage     139.9KB (stream=jpeg  139.9KB/frame ·
+1.33MB/s checked, sizes=████████████████████ (last 20)   100% of avg ▮▮▮▮▮▮,
+stuck=0, payload=✓ jpeg, frame=front_camera_color_optical_frame)
+...
 
-[ERROR] 3 topic(s): OK=1, WARN=1, ERROR=1 (topics_checked=3)
+[STALE] 47 topic(s): OK=38, WARN=2, ERROR=4, STALE=3 (topics_checked=47,
+weighted_score=0.404)
 ```
 
 `testudo watch` shows the same data live, in four panes visible at once:
