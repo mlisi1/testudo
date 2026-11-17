@@ -14,6 +14,7 @@ import time
 
 import rclpy
 import rclpy.node
+from rclpy.utilities import remove_ros_args
 from diagnostic_msgs.msg import DiagnosticArray
 
 from testudo.core.clock import TestudoClock
@@ -151,7 +152,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
     from testudo.tui.data_source import LiveDataSource
     from testudo.tui.log_summary import suppressed_terminal_logging
 
-    rclpy.init()
+    rclpy.init(args=args.rclpy_args)
     node = rclpy.create_node("testudo_watch")
     stop_spinning = threading.Event()
     spin_thread: threading.Thread | None = None
@@ -258,7 +259,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         len(plugins),
     )
 
-    rclpy.init()
+    rclpy.init(args=args.rclpy_args)
     node = rclpy.create_node("testudo_check")
     try:
         manager = SubscriptionManager(node, config, plugins, monitor_hz=not args.no_hz)
@@ -327,7 +328,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
     # fill later. The "Nodes" category (see tui/categorize.py) simply
     # never appears in a replay's Plugin Panel as a result, the same
     # honest absence any other not-applicable category already gets.
-    rclpy.init()
+    rclpy.init(args=args.rclpy_args)
     node = rclpy.create_node("testudo_replay")
     try:
         if args.watch:
@@ -388,9 +389,23 @@ _COMMANDS = {
 }
 
 
+def split_ros_args(argv: list[str]) -> tuple[list[str], list[str]]:
+    """(Testudo's own arguments, the arguments for `rclpy.init`) from a full command line.
+
+    ROS arguments (`--ros-args -p use_sim_time:=true ...`, as `ros2 run`
+    or a launch file passes them) are not argparse's: they're removed
+    from what it parses and handed to rclpy whole, which picks them out
+    itself -- the only way to set `use_sim_time` (or remap the node) for
+    `watch`/`check`/`replay`.
+    """
+    return remove_ros_args(args=argv), ["testudo", *argv]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
-    args = parser.parse_args(argv)
+    cli_argv, rclpy_args = split_ros_args(sys.argv[1:] if argv is None else argv)
+    args = parser.parse_args(cli_argv)
+    args.rclpy_args = rclpy_args
     _configure_logging(args.verbose)
     # `no_hz` (per-subcommand, absent entirely for replay/plugins) and
     # `no_hz_global` (top-level, always present) are merged here rather

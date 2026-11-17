@@ -64,7 +64,9 @@ covariance sanity, TF tree health) those tools don't cover out of the box.
 - **Lifecycle-aware.** Diagnostics for a topic owned by an
   `inactive`/`unconfigured` lifecycle node are suppressed rather than
   flagged red.
-- **`use_sim_time`-aware** staleness/frequency checks.
+- **`use_sim_time`-aware** staleness/frequency checks: in a simulator, pass
+  it as a ROS argument (`testudo check --ros-args -p use_sim_time:=true`,
+  or `parameters=[{'use_sim_time': True}]` from a launch file).
 - **Hysteresis debouncing** so a single noisy sample doesn't flap a
   status, plus configurable **worst / weighted / both** severity
   aggregation.

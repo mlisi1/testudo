@@ -65,3 +65,28 @@ def test_default_config_path_is_not_inside_the_repo() -> None:
     assert Path(cli.DEFAULT_CONFIG_PATH).is_absolute()
     assert Path(cli.DEFAULT_CONFIG_PATH).name == "config.yaml"
     assert Path(cli.DEFAULT_CONFIG_PATH).parent.name == "testudo"
+
+
+def test_ros_args_go_to_rclpy_not_argparse() -> None:
+    argv = ["check", "--duration", "5", "--ros-args", "-p", "use_sim_time:=true"]
+    cli_argv, rclpy_args = cli.split_ros_args(argv)
+    assert cli_argv == ["check", "--duration", "5"]
+    assert rclpy_args == ["testudo", *argv]
+    args = cli._build_parser().parse_args(cli_argv)
+    assert args.command == "check" and args.duration == 5
+
+
+def test_use_sim_time_from_ros_args_reaches_the_node() -> None:
+    import rclpy
+
+    from testudo.core.clock import TestudoClock
+
+    _cli_argv, rclpy_args = cli.split_ros_args(["check", "--ros-args", "-p", "use_sim_time:=true"])
+    context = rclpy.Context()
+    rclpy.init(args=rclpy_args, context=context)
+    try:
+        node = rclpy.create_node("testudo_test_sim_time", context=context)
+        assert TestudoClock.from_node(node).is_sim_time_active()
+        node.destroy_node()
+    finally:
+        rclpy.shutdown(context=context)
