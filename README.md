@@ -10,7 +10,7 @@ Testudo watches a running robot from the outside: no instrumentation of
 existing nodes required. It reports on topic health, sensor sanity,
 odometry/covariance quality, TF integrity, and Nav2 goal/action outcomes,
 then shows you the result in a live terminal UI, a report over a recorded
-bag, or a standard `diagnostic_msgs/DiagnosticArray` you can pipe into
+bag, or (with or without the TUI) a standard `diagnostic_msgs/DiagnosticArray` you can pipe into
 rqt_robot_monitor, Foxglove, or PlotJuggler.
 
 It fills the gap `diagnostic_updater`/`diagnostic_aggregator` leave for
@@ -171,6 +171,11 @@ add one if neither exists yet.
 ```bash
 # Live TUI.
 testudo watch
+
+# The same monitoring without the TUI: keeps publishing the diagnostics
+# topics until Ctrl-C/SIGTERM. For a robot with no terminal, a launch
+# file, or CI (read the results from /testudo/*).
+testudo watch --headless
 
 # Report over a recorded bag (exit codes: 0 OK, 1 WARN, 2 ERROR/STALE),
 # or --watch to play it back / scrub it in the TUI.

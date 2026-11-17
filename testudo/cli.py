@@ -6,6 +6,7 @@ per the project's config-handling rule — before doing anything else.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import logging
 import os
 import sys
@@ -14,9 +15,8 @@ import time
 
 import rclpy
 import rclpy.node
-from rclpy.executors import SingleThreadedExecutor
+from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.utilities import remove_ros_args
-from diagnostic_msgs.msg import DiagnosticArray
 
 from testudo.core.clock import TestudoClock
 from testudo.core.config import ConfigError, TestudoConfig, default_config_path
@@ -79,9 +79,14 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_no_hz_arg(parser, dest="no_hz_global")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    watch_parser = subparsers.add_parser("watch", help="live interactive TUI")
+    watch_parser = subparsers.add_parser("watch", help="live interactive TUI (or --headless: publish only)")
     _add_config_arg(watch_parser)
     _add_no_hz_arg(watch_parser)
+    watch_parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="no TUI: keep monitoring and publishing diagnostics until Ctrl-C (robots, launch files, CI)",
+    )
 
     replay_parser = subparsers.add_parser("replay", help="batch report over a bag, or --watch to scrub it live")
     _add_config_arg(replay_parser)
@@ -133,12 +138,8 @@ def cmd_watch(args: argparse.Namespace) -> int:
         len(plugins),
     )
 
-    # Imported lazily: the TUI's dependency (textual) is only needed here.
-    from testudo.core.node_profiling.report import build_node_diagnostic_array
-    from testudo.core.publisher import DiagnosticOutput
-    from testudo.tui.app import TestudoApp
+    from testudo.core.live_output import LiveOutput
     from testudo.tui.data_source import LiveDataSource
-    from testudo.tui.log_summary import suppressed_terminal_logging
 
     rclpy.init(args=args.rclpy_args)
     node = rclpy.create_node("testudo_watch")
@@ -147,81 +148,45 @@ def cmd_watch(args: argparse.Namespace) -> int:
     node_profiler: NodeProfiler | None = None
     try:
         manager = SubscriptionManager(node, config, plugins, monitor_hz=not args.no_hz)
-        # Everything from here through app.run() returning can log from a
-        # background thread (a missing message-interface package is the
-        # common case) while Textual owns the terminal -- suppressed_
-        # terminal_logging buffers that instead of letting it corrupt the
-        # live display, and prints what it caught once the TUI is done.
-        with suppressed_terminal_logging():
+        # With the TUI, everything from here through app.run() returning can
+        # log from a background thread (a missing message-interface package
+        # is the common case) while Textual owns the terminal --
+        # suppressed_terminal_logging buffers that instead of letting it
+        # corrupt the live display, and prints what it caught once the TUI
+        # is done. Headless, the terminal is the log's to write to.
+        with _terminal_logging(args.headless):
             manager.start()
-            # Textual owns the main thread's event loop, so subscription
-            # callbacks need their own thread to actually get serviced -- the
-            # TUI's poll timer just reads state that thread has already
-            # updated. Periodic rediscovery/stale-stack clearing (`manager.
-            # maintain()`) rides along on this same thread rather than the
-            # TUI's, since both create/destroy rclpy subscriptions and that
-            # isn't safe to interleave with a concurrent `spin_once` elsewhere.
+            # The poll loop (Textual's timer, or the headless loop) owns the
+            # main thread, so subscription callbacks need their own thread
+            # to actually get serviced -- a poll just reads state that thread
+            # has already updated. Periodic rediscovery/stale-stack clearing
+            # (`manager.maintain()`) rides along on this same thread, since
+            # both create/destroy rclpy subscriptions and that isn't safe to
+            # interleave with a concurrent `spin_once` elsewhere.
             executor = _make_executor(node)
             spin_thread = threading.Thread(
                 target=_spin_until_stopped, args=(executor, stop_spinning, manager), daemon=True
             )
             spin_thread.start()
 
-            diagnostics_output = DiagnosticOutput(node, config.publish, plugins)
-
-            node_diagnostics_publisher = None
             if config.node_profiling.enabled:
                 node_profiler = NodeProfiler(node, config.node_profiling)
                 # NodeProfiler.start() creates its own rediscovery timer on
                 # `node`, so its graph calls land on this same spin thread
                 # without any further plumbing here -- see profiler.py.
                 node_profiler.start()
-                node_diagnostics_publisher = node.create_publisher(DiagnosticArray, config.node_profiling.publish_topic, 10)
-
-            # The NodeProfiler.reports() tuple last published -- see on_snapshot.
-            last_published_node_stats: list[tuple | None] = [None]
+            output = LiveOutput(node, config, plugins, node_profiler)
+            data_source = LiveDataSource(
+                manager, config.severity_mode, config_path=config_path, node_profiler=node_profiler
+            )
 
             def on_snapshot(snapshot) -> None:
-                # `snapshot.reports` includes node-profiling rows merged in
-                # for the TUI's Plugin/Topic/Detail Panels (see
-                # LiveDataSource.poll()) -- filtered back out here so the
-                # topic diagnostics stay topic-only, matching their
-                # existing scope; node rows publish separately below.
-                topic_reports = [r for r in snapshot.reports if r.tier != "node"]
-                diagnostics_output.publish(node.get_clock().now().to_msg(), topic_reports, snapshot.overall)
-                # `node_profiler` was already ticked (if due) this same poll
-                # by LiveDataSource.poll() -- publishing here (not via a
-                # second, self-driving timer) keeps
-                # node profiling's tick() single-threaded in `watch`, same
-                # as the main diagnostics array above, avoiding a second
-                # concurrent writer to NodeProfiler's internal state. It
-                # samples every `poll_interval_seconds`, not every poll, and
-                # swaps in a new tuple each time it does -- so an unchanged
-                # tuple means nothing new to publish.
-                if node_diagnostics_publisher is not None and node_profiler is not None:
-                    node_stats = node_profiler.reports()
-                    if node_stats is last_published_node_stats[0]:
-                        return
-                    last_published_node_stats[0] = node_stats
-                    node_array = build_node_diagnostic_array(
-                        node.get_clock().now().to_msg(),
-                        list(node_stats),
-                        node_profiler.overall_status(config.severity_mode),
-                    )
-                    node_diagnostics_publisher.publish(node_array)
+                output.publish(snapshot.reports, snapshot.overall)
 
-            app = TestudoApp(
-                data_source=LiveDataSource(
-                    manager, config.severity_mode, config_path=config_path, node_profiler=node_profiler
-                ),
-                ros_distro=os.environ.get("ROS_DISTRO", "unknown"),
-                ros_domain_id=os.environ.get("ROS_DOMAIN_ID", "0"),
-                dds_implementation=_dds_implementation(),
-                poll_rate_hz=config.publish.rate_hz,
-                sim_time_active=TestudoClock.from_node(node).is_sim_time_active(),
-                on_snapshot=on_snapshot,
-            )
-            app.run()
+            if args.headless:
+                _poll_until_stopped(data_source, on_snapshot, config.publish.rate_hz)
+            else:
+                _run_tui(node, data_source, on_snapshot, config.publish.rate_hz)
     finally:
         stop_spinning.set()
         if spin_thread is not None:
@@ -229,9 +194,64 @@ def cmd_watch(args: argparse.Namespace) -> int:
         if node_profiler is not None:
             node_profiler.close()
         node.destroy_node()
-        rclpy.shutdown()
+        # Ctrl-C/SIGTERM headless: rclpy's own signal handler may already have shut down.
+        rclpy.try_shutdown()
 
     return 0
+
+
+def _terminal_logging(headless: bool) -> contextlib.AbstractContextManager:
+    """Buffer log output while the TUI owns the terminal (`suppressed_terminal_logging`); headless, leave it be."""
+    if headless:
+        return contextlib.nullcontext()
+    from testudo.tui.log_summary import suppressed_terminal_logging
+
+    return suppressed_terminal_logging()
+
+
+def _run_tui(node: rclpy.node.Node, data_source, on_snapshot, poll_rate_hz: float) -> None:
+    """The live dashboard, polling `data_source` (and publishing via `on_snapshot`) at `poll_rate_hz`."""
+    # Imported lazily: textual is only needed with the TUI.
+    from testudo.tui.app import TestudoApp
+
+    TestudoApp(
+        data_source=data_source,
+        ros_distro=os.environ.get("ROS_DISTRO", "unknown"),
+        ros_domain_id=os.environ.get("ROS_DOMAIN_ID", "0"),
+        dds_implementation=_dds_implementation(),
+        poll_rate_hz=poll_rate_hz,
+        sim_time_active=TestudoClock.from_node(node).is_sim_time_active(),
+        on_snapshot=on_snapshot,
+    ).run()
+
+
+def _poll_until_stopped(data_source, on_snapshot, poll_rate_hz: float) -> None:
+    """`watch --headless`: poll and publish at `poll_rate_hz` until Ctrl-C/SIGTERM.
+
+    The same poll the TUI's timer runs -- ticking the manager, sampling
+    node profiling, publishing every diagnostics topic -- minus the
+    drawing, for a robot with no terminal attached, a launch file, or CI.
+    rclpy's signal handler shuts the context down on SIGINT/SIGTERM, which
+    is what ends the loop.
+    """
+    period = 1.0 / poll_rate_hz if poll_rate_hz > 0 else 1.0
+    _logger.info("headless: publishing diagnostics every %.2f s; Ctrl-C to stop", period)
+    next_poll = time.monotonic()
+    try:
+        while rclpy.ok():
+            snapshot = data_source.poll()
+            if not rclpy.ok():
+                break
+            on_snapshot(snapshot)
+            next_poll += period
+            time.sleep(max(0.0, next_poll - time.monotonic()))
+    except KeyboardInterrupt:
+        pass
+    except Exception:
+        if rclpy.ok():
+            raise
+        # Shut down mid-poll (a publish on a dead context): that's the stop signal.
+    _logger.info("headless: stopped")
 
 
 #: `spin_once`'s timeout, and how often `watch`'s spin thread runs `maintain()`.
@@ -261,8 +281,11 @@ def _spin_until_stopped(
     executor: SingleThreadedExecutor, stop_event: threading.Event, manager: SubscriptionManager
 ) -> None:
     next_maintain = time.monotonic()
-    while not stop_event.is_set():
-        executor.spin_once(timeout_sec=_SPIN_TIMEOUT_SECONDS)
+    while not stop_event.is_set() and rclpy.ok():
+        try:
+            executor.spin_once(timeout_sec=_SPIN_TIMEOUT_SECONDS)
+        except ExternalShutdownException:
+            return  # Ctrl-C/SIGTERM (headless): rclpy's signal handler shut the context down
         if time.monotonic() >= next_maintain:
             manager.maintain()
             next_maintain = time.monotonic() + _SPIN_TIMEOUT_SECONDS

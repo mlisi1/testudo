@@ -119,3 +119,4 @@ def _array(stamp, statuses: list[DiagnosticStatus]) -> DiagnosticArray:
     array.header.stamp = stamp
     array.status = statuses
     return array
+

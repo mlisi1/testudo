@@ -90,3 +90,25 @@ def test_use_sim_time_from_ros_args_reaches_the_node() -> None:
         node.destroy_node()
     finally:
         rclpy.shutdown(context=context)
+
+
+def test_headless_poll_loop_publishes_each_poll_until_rclpy_shuts_down(monkeypatch: pytest.MonkeyPatch) -> None:
+    polls: list[int] = []
+    published: list[str] = []
+
+    class _Source:
+        def poll(self) -> str:
+            polls.append(1)
+            return f"snapshot-{len(polls)}"
+
+    # rclpy.ok() is checked before and after each poll: stop after the third.
+    oks = iter([True, True, True, True, True, True, False])
+    monkeypatch.setattr(cli.rclpy, "ok", lambda: next(oks, False))
+    cli._poll_until_stopped(_Source(), published.append, poll_rate_hz=1000.0)
+
+    assert published == ["snapshot-1", "snapshot-2", "snapshot-3"]
+
+
+def test_watch_accepts_headless() -> None:
+    args = cli._build_parser().parse_args(["watch", "--headless"])
+    assert args.command == "watch" and args.headless
