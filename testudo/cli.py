@@ -217,8 +217,9 @@ def _run_tui(node: rclpy.node.Node, data_source, on_snapshot, poll_rate_hz: floa
     """The live dashboard, polling `data_source` (and publishing via `on_snapshot`) at `poll_rate_hz`."""
     # Imported lazily: textual is only needed with the TUI.
     from testudo.tui.app import TestudoApp
+    from testudo.tui.terminal_title import TITLE, terminal_title
 
-    TestudoApp(
+    app = TestudoApp(
         data_source=data_source,
         ros_distro=os.environ.get("ROS_DISTRO", "unknown"),
         ros_domain_id=os.environ.get("ROS_DOMAIN_ID", "0"),
@@ -226,7 +227,9 @@ def _run_tui(node: rclpy.node.Node, data_source, on_snapshot, poll_rate_hz: floa
         poll_rate_hz=poll_rate_hz,
         sim_time_active=TestudoClock.from_node(node).is_sim_time_active(),
         on_snapshot=on_snapshot,
-    ).run()
+    )
+    with terminal_title(TITLE):
+        app.run()
 
 
 def _poll_until_stopped(data_source, on_snapshot, poll_rate_hz: float) -> None:
@@ -338,6 +341,7 @@ def _watch_replay(bag: str, config: TestudoConfig, plugins: list, node: rclpy.no
     from testudo.tui.app import TestudoApp
     from testudo.tui.log_summary import suppressed_terminal_logging
     from testudo.tui.replay_source import ReplayDataSource
+    from testudo.tui.terminal_title import REPLAY_SUFFIX, TITLE, terminal_title
 
     try:
         frames = replay_timeline(bag, config, plugins, node)
@@ -351,7 +355,7 @@ def _watch_replay(bag: str, config: TestudoConfig, plugins: list, node: rclpy.no
         dds_implementation=_dds_implementation(),
         sim_time_active=True,
     )
-    with suppressed_terminal_logging():
+    with suppressed_terminal_logging(), terminal_title(TITLE + REPLAY_SUFFIX):
         app.run()
     return 0
 
