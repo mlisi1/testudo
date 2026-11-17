@@ -234,10 +234,18 @@ class PointStreamPlugin(CheckPlugin):
         invalid_severity = evaluate_zone(self._invalid_ratio, self.thresholds.get("invalid_ratio"))
         stuck_severity = evaluate_zone(float(self._stuck_count), self.thresholds.get("stuck_count"))
         plausibility_severity = Severity.OK if self._plausibility_ok else Severity.WARN
+        # Usually also out of range_min..range_max, but not when range_min is 0.
+        all_zero_severity = Severity.WARN if self._all_zero else Severity.OK
         frame_id_severity = Severity.WARN if self._frame_id_changed else Severity.OK
 
         worst = max(
-            empty_severity, malformed_severity, invalid_severity, stuck_severity, plausibility_severity, frame_id_severity
+            empty_severity,
+            malformed_severity,
+            invalid_severity,
+            stuck_severity,
+            plausibility_severity,
+            all_zero_severity,
+            frame_id_severity,
         )
 
         problems = []
@@ -260,8 +268,8 @@ class PointStreamPlugin(CheckPlugin):
             codes["SENS-001"] = colorize(f"invalid readings {self._invalid_ratio:.1%}", invalid_severity)
         if stuck_severity != Severity.OK:
             codes["SENS-002"] = colorize(f"identical for {self._stuck_count} messages", stuck_severity)
-        if self._all_zero:
-            codes["SENS-003"] = colorize("all-zero scan", Severity.WARN)
+        if all_zero_severity != Severity.OK:
+            codes["SENS-003"] = colorize("all-zero scan", all_zero_severity)
         if plausibility_severity != Severity.OK:
             codes["SENS-004"] = colorize("ranges outside range_min..range_max", plausibility_severity)
         if frame_id_severity != Severity.OK:

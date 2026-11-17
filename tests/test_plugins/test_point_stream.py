@@ -94,11 +94,12 @@ def test_laser_scan_out_of_bounds_value_flags_plausibility() -> None:
     assert "outside plausible range" in status.message
 
 
-def test_laser_scan_all_zero_is_reported_in_detail() -> None:
+def test_laser_scan_all_zero_is_a_warning_even_within_range() -> None:
+    # range_min 0: the zeros aren't out of bounds, so only the all-zero check sees it.
     plugin = PointStreamPlugin()
     plugin.on_message("/scan", _laser_scan([0.0, 0.0, 0.0], range_min=0.0, range_max=10.0))
     status = plugin.get_status()
-    assert status.severity == Severity.OK
+    assert status.severity == Severity.WARN
     assert "SENS-003" in status.codes
 
 
