@@ -9,8 +9,8 @@
 Testudo watches a running robot from the outside: no instrumentation of
 existing nodes required. It reports on topic health, sensor sanity,
 odometry/covariance quality, TF integrity, and Nav2 goal/action outcomes,
-then shows you the result in a live terminal UI, a one-shot CI-friendly
-report, or a standard `diagnostic_msgs/DiagnosticArray` you can pipe into
+then shows you the result in a live terminal UI, a report over a recorded
+bag, or a standard `diagnostic_msgs/DiagnosticArray` you can pipe into
 rqt_robot_monitor, Foxglove, or PlotJuggler.
 
 It fills the gap `diagnostic_updater`/`diagnostic_aggregator` leave for
@@ -73,7 +73,7 @@ covariance sanity, TF tree health) those tools don't cover out of the box.
   `inactive`/`unconfigured` lifecycle node are suppressed rather than
   flagged red.
 - **`use_sim_time`-aware** staleness/frequency checks: in a simulator, pass
-  it as a ROS argument (`testudo check --ros-args -p use_sim_time:=true`,
+  it as a ROS argument (`testudo watch --ros-args -p use_sim_time:=true`,
   or `parameters=[{'use_sim_time': True}]` from a launch file).
 - **Hysteresis debouncing** so a single noisy sample doesn't flap a
   status, plus configurable **worst / weighted / both** severity
@@ -98,7 +98,7 @@ covariance sanity, TF tree health) those tools don't cover out of the box.
 ## Example
 
 ```
-$ testudo check
+$ testudo replay my_bag/
 ERROR /local_costmap/costmap         [vitals  ] nav_msgs/msg/OccupancyGrid          rate 0.50Hz below configured threshold
 WARN  /odom                          [full    ] nav_msgs/msg/Odometry               position covariance trace 0.06 out of bounds
 OK    /scan                          [full    ] sensor_msgs/msg/LaserScan           0 invalid, 0 out-of-bounds of 8
@@ -169,13 +169,11 @@ creating that default file and its parent directory the first time you
 add one if neither exists yet.
 
 ```bash
-# One-shot report for CI / pre-flight checks. Exit codes: 0 OK, 1 WARN, 2 ERROR/STALE.
-testudo check
-
 # Live TUI.
 testudo watch
 
-# Batch report over a recorded bag, or --watch to play it back / scrub it in the TUI.
+# Report over a recorded bag (exit codes: 0 OK, 1 WARN, 2 ERROR/STALE),
+# or --watch to play it back / scrub it in the TUI.
 testudo replay --watch my_bag/
 
 # What plugins are available, and what they cover.

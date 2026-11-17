@@ -304,7 +304,6 @@ _NODE_PROFILING_KEYS = {
     "ctx_switches_per_sec",
     "memory_slope_mb_per_min",
     "publish_topic",
-    "publish_rate_hz",
 }
 
 
@@ -360,9 +359,6 @@ def _parse_node_profiling(raw: Any, source: str, publish: PublishConfig) -> Node
         else default.memory_slope_mb_per_min,
         publish_topic=_parse_non_empty_string(
             raw.get("publish_topic", default_node_profiling_topic(publish)), "node_profiling.publish_topic", source
-        ),
-        publish_rate_hz=_parse_positive_number(
-            raw.get("publish_rate_hz", default.publish_rate_hz), "node_profiling.publish_rate_hz", source
         ),
     )
 

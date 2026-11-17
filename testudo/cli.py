@@ -1,4 +1,4 @@
-"""Command-line entrypoints: `testudo watch|check|replay|plugins`.
+"""Command-line entrypoints: `testudo watch|replay|plugins`.
 
 Each command loads and validates config up front — fail loud at startup,
 per the project's config-handling rule — before doing anything else.
@@ -22,8 +22,6 @@ from testudo.core.clock import TestudoClock
 from testudo.core.config import ConfigError, TestudoConfig, default_config_path
 from testudo.core.config_loader import load_config
 from testudo.core.node_profiling.profiler import NodeProfiler
-from testudo.core.node_profiling.publisher import NodeDiagnosticPublisher
-from testudo.core.publisher import DiagnosticPublisher
 from testudo.core.subscription_manager import SubscriptionManager
 from testudo.core.text_report import print_report
 from testudo.plugins.registry import discover_all_plugins
@@ -45,7 +43,6 @@ def _dds_implementation() -> str:
         return rclpy.get_rmw_implementation_identifier()
     except Exception:
         return os.environ.get("RMW_IMPLEMENTATION", "unknown")
-DEFAULT_CHECK_DURATION_SECONDS = 3.0
 
 
 def _add_config_arg(parser: argparse.ArgumentParser) -> None:
@@ -85,16 +82,6 @@ def _build_parser() -> argparse.ArgumentParser:
     watch_parser = subparsers.add_parser("watch", help="live interactive TUI")
     _add_config_arg(watch_parser)
     _add_no_hz_arg(watch_parser)
-
-    check_parser = subparsers.add_parser("check", help="one-shot, non-interactive report (CI/pre-flight)")
-    _add_config_arg(check_parser)
-    _add_no_hz_arg(check_parser)
-    check_parser.add_argument(
-        "--duration",
-        type=float,
-        default=DEFAULT_CHECK_DURATION_SECONDS,
-        help="seconds to observe the graph before reporting (default: %(default)s)",
-    )
 
     replay_parser = subparsers.add_parser("replay", help="batch report over a bag, or --watch to scrub it live")
     _add_config_arg(replay_parser)
@@ -204,7 +191,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
                 diagnostics_output.publish(node.get_clock().now().to_msg(), topic_reports, snapshot.overall)
                 # `node_profiler` was already ticked (if due) this same poll
                 # by LiveDataSource.poll() -- publishing here (not via a
-                # second, self-driving NodeDiagnosticPublisher timer) keeps
+                # second, self-driving timer) keeps
                 # node profiling's tick() single-threaded in `watch`, same
                 # as the main diagnostics array above, avoiding a second
                 # concurrent writer to NodeProfiler's internal state. It
@@ -279,65 +266,6 @@ def _spin_until_stopped(
         if time.monotonic() >= next_maintain:
             manager.maintain()
             next_maintain = time.monotonic() + _SPIN_TIMEOUT_SECONDS
-
-
-def cmd_check(args: argparse.Namespace) -> int:
-    config, config_path = _load_config_or_exit(args.config)
-    plugins = discover_all_plugins(config.plugins_dir)
-    _logger.info(
-        "loaded config from %s (%d declared topic type(s)); %d plugin(s) discovered",
-        config_path,
-        len(config.topics),
-        len(plugins),
-    )
-
-    rclpy.init(args=args.rclpy_args)
-    node = rclpy.create_node("testudo_check")
-    try:
-        manager = SubscriptionManager(node, config, plugins, monitor_hz=not args.no_hz)
-        manager.start()
-        # Publishing runs on its own fixed-rate timer for the whole
-        # observation window, decoupled from any single check's sampling
-        # rate -- this is what makes `check`'s output bag-recordable, not
-        # just printed at the end.
-        publisher = DiagnosticPublisher(node, manager, config.severity_mode, config.publish, plugins)
-        node_profiler = None
-        node_publisher = None
-        if config.node_profiling.enabled:
-            node_profiler = NodeProfiler(node, config.node_profiling)
-            node_profiler.start()
-            # `check` has no per-poll merge point like `watch`'s on_snapshot
-            # closure, so node stats get their own self-driving timer here
-            # -- single-threaded (no separate spin thread in `check`), the
-            # same reason `DiagnosticPublisher` above is only used this way
-            # in `check`, never in `watch`.
-            node_publisher = NodeDiagnosticPublisher(node, node_profiler, config.severity_mode, config.node_profiling)
-        try:
-            _spin_for(_make_executor(node), args.duration)
-        finally:
-            publisher.destroy()
-            if node_publisher is not None:
-                node_publisher.destroy()
-            if node_profiler is not None:
-                node_profiler.close()
-        manager.tick()
-        reports = manager.reports()
-        overall = manager.overall_status(config.severity_mode)
-    finally:
-        node.destroy_node()
-        rclpy.shutdown()
-
-    return print_report(reports, overall)
-
-
-def _spin_for(executor: SingleThreadedExecutor, duration_seconds: float) -> None:
-    """Process callbacks until `duration_seconds` of wall time elapses (overshooting by at most one timeout).
-
-    The timeout is constant, not the time remaining: see `_make_executor`.
-    """
-    deadline = time.monotonic() + duration_seconds
-    while time.monotonic() < deadline:
-        executor.spin_once(timeout_sec=_SPIN_TIMEOUT_SECONDS)
 
 
 def cmd_replay(args: argparse.Namespace) -> int:
@@ -415,7 +343,6 @@ def cmd_plugins(args: argparse.Namespace) -> int:
 
 _COMMANDS = {
     "watch": cmd_watch,
-    "check": cmd_check,
     "replay": cmd_replay,
     "plugins": cmd_plugins,
 }
@@ -428,7 +355,7 @@ def split_ros_args(argv: list[str]) -> tuple[list[str], list[str]]:
     or a launch file passes them) are not argparse's: they're removed
     from what it parses and handed to rclpy whole, which picks them out
     itself -- the only way to set `use_sim_time` (or remap the node) for
-    `watch`/`check`/`replay`.
+    `watch`/`replay`.
     """
     return remove_ros_args(args=argv), ["testudo", *argv]
 

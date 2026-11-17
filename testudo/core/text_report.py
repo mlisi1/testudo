@@ -1,4 +1,4 @@
-"""The `check`/`replay` text report: one line per topic plus the overall verdict.
+"""The `replay` text report: one line per topic plus the overall verdict.
 
 Read by a person, so it uses `CheckStatus.values` (markup stripped, single
 line), not the `metrics` that get published.

@@ -6,7 +6,7 @@ it has any, and only falls back to `values` otherwise (`published_values`).
 Plugins format `CheckStatus.values` for the Detail Panel: Rich markup for
 color, and `_compact` narrow-terminal duplicates of wide values (see
 `COMPACT_VALUE_SUFFIX`). A published DiagnosticStatus (read by
-rqt_robot_monitor, Foxglove, ...) and the `check`/`replay` report need
+rqt_robot_monitor, Foxglove, ...) and the `replay` report need
 the same data without either.
 """
 from __future__ import annotations

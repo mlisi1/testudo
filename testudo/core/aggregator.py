@@ -68,7 +68,7 @@ def aggregate_reports(
     """Roll up per-topic reports into one overall `CheckStatus`.
 
     - `worst`: severity = max across all reports -- the actionable go/no-go
-      number, and what drives `check`'s exit code in this mode.
+      number, and what drives `replay`'s exit code in this mode.
     - `weighted`: severity = the weighted-average severity, rounded -- a
       smoothed number more useful for trend/comparison across runs than for
       alerting on any single topic's spike. Drives the exit code in this mode.

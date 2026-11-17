@@ -2,10 +2,10 @@
 
 Interoperable with rqt_robot_monitor, Foxglove, PlotJuggler, and
 bag-recordable for free -- the point of publishing the standard
-diagnostic_msgs/DiagnosticArray instead of a custom message type. Runs on
-its own fixed-rate timer (config.publish.rate_hz): a 200 Hz IMU's checks
+diagnostic_msgs/DiagnosticArray instead of a custom message type. `watch`
+publishes once per TUI poll (config.publish.rate_hz): a 200 Hz IMU's checks
 don't publish 200 times a second, and a topic with no new sample since the
-last tick still gets republished with its last-known status, matching
+last poll still gets republished with its last-known status, matching
 standard diagnostic_updater behavior.
 
 By default (`publish.per_plugin`) the reports are split by the plugin that
@@ -18,9 +18,8 @@ from __future__ import annotations
 
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 
-from testudo.core.config import PublishConfig, SeverityMode
+from testudo.core.config import PublishConfig
 from testudo.core.plain_values import published_values, strip_markup
-from testudo.core.subscription_manager import SubscriptionManager
 from testudo.core.topic_report import TopicReport
 from testudo.plugins.base import CheckStatus
 from testudo.plugins.registry import DiscoveredPlugin
@@ -120,40 +119,3 @@ def _array(stamp, statuses: list[DiagnosticStatus]) -> DiagnosticArray:
     array.header.stamp = stamp
     array.status = statuses
     return array
-
-
-class DiagnosticPublisher:
-    """Owns a DiagnosticArray publisher and the fixed-rate timer driving it.
-
-    Each tick also calls `manager.tick()` first, so full-tier plugins'
-    time-based state (on_tick) advances at this same decoupled rate even
-    between message arrivals -- not just when a message happens to trigger
-    a decimated content-check.
-    """
-
-    def __init__(
-        self,
-        node,
-        manager: SubscriptionManager,
-        severity_mode: SeverityMode,
-        publish_config: PublishConfig,
-        plugins: list[DiscoveredPlugin],
-    ) -> None:
-        self._node = node
-        self._manager = manager
-        self._severity_mode = severity_mode
-        self._output = DiagnosticOutput(node, publish_config, plugins)
-        rate_hz = publish_config.rate_hz
-        period_seconds = 1.0 / rate_hz if rate_hz > 0 else 1.0
-        self._timer = node.create_timer(period_seconds, self._publish_once)
-
-    def _publish_once(self) -> None:
-        self._manager.tick()
-        reports = self._manager.reports()
-        overall = self._manager.overall_status(self._severity_mode)
-        self._output.publish(self._node.get_clock().now().to_msg(), reports, overall)
-
-    def destroy(self) -> None:
-        """Stop the publish timer. Call before destroying the owning node."""
-        self._timer.cancel()
-        self._node.destroy_timer(self._timer)

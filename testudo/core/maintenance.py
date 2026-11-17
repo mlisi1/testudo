@@ -94,8 +94,8 @@ def discover_and_subscribe(manager: "SubscriptionManager") -> None:
 def maintain(manager: "SubscriptionManager") -> None:
     """Periodic housekeeping for a live session: rediscover new topics, and clear a dead stack.
 
-    No-op unless `start()` was called (`check`/`replay` construct a manager
-    and drive `tick()` directly without it, so this stays inert for them).
+    No-op unless `start()` was called (`replay` constructs a manager
+    and drives `tick()` directly without it, so this stays inert for them).
     Must be called from the same thread that owns `manager._node`'s spin
     loop (`watch`'s background spin thread) -- rediscovery, stale-stack
     clearing, and the excluded-topic sweep below all create/destroy rclpy

@@ -165,7 +165,7 @@ class NodeProfilingConfig:
     Published on its own topic (`publish_topic`), separate from the
     topic/TF/Nav2 diagnostics stream -- process health is a different axis
     of data with its own natural cadence (`poll_interval_seconds` in
-    `watch`, `publish_rate_hz` for `check`'s own timer), decoupled from
+    `watch`), decoupled from
     `publish.rate_hz` above. `cpu_percent`'s default zone is generous
     (150/300, not 80/95): `psutil`'s cpu_percent can legitimately exceed
     100% for a multi-threaded process (matches `top`/`htop`), so a
@@ -197,7 +197,6 @@ class NodeProfilingConfig:
     #: Defaults to `<publish.namespace>/nodes`, or `<publish.topic>/nodes` with
     #: `publish.per_plugin: false` (see `config_loader.default_node_profiling_topic`).
     publish_topic: str = "/testudo/nodes"
-    publish_rate_hz: float = 1.0
 
 
 @dataclass(frozen=True)

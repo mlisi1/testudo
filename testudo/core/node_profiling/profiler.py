@@ -57,8 +57,7 @@ class NodeProfiler:
 
         The rediscovery timer is created on `self._node`, so it always
         fires on whichever thread is spinning that node (the dedicated
-        spin thread in `cmd_watch`, the single main thread in
-        `cmd_check`) -- the same thread-ownership guarantee
+        spin thread in `cmd_watch`) -- the same thread-ownership guarantee
         `SubscriptionManager.maintain()` needs, achieved here without any
         cli.py loop-plumbing changes.
         """

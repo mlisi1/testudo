@@ -40,7 +40,7 @@ SEVERITY_LABELS: dict[int, str] = {
 
 #: Display color per severity, as a Rich/Textual style name -- both the
 #: TUI's markup (`[green]...[/green]`) and `rich.console.Console.print`
-#: understand the identical syntax, so `testudo check`'s plain-text report
+#: understand the identical syntax, so `testudo replay`'s plain-text report
 #: and the TUI stay visually consistent from one shared mapping.
 SEVERITY_COLORS: dict[int, str] = {
     Severity.OK: "green",
@@ -82,7 +82,7 @@ class ThresholdZone:
 #: metric, and the TUI's Detail Panel picks whichever fits its current
 #: width. A plain naming convention, not a CheckStatus schema change --
 #: any plugin can opt in. Non-TUI outputs (published DiagnosticStatus,
-#: `check`/`replay` text) drop the compact variant.
+#: `replay` text) drop the compact variant.
 COMPACT_VALUE_SUFFIX = "_compact"
 
 #: `CheckStatus.values` key suffix marking a secondary value, shown only
@@ -91,7 +91,7 @@ COMPACT_VALUE_SUFFIX = "_compact"
 #: on) and dropped first on a short one. Shown under its key without the
 #: suffix. Same kind of naming convention as `COMPACT_VALUE_SUFFIX` (the
 #: two combine as `<key>_more_compact`). The published DiagnosticStatus
-#: keeps it; the one-line `check`/`replay` report drops it.
+#: keeps it; the one-line `replay` report drops it.
 MORE_VALUE_SUFFIX = "_more"
 
 

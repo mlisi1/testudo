@@ -68,12 +68,12 @@ def test_default_config_path_is_not_inside_the_repo() -> None:
 
 
 def test_ros_args_go_to_rclpy_not_argparse() -> None:
-    argv = ["check", "--duration", "5", "--ros-args", "-p", "use_sim_time:=true"]
+    argv = ["watch", "--no-hz", "--ros-args", "-p", "use_sim_time:=true"]
     cli_argv, rclpy_args = cli.split_ros_args(argv)
-    assert cli_argv == ["check", "--duration", "5"]
+    assert cli_argv == ["watch", "--no-hz"]
     assert rclpy_args == ["testudo", *argv]
     args = cli._build_parser().parse_args(cli_argv)
-    assert args.command == "check" and args.duration == 5
+    assert args.command == "watch" and args.no_hz
 
 
 def test_use_sim_time_from_ros_args_reaches_the_node() -> None:
@@ -81,7 +81,7 @@ def test_use_sim_time_from_ros_args_reaches_the_node() -> None:
 
     from testudo.core.clock import TestudoClock
 
-    _cli_argv, rclpy_args = cli.split_ros_args(["check", "--ros-args", "-p", "use_sim_time:=true"])
+    _cli_argv, rclpy_args = cli.split_ros_args(["watch", "--ros-args", "-p", "use_sim_time:=true"])
     context = rclpy.Context()
     rclpy.init(args=rclpy_args, context=context)
     try:

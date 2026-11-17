@@ -419,7 +419,6 @@ def test_node_profiling_full(tmp_path: Path) -> None:
           rediscovery_interval_seconds: 10
           gpu_enabled: false
           publish_topic: /diagnostics/my_nodes
-          publish_rate_hz: 2.0
           cpu_percent:
             green: 50
             orange: 90
@@ -442,7 +441,6 @@ def test_node_profiling_full(tmp_path: Path) -> None:
     assert np.rediscovery_interval_seconds == 10.0
     assert np.gpu_enabled is False
     assert np.publish_topic == "/diagnostics/my_nodes"
-    assert np.publish_rate_hz == 2.0
     assert np.cpu_percent.green == 50.0
     assert np.cpu_percent.orange == 90.0
     assert np.memory_mb.green == 200.0

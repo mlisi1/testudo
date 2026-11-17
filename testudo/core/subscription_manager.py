@@ -63,7 +63,7 @@ from testudo.core.topic_report import (
 )
 from testudo.core.tier_subscription import FullTierState
 from testudo.core.vitals import DEFAULT_STALE_AFTER_SECONDS, TopicVitals
-from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, colorize
+from testudo.plugins.base import CheckPlugin, CheckStatus
 from testudo.plugins.registry import DiscoveredPlugin
 
 _logger = logging.getLogger(__name__)
@@ -223,8 +223,8 @@ class SubscriptionManager:
         # (`feed_replayed_message`), which has no live-subscription callback
         # of its own to close over the plugin the way `subscribe_related_topic` does.
         self._related_topic_targets: dict[str, tuple[CheckPlugin, str]] = {}
-        # Only `start()` flips this on -- `replay`/one-shot `check` construct
-        # a manager and drive `tick()` without ever calling `start()`'s live
+        # Only `start()` flips this on -- `replay` constructs
+        # a manager and drives `tick()` without ever calling `start()`'s live
         # discovery, so periodic rediscovery and stale-stack clearing (both
         # gated on this) must stay inert until a real live session opts in.
         self._live = False
@@ -309,8 +309,8 @@ class SubscriptionManager:
     def maintain(self) -> None:
         """Periodic housekeeping for a live session: rediscover new topics, and clear a dead stack.
 
-        No-op unless `start()` was called (`check`/`replay` construct a
-        manager and drive `tick()` directly without it, so this stays
+        No-op unless `start()` was called (`replay` constructs a
+        manager and drives `tick()` directly without it, so this stays
         inert for them). Must be called from the same thread that owns
         `self._node`'s spin loop (`watch`'s background spin thread) --
         see maintenance.py's `maintain()` for why. `tick()` itself stays
