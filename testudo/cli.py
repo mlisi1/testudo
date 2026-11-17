@@ -14,6 +14,7 @@ import time
 
 import rclpy
 import rclpy.node
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.utilities import remove_ros_args
 from diagnostic_msgs.msg import DiagnosticArray
 
@@ -173,7 +174,10 @@ def cmd_watch(args: argparse.Namespace) -> int:
             # maintain()`) rides along on this same thread rather than the
             # TUI's, since both create/destroy rclpy subscriptions and that
             # isn't safe to interleave with a concurrent `spin_once` elsewhere.
-            spin_thread = threading.Thread(target=_spin_until_stopped, args=(node, stop_spinning, manager), daemon=True)
+            executor = _make_executor(node)
+            spin_thread = threading.Thread(
+                target=_spin_until_stopped, args=(executor, stop_spinning, manager), daemon=True
+            )
             spin_thread.start()
 
             diagnostics_output = DiagnosticOutput(node, config.publish, plugins)
@@ -243,10 +247,38 @@ def cmd_watch(args: argparse.Namespace) -> int:
     return 0
 
 
-def _spin_until_stopped(node: rclpy.node.Node, stop_event: threading.Event, manager: SubscriptionManager) -> None:
+#: `spin_once`'s timeout, and how often `watch`'s spin thread runs `maintain()`.
+#: The timeout must stay the same on every call: see `_make_executor`.
+_SPIN_TIMEOUT_SECONDS = 0.1
+
+
+def _make_executor(node: rclpy.node.Node) -> SingleThreadedExecutor:
+    """An executor that owns `node` for the whole session.
+
+    Not `rclpy.spin_once(node, ...)`: that adds the node to the global
+    executor and removes it again on every call, and the executor also
+    starts over (a fresh wait set) whenever `spin_once`'s arguments change.
+    Either way, every call builds a wait set over all ~100+ subscriptions
+    and then runs only the first ready callback in it -- timers first,
+    then subscriptions in creation order. Under load, the topics created
+    last never got a turn ("publisher(s) present but no messages
+    received" on a full-scale sim). With the node kept and a constant
+    timeout, one wait's ready callbacks are all run before the next wait.
+    """
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
+    return executor
+
+
+def _spin_until_stopped(
+    executor: SingleThreadedExecutor, stop_event: threading.Event, manager: SubscriptionManager
+) -> None:
+    next_maintain = time.monotonic()
     while not stop_event.is_set():
-        rclpy.spin_once(node, timeout_sec=0.1)
-        manager.maintain()
+        executor.spin_once(timeout_sec=_SPIN_TIMEOUT_SECONDS)
+        if time.monotonic() >= next_maintain:
+            manager.maintain()
+            next_maintain = time.monotonic() + _SPIN_TIMEOUT_SECONDS
 
 
 def cmd_check(args: argparse.Namespace) -> int:
@@ -281,7 +313,7 @@ def cmd_check(args: argparse.Namespace) -> int:
             # in `check`, never in `watch`.
             node_publisher = NodeDiagnosticPublisher(node, node_profiler, config.severity_mode, config.node_profiling)
         try:
-            _spin_for(node, args.duration)
+            _spin_for(_make_executor(node), args.duration)
         finally:
             publisher.destroy()
             if node_publisher is not None:
@@ -298,14 +330,14 @@ def cmd_check(args: argparse.Namespace) -> int:
     return print_report(reports, overall)
 
 
-def _spin_for(node: rclpy.node.Node, duration_seconds: float) -> None:
-    """Process callbacks (via `rclpy.spin_once`) until `duration_seconds` of wall time elapses."""
+def _spin_for(executor: SingleThreadedExecutor, duration_seconds: float) -> None:
+    """Process callbacks until `duration_seconds` of wall time elapses (overshooting by at most one timeout).
+
+    The timeout is constant, not the time remaining: see `_make_executor`.
+    """
     deadline = time.monotonic() + duration_seconds
-    while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            return
-        rclpy.spin_once(node, timeout_sec=remaining)
+    while time.monotonic() < deadline:
+        executor.spin_once(timeout_sec=_SPIN_TIMEOUT_SECONDS)
 
 
 def cmd_replay(args: argparse.Namespace) -> int:
