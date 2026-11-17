@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.svg" alt="Testudo logo: a Roman scutum bearing a winged turtle" width="180">
+</p>
+
 # Testudo
 
 **Black-box diagnostics for ROS 2 navigation stacks — neofetch for your nav stack.**

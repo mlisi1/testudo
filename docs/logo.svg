@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="222 82 580 860" width="580" height="860">
+  <title>Testudo</title>
+  <!-- the scutum: red edge, gold band, red band, notched gold frame line, red field -->
+  <path d="M242,166 Q242,130 278,128 Q512,92 746,128 Q782,130 782,166 L782,844 Q782,880 746,882 Q512,918 278,882 Q242,880 242,844 Z" fill="#971b2f"/>
+  <path d="M248,167 Q248,136 279,134 Q512,98 745,134 Q776,136 776,167 L776,843 Q776,874 745,876 Q512,912 279,876 Q248,874 248,843 Z" fill="#ffb500"/>
+  <path d="M261,171 Q261,149 283,147 Q512,111 741,147 Q763,149 763,171 L763,839 Q763,861 741,863 Q512,899 283,863 Q261,861 261,839 Z" fill="#971b2f"/>
+  <path d="M273,181 A20,20 0 0 0 293,161 Q512,129 731,161 A20,20 0 0 0 751,181 L751,829 A20,20 0 0 0 731,849 Q512,881 293,849 A20,20 0 0 0 273,829 Z" fill="none" stroke="#ffb500" stroke-width="5"/>
+  <!-- the spear, behind the turtle -->
+  <path d="M512,170 L523,340 L501,340 Z M498,640 L526,640 L516,700 L512,836 L508,700 Z" fill="#ffb500"/>
+  <g>
+    <path d="M408,196 L433,255 L417,258 L447,316 L433,320 L471,400" fill="none" stroke="#ffb500" stroke-width="9" stroke-linecap="round" stroke-linejoin="miter"/>
+    <path d="M390,160 L424,192 L394,207 Z" fill="#ffb500" stroke="#ffb500" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M467,628 L436,698 L451,701 L423,758 L438,761 L410,812" fill="none" stroke="#ffb500" stroke-width="9" stroke-linecap="round" stroke-linejoin="miter"/>
+    <path d="M395,842 L395,803 L424,816 Z" fill="#ffb500" stroke="#ffb500" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M442,404 C410,352 365,300 322,264 C308,300 312,380 372,458 M327,292 C326,350 352,405 392,446 M336,300 C340,352 365,398 405,432 M347,310 C356,352 380,392 418,420 M372,318 C378,346 398,378 430,404 M392,334 C396,356 410,378 436,398" fill="none" stroke="#ffb500" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M420,528 C352,532 312,606 326,714 C356,692 396,656 420,616 M408,543 C360,552 330,612 337,692 M412,556 C376,576 352,622 348,676 M415,570 C388,590 366,628 362,662 M417,585 C398,598 386,616 380,640 M418,598 C404,608 396,622 392,636" fill="none" stroke="#ffb500" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <ellipse cx="418" cy="445" rx="40" ry="23" transform="rotate(-38 418 445)" fill="#ffb500" stroke="#971b2f" stroke-width="5"/>
+    <ellipse cx="418" cy="606" rx="21" ry="32" transform="rotate(30 418 606)" fill="#ffb500" stroke="#971b2f" stroke-width="5"/>
+    </g>
+  <g transform="matrix(-1 0 0 1 1024 0)">
+    <path d="M408,196 L433,255 L417,258 L447,316 L433,320 L471,400" fill="none" stroke="#ffb500" stroke-width="9" stroke-linecap="round" stroke-linejoin="miter"/>
+    <path d="M390,160 L424,192 L394,207 Z" fill="#ffb500" stroke="#ffb500" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M467,628 L436,698 L451,701 L423,758 L438,761 L410,812" fill="none" stroke="#ffb500" stroke-width="9" stroke-linecap="round" stroke-linejoin="miter"/>
+    <path d="M395,842 L395,803 L424,816 Z" fill="#ffb500" stroke="#ffb500" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M442,404 C410,352 365,300 322,264 C308,300 312,380 372,458 M327,292 C326,350 352,405 392,446 M336,300 C340,352 365,398 405,432 M347,310 C356,352 380,392 418,420 M372,318 C378,346 398,378 430,404 M392,334 C396,356 410,378 436,398" fill="none" stroke="#ffb500" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M420,528 C352,532 312,606 326,714 C356,692 396,656 420,616 M408,543 C360,552 330,612 337,692 M412,556 C376,576 352,622 348,676 M415,570 C388,590 366,628 362,662 M417,585 C398,598 386,616 380,640 M418,598 C404,608 396,622 392,636" fill="none" stroke="#ffb500" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <ellipse cx="418" cy="445" rx="40" ry="23" transform="rotate(-38 418 445)" fill="#ffb500" stroke="#971b2f" stroke-width="5"/>
+    <ellipse cx="418" cy="606" rx="21" ry="32" transform="rotate(30 418 606)" fill="#ffb500" stroke="#971b2f" stroke-width="5"/>
+    </g>
+  <!-- head: a rounded bulb on a short neck -->
+  <path d="M503,334 C482,342 479,372 488,392 L536,392 C545,372 542,342 521,334 Z" fill="#ffb500" stroke="#971b2f" stroke-width="5" stroke-linejoin="round"/>
+  
+    <ellipse cx="512" cy="518" rx="106" ry="121" fill="#ffb500" stroke="#971b2f" stroke-width="6"/>
+    <ellipse cx="512" cy="518" rx="91" ry="106" fill="none" stroke="#971b2f" stroke-width="6"/>
+    <path d="M466,518 L489.0,476 L535.0,476 L558,518 L535.0,560 L489.0,560 Z M489.0,476 L462,429 M535.0,476 L562,429 M466,518 L421,518 M558,518 L603,518 M489.0,560 L462,607 M535.0,560 L562,607" fill="none" stroke="#971b2f" stroke-width="6" stroke-linejoin="round"/>
+    
+</svg>
