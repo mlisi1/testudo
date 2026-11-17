@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo_wordmark.svg" alt="Testudo" width="560">
+  <img src="docs/logo_wordmark.svg" alt="Testudo" width="760">
 </p>
 
 **Black-box diagnostics for ROS 2 navigation stacks — neofetch for your nav stack.**
