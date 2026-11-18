@@ -2,6 +2,8 @@
 
 Four panes are visible at once. Moving the cursor updates the others, so nothing needs opening.
 
+![The dashboard: Status Bar, Plugin Panel, Topic Panel and Detail Panel](../assets/media/tui/dashboard.png)
+
 | Pane | Where | Shows |
 |---|---|---|
 | **Status Bar** | Top | Host, ROS distro, uptime, and the overall verdict |

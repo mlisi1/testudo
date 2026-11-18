@@ -2,6 +2,8 @@
 
 Checks a receiver's fix: whether it has one, how accurate it claims to be, and whether its positions are believable.
 
+![Dashboard with GNSS-001 active on /gps/fix, a receiver with no fix](../assets/media/plugins/gnss.png)
+
 ## What it covers
 
 | | |

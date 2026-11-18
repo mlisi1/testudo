@@ -7,12 +7,185 @@ hide:
 
 # Testudo { .testudo-page-title }
 
-<div class="testudo-hero" markdown>
-![Testudo](logo_wordmark.svg)
+<div class="tx-hero" markdown>
+
+![Testudo](logo_wordmark.svg){ .tx-hero__logo }
+
+<p class="tx-hero__title">Is my nav stack healthy right now?<br>And if not, what broke first?</p>
+
+<p class="tx-hero__text">Testudo is a diagnostics dashboard for ROS 2 navigation stacks. It watches every topic from the outside, judges what it sees, and points you at the problem, live in your terminal or from a recorded bag.</p>
+
+[Get started](getting-started/index.md){ .md-button .md-button--primary }
+[See what it checks](plugins/index.md){ .md-button }
+
+<ul class="tx-pills">
+<li>ROS 2 Jazzy</li>
+<li>No changes to your nodes</li>
+<li>Works with no config</li>
+<li>Built for Nav2, not tied to it</li>
+</ul>
+
 </div>
 
-<p class="testudo-tagline"><strong>Is my nav stack healthy right now, and if not, what broke first?</strong></p>
+<video class="tx-video" src="assets/media/home/hero.mp4" poster="assets/media/tui/replay.png" autoplay loop muted playsinline controls aria-label="The Testudo dashboard replaying a field recording"></video>
 
-Testudo watches a running ROS 2 robot from the outside, with no changes to its nodes. It judges every topic at once and points at the problem, live in the terminal or from a recorded bag.
+<p class="tx-caption">A real field run, replayed: recoveries, a localization jump and a broken transform chain, each with its own code.</p>
 
-Severities read the same everywhere: <span class="sev sev-ok">✓ OK</span> <span class="sev sev-warn">▲ WARN</span> <span class="sev sev-error">✗ ERROR</span> <span class="sev sev-stale">■ STALE</span>
+## A navigation stack rarely fails loudly
+
+The robot stops short, drifts, or spins in place, and nothing has crashed. Every node is up and every topic is publishing. The fault is in the data: a covariance left at a placeholder, an IMU in the wrong units, a transform with two parents, a planner that keeps falling back on recoveries.
+
+Your existing tools can show you all of this, once you know where to look. Testudo tells you where to look.
+
+<div class="tx-compare" markdown>
+
+| Tool | What it gives you | What's left to you |
+|---|---|---|
+| `ros2 topic hz`, `echo` | One topic at a time | Choosing the topic and judging the numbers |
+| `rqt_robot_monitor` | What nodes report about themselves | Everything they don't report |
+| Foxglove, PlotJuggler | Every signal, plotted | Knowing which signal matters |
+| **Testudo** | **Every topic at once, already judged** | **Fixing the cause** |
+
+</div>
+
+## What it does
+
+<div class="grid cards" markdown>
+
+-   :material-eye-outline:{ .lg .middle } **Watches from the outside**
+
+    ---
+
+    Point it at a running graph. It finds the topics, matches their QoS and starts checking, with nothing added to your nodes.
+
+-   :material-scale-balance:{ .lg .middle } **Judges the content**
+
+    ---
+
+    Not only whether a topic is alive, but whether its data makes sense: covariances, jumps, frozen sensors, broken TF, failing goals.
+
+-   :material-target:{ .lg .middle } **Points at what broke**
+
+    ---
+
+    Every problem has a code and an explanation. The worst come first, and faults that cleared stay on record.
+
+</div>
+
+## Where you'll use it
+
+<div class="tx-split" markdown>
+
+<div markdown>
+
+### On the robot, while it misbehaves
+
+**For bring-up and field debugging.** Open it over SSH next to your stack, work down the **Needs attention** list, and press ++n++ to jump to each problem.
+
+```bash
+testudo watch
+```
+
+[Bring up a robot :material-arrow-right:](getting-started/bring-up.md)
+
+</div>
+
+[![The live dashboard listing active faults](assets/media/tui/dashboard.png)](assets/media/tui/dashboard.png)
+
+</div>
+
+<div class="tx-split tx-split--flip" markdown>
+
+<div markdown>
+
+### After the run, from a bag
+
+**For post-mortems.** Get a report of every fault with its timing, or scrub through the run in the same dashboard to see what went wrong first.
+
+```bash
+testudo replay --watch my_bag/
+```
+
+[Investigate a bag :material-arrow-right:](getting-started/replay.md)
+
+</div>
+
+[![A field bag open in the dashboard](assets/media/tui/replay.png)](assets/media/tui/replay.png)
+
+</div>
+
+<div class="tx-split" markdown>
+
+<div markdown>
+
+### In your pipeline
+
+**For CI on simulated runs.** The verdict at the end of a bag is the exit code, so a regression in the stack can fail the build.
+
+[Use it in CI :material-arrow-right:](getting-started/ci.md)
+
+</div>
+
+```console
+$ testudo replay -c config.yaml run_bag/
+$ echo $?
+2   # 0 OK · 1 WARN · 2 ERROR or STALE
+```
+
+</div>
+
+## What it checks
+
+Ten plugins read the content of your topics, and every topic gets liveness and timestamp checks.
+
+<div class="grid cards tx-mini" markdown>
+
+-   [:material-crosshairs-gps: **Localization**](plugins/localization.md)
+
+    Covariance, jumps, relocalizations
+
+-   [:material-axis-arrow: **IMU**](plugins/imu.md)
+
+    Units, bias, clipping, stamps
+
+-   [:material-satellite-variant: **GNSS**](plugins/gnss.md)
+
+    Fix, accuracy, dropouts
+
+-   [:material-camera: **Cameras**](plugins/image-stream.md)
+
+    Empty, frozen or corrupt frames
+
+-   [:material-radar: **Lidar**](plugins/point-stream.md)
+
+    Invalid, stuck or malformed data
+
+-   [:material-speedometer: **Velocity commands**](plugins/velocity-command.md)
+
+    Stuck robot, oscillation
+
+-   [:material-map: **Costmaps**](plugins/costmap.md)
+
+    Lethal and unknown share, drawn in the terminal
+
+-   [:material-flag-checkered: **Actions**](plugins/actions.md)
+
+    Goal success rate and duration
+
+-   [:material-file-tree: **Behavior tree**](plugins/bt-log.md)
+
+    Recoveries and what triggered them
+
+-   [:material-family-tree: **TF**](plugins/tf-watch.md)
+
+    Multiple parents, missing chains
+
+</div>
+
+<div class="tx-cta" markdown>
+
+**Have a stack running? You're one command away from a diagnosis.**
+
+[Install Testudo](getting-started/index.md){ .md-button .md-button--primary }
+
+</div>

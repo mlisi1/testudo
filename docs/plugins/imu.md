@@ -2,6 +2,8 @@
 
 Checks that an IMU's readings are valid, alive and physically sensible, with no setting for how it is mounted or whether it removes gravity.
 
+![Dashboard with IMU-005 and IMU-008 active on /imu/data](../assets/media/plugins/imu.png)
+
 ## What it covers
 
 | | |

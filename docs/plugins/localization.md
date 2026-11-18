@@ -2,6 +2,8 @@
 
 Judges a pose estimate by what its frame says about it: odometry may drift but must never jump, and a global pose may jump but must not lose confidence.
 
+![Dashboard with LOC-001 active on /odom, with a placeholder covariance](../assets/media/plugins/localization.png)
+
 ## What it covers
 
 | | |

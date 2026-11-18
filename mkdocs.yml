@@ -60,6 +60,9 @@ markdown_extensions:
   - toc:
       permalink: true
   - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
@@ -89,29 +92,17 @@ nav:
   - Home: index.md
   - Getting started:
       - getting-started/index.md
-      - Install: getting-started/install.md
-      - Watch a running stack: getting-started/first-watch.md
-      - Replay a bag: getting-started/first-replay.md
+      - Bring up a robot: getting-started/bring-up.md
+      - Investigate a bag: getting-started/replay.md
       - Write a config: getting-started/config-init.md
-  - Guides:
-      - guides/index.md
-      - Robot bring-up: guides/bring-up.md
-      - Bag post-mortem: guides/post-mortem.md
-      - CI on bags: guides/ci.md
-      - Headless and launch: guides/headless.md
+      - Use it in CI: getting-started/ci.md
+      - Run headless: getting-started/headless.md
   - Dashboard:
       - tui/index.md
       - Keys: tui/keys.md
       - Quick actions: tui/quick-actions.md
       - Options: tui/options.md
       - Replay scrubbing: tui/replay.md
-  - Concepts:
-      - concepts/index.md
-      - Monitoring tiers: concepts/tiers.md
-      - Severity and zones: concepts/severity.md
-      - Liveness: concepts/liveness.md
-      - Debouncing: concepts/hysteresis.md
-      - Faults: concepts/faults.md
   - Plugins:
       - plugins/index.md
       - Localization: plugins/localization.md
@@ -124,6 +115,13 @@ nav:
       - Actions: plugins/actions.md
       - Behavior tree log: plugins/bt-log.md
       - TF watch: plugins/tf-watch.md
+  - Concepts:
+      - concepts/index.md
+      - Monitoring tiers: concepts/tiers.md
+      - Severity and zones: concepts/severity.md
+      - Liveness: concepts/liveness.md
+      - Debouncing: concepts/hysteresis.md
+      - Faults: concepts/faults.md
   - Core checks:
       - core-checks/index.md
       - Liveness: core-checks/live.md

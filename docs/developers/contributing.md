@@ -25,6 +25,16 @@ The level tables, the code index and the command-line reference are generated fr
 ### IMU-001 · NaN or Inf in the readings { #imu-001 }
 ```
 
+## Recreate the screenshots
+
+Every image and video comes from the real dashboard:
+
+```bash
+python3 docs/gen/media/capture.py live
+```
+
+`fault_stack.py` publishes a misbehaving topic for each plugin, on a virtual display and a separate ROS domain. It needs Xvfb, Terminator and ffmpeg. The `replay` group also records a field bag, which isn't part of the repository.
+
 ## Code conventions
 
 - Keep files small, with one responsibility per module.

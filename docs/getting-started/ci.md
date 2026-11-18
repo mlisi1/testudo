@@ -1,4 +1,4 @@
-# CI on bags
+# Use it in CI
 
 `testudo replay` returns the verdict at the end of the bag as its exit code:
 

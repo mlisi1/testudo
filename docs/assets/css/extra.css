@@ -107,15 +107,197 @@
   position: absolute;
   width: 1px;
 }
-.testudo-hero {
-  margin: 0.5rem auto 1.5rem;
-  max-width: 34rem;
+
+/* Every page opens with one larger sentence. */
+.md-content__inner > h1 + p {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+/* Screenshots read as terminal windows. */
+.md-typeset img[src*="assets/media"],
+.tx-video {
+  border: 1px solid #4b556366;
+  border-radius: 0.45rem;
+  box-shadow: 0 0.4rem 1.4rem #0000002e;
+  display: block;
+}
+
+/* A two-column facts table has no header to show. */
+.md-typeset table:not([class]):has(thead th:empty) thead {
+  display: none;
+}
+.md-typeset table:not([class]):has(thead th:empty) td:first-child {
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+/* A code's entry stands out from the text around it. */
+.md-typeset h3[id*="-00"],
+.md-typeset h3[id*="-01"] {
+  background: var(--md-accent-fg-color--transparent);
+  border-left: 3px solid var(--testudo-maroon);
+  border-radius: 0 0.25rem 0.25rem 0;
+  margin-top: 2rem;
+  padding: 0.35rem 0.6rem;
+}
+
+/* Cards. */
+.md-typeset .grid.cards > ul > li {
+  border-radius: 0.45rem;
+  transition: border-color 150ms, box-shadow 150ms, transform 150ms;
+}
+.md-typeset .grid.cards > ul > li:hover {
+  border-color: var(--testudo-gold);
+  box-shadow: 0 0.3rem 1rem #0000001f;
+  transform: translateY(-2px);
+}
+.md-typeset .grid.cards .twemoji {
+  color: var(--testudo-maroon);
+}
+[data-md-color-scheme="slate"] .md-typeset .grid.cards .twemoji {
+  color: var(--testudo-gold);
+}
+.md-typeset .tx-mini.grid.cards {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+@media screen and (max-width: 76em) {
+  .md-typeset .tx-mini.grid.cards {
+    grid-template-columns: repeat(auto-fit, minmax(11.5rem, 1fr));
+  }
+}
+.md-typeset .tx-mini.grid.cards > ul > li > p {
+  font-size: 0.68rem;
+  margin: 0.2rem 0 0;
+}
+.md-typeset .tx-mini.grid.cards > ul > li > p:first-child {
+  font-size: 0.75rem;
+  margin: 0;
+}
+
+/* Home page hero: a dark panel in both color schemes, so the gold wordmark always reads. */
+.md-typeset .tx-hero {
+  background: radial-gradient(circle at 50% 0, #4a1420 0, #16181d 68%);
+  border-bottom: 3px solid var(--testudo-gold);
+  border-radius: 0.6rem;
+  color: #e5e7eb;
+  margin: 0 0 1.5rem;
+  padding: 2.2rem 1.5rem 1.6rem;
   text-align: center;
 }
-.testudo-hero img {
+.md-typeset .tx-hero__logo {
+  max-width: min(26rem, 100%);
   width: 100%;
 }
-.md-typeset .testudo-tagline {
-  font-size: 1.05rem;
+.md-typeset .tx-hero__title {
+  color: #ffffff;
+  font-size: 1.55rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 1rem 0 0.7rem;
+}
+.md-typeset .tx-hero__text {
+  color: #d1d5db;
+  font-size: 0.86rem;
+  margin: 0 auto 1.2rem;
+  max-width: 40rem;
+}
+.md-typeset .tx-hero .md-button {
+  border-color: #ffffff80;
+  color: #ffffff;
+  margin: 0.2rem;
+}
+.md-typeset .tx-hero .md-button--primary {
+  background: var(--testudo-gold);
+  border-color: var(--testudo-gold);
+  color: #1f2937;
+}
+.md-typeset .tx-hero .md-button:hover {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #1f2937;
+}
+.md-typeset ul.tx-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: center;
+  list-style: none;
+  margin: 1.2rem 0 0;
+  padding: 0;
+}
+.md-typeset ul.tx-pills li {
+  border: 1px solid #ffffff33;
+  border-radius: 1rem;
+  color: #d1d5db;
+  font-size: 0.64rem;
+  margin: 0;
+  padding: 0.1rem 0.6rem;
+}
+.tx-video {
+  width: 100%;
+}
+.md-typeset .tx-caption {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.68rem;
+  margin-top: 0.5rem;
   text-align: center;
+}
+
+/* The comparison's last row is the answer. */
+.md-typeset .tx-compare .md-typeset__table {
+  display: block;
+  width: 100%;
+}
+.md-typeset .tx-compare table:not([class]) {
+  display: table;
+  width: 100%;
+}
+.md-typeset .tx-compare tbody tr:last-child td {
+  background: var(--md-accent-fg-color--transparent);
+  border-top: 2px solid var(--testudo-gold);
+}
+
+/* Text beside a picture, alternating sides. */
+.md-typeset .tx-split {
+  align-items: center;
+  display: grid;
+  gap: 1.8rem;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  margin: 2rem 0;
+}
+.md-typeset .tx-split--flip {
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+}
+.md-typeset .tx-split--flip > div {
+  order: 2;
+}
+.md-typeset .tx-split h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-top: 0;
+}
+@media screen and (max-width: 60em) {
+  .md-typeset .tx-split,
+  .md-typeset .tx-split--flip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .md-typeset .tx-split--flip > div {
+    order: 0;
+  }
+}
+
+/* The closing call to action. */
+.md-typeset .tx-cta {
+  background: var(--md-accent-fg-color--transparent);
+  border-radius: 0.6rem;
+  margin-top: 2.5rem;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+/* The home page has nothing to edit-link from its hero. */
+.md-content__inner:has(.tx-hero) > .md-content__button {
+  display: none;
 }

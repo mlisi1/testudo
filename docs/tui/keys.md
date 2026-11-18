@@ -1,5 +1,9 @@
 # Keys
 
+Press ++question++ in the dashboard to see this list at any time.
+
+![The help overlay](../assets/media/tui/help.png)
+
 | Key | Action |
 |---|---|
 | ++q++ | Quit |

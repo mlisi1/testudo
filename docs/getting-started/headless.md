@@ -1,4 +1,4 @@
-# Headless and launch
+# Run headless
 
 `--headless` runs the same checks without the dashboard, and publishes diagnostics until stopped.
 

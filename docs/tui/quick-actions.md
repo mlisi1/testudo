@@ -2,6 +2,8 @@
 
 Press ++a++ on a topic in a live session. Its actions replace the hint bar for one keypress.
 
+![Quick actions on an IMU topic, shown in the hint bar](../assets/media/tui/quick-actions.png)
+
 | Key | Action |
 |---|---|
 | ++w++ | Downgrade the code to WARN |

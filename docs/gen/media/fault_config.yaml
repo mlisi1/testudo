@@ -1,0 +1,28 @@
+# What capture.py runs Testudo with against fault_stack.py.
+severity_mode: both
+topics:
+  nav_msgs/msg/Odometry:
+    - name: /odom
+  sensor_msgs/msg/Imu:
+    - name: /imu/data
+  sensor_msgs/msg/NavSatFix:
+    - name: /gps/fix
+  sensor_msgs/msg/CompressedImage:
+    - name: /camera/image_raw/compressed
+  sensor_msgs/msg/LaserScan:
+    - name: /scan
+  geometry_msgs/msg/Twist:
+    - name: /cmd_vel_nav
+      related_topics:
+        odom: /odom
+  nav_msgs/msg/OccupancyGrid:
+    - name: /local_costmap/costmap
+  nav2_msgs/msg/BehaviorTreeLog:
+    - name: /behavior_tree_log
+      thresholds:
+        recovery_frequency_per_min: {warn: 6.0}
+actions:
+  - name: navigate_to_pose
+tf:
+  - {parent: map, child: base_link}
+  - {parent: map, child: gps_link}

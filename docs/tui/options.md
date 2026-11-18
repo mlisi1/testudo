@@ -2,6 +2,8 @@
 
 Press ++o++ to open the menu. ++esc++ goes back.
 
+![The options menu](../assets/media/tui/options.png)
+
 ## Exclude Topics
 
 Lists the active rules. Press ++a++ to add one and ++d++ to delete the selected one. Prefix a pattern with `regex:` to use a regex. The preview shows how many visible topics a rule would match before you submit it.

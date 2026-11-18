@@ -1,4 +1,4 @@
-# Robot bring-up
+# Bring up a robot
 
 Testudo works over SSH, so you can run it on the robot itself.
 
@@ -13,7 +13,7 @@ When a reading is normal for your robot, press ++a++ on the topic. You can set t
 
 ## Declaring what matters
 
-A declared topic is expected to be there, so its absence is an error. Run [`testudo config init`](../getting-started/config-init.md) while the stack is healthy, then add the related topics that unlock more checks:
+A declared topic is expected to be there, so its absence is an error. Run [`testudo config init`](config-init.md) while the stack is healthy, then add the related topics that unlock more checks:
 
 ```yaml
 topics:

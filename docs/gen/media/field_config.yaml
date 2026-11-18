@@ -1,0 +1,37 @@
+severity_mode: both
+topics:
+  nav_msgs/msg/Odometry:
+    - name: /odom
+      related_topics: {cmd_vel: /cmd_vel}
+    - name: /odometry/local
+    - name: /odometry/global
+    - name: /odometry/gps
+    - name: /visodom/odom
+    - name: /glim_ros/odom_corrected
+  sensor_msgs/msg/Imu:
+    - name: /imu/data
+    - name: /front_camera/camera/gyro/sample
+    - name: /front_camera/camera/accel/sample
+  sensor_msgs/msg/LaserScan:
+    - name: /scan
+  sensor_msgs/msg/PointCloud2:
+    - name: /velodyne_points
+  sensor_msgs/msg/CompressedImage:
+    - name: /front_camera/camera/color/image_raw/compressed
+  sensor_msgs/msg/NavSatFix:
+    - name: /gnss
+      thresholds: {position_covariance: {warn: 1.0, green: 1.0, orange: 9.0}}
+    - name: /gps/filtered
+  nav2_msgs/msg/BehaviorTreeLog:
+    - name: /behavior_tree_log
+      thresholds: {recovery_frequency_per_min: {warn: 2.0, error: 6.0}}
+  nav_msgs/msg/Path:
+    - name: /plan
+      thresholds: {rate_hz: {warn: 1.0, error: 0.2}}
+tf:
+  - {parent: map, child: odom}
+  - {parent: odom, child: base_link}
+  - {parent: utm, child: base_link}
+  - {parent: base_link, child: gps_link}
+exclude_topics:
+  - {pattern: ^/filter, type: regex}
