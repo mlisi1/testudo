@@ -1,8 +1,10 @@
 """IMU content-check plugin for sensor_msgs/msg/Imu.
 
 NaN/Inf values, a reading that's stuck (identical to the previous message),
-values outside a plausible range, and a frame_id that changes between
-messages.
+values outside a plausible range, a frame_id that changes between messages,
+and, whenever the IMU looks still, whether the length of its acceleration
+makes sense (`imu_checks.GravityCheck`). No setting says what to expect: an
+IMU may report gravity or have it filtered out, on any axis.
 """
 from __future__ import annotations
 
@@ -13,6 +15,7 @@ from typing import Any
 from sensor_msgs.msg import Imu
 
 from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, SeverityLevels, ThresholdZone, evaluate_levels
+from testudo.plugins.builtin.imu_checks import Finding, GravityCheck
 from testudo.plugins.render import downsample, sparkline
 
 _IMU_TYPE = "sensor_msgs/msg/Imu"
@@ -72,6 +75,7 @@ class ImuPlugin(CheckPlugin):
         self._now = 0.0
         self._gyro_trend: deque[float] = deque(maxlen=_TREND_SIZE)
         self._last_trend_sample: float | None = None
+        self._gravity = GravityCheck()
 
     @classmethod
     def msg_types(cls) -> tuple[str, ...]:
@@ -145,6 +149,12 @@ class ImuPlugin(CheckPlugin):
         }
 
         self._check_stuck(fields)
+        if invalid == 0:
+            self._gravity.observe(accel_magnitude, gyro_magnitude, self._now)
+
+    def _findings(self) -> list[Finding]:
+        """The problems the multi-message checks currently report."""
+        return self._gravity.findings(self._now)
 
     def get_status(self) -> CheckStatus:
         if self._message_count == 0:
@@ -155,7 +165,11 @@ class ImuPlugin(CheckPlugin):
         plausibility_severity = Severity.OK if self._plausibility_ok else Severity.WARN
         frame_id_severity = Severity.WARN if self._frame_id_changed else Severity.OK
 
-        worst = max(invalid_severity, stuck_severity, plausibility_severity, frame_id_severity)
+        findings = self._findings()
+        worst = max(
+            invalid_severity, stuck_severity, plausibility_severity, frame_id_severity,
+            *(severity for _code, severity, _text in findings),
+        )
 
         problems = []
         if invalid_severity != Severity.OK:
@@ -166,6 +180,7 @@ class ImuPlugin(CheckPlugin):
             problems.append("reading outside plausible range")
         if frame_id_severity != Severity.OK:
             problems.append(f"frame_id changed (now '{self._last_frame_id}')")
+        problems.extend(text for _code, _severity, text in findings)
         message = "; ".join(problems) if problems else self._detail
 
         codes = ActiveCodes()
@@ -177,6 +192,8 @@ class ImuPlugin(CheckPlugin):
             codes.add("IMU-003", f"implausible magnitude ({self._detail})", plausibility_severity)
         if frame_id_severity != Severity.OK:
             codes.add("IMU-004", f"frame_id changed (now '{self._last_frame_id}')", frame_id_severity)
+        for code, severity, text in findings:
+            codes.add(code, text, severity)
 
         accel_magnitude = math.sqrt(sum(v * v for v in self._accel))
         gyro_trend = sparkline(downsample(self._gyro_trend, _TREND_WIDTH), floor=0.0)
@@ -194,9 +211,9 @@ class ImuPlugin(CheckPlugin):
             "frame": self._last_frame_id or "",
             "gravity_on_more": f"{gravity_sign}{_AXES[gravity_axis]}",
         }
-        # |a| is the strongest single sanity number (1.00 = a g-vs-m/s² unit
-        # bug, 0.00 = a dead accel) but stays uncolored: some drivers publish
-        # gravity-compensated acceleration, where ~0 is correct.
+        if self._gravity.mode is not None:
+            values["gravity"] = f"{self._gravity.mode}  [dim]|a| {self._gravity.magnitude:.2f} at rest[/dim]"
+        # |a| stays uncolored: it's only judged at rest (see GravityCheck).
         return CheckStatus(
             severity=worst,
             label="imu",
@@ -225,4 +242,7 @@ class ImuPlugin(CheckPlugin):
                 "frame_id": self._last_frame_id or "",
             }
         )
+        if self._gravity.magnitude is not None:
+            metrics["accel_magnitude_at_rest_m_per_s2"] = self._gravity.magnitude
+            metrics["gravity"] = self._gravity.mode or ""
         return metrics
