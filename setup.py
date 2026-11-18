@@ -13,6 +13,8 @@ setup(
         (f"share/{package_name}", ["package.xml"]),
         (f"share/{package_name}/config", ["config/example_config.yaml"]),
         (f"share/{package_name}/launch", ["launch/testudo.launch.py"]),
+        # setup.cfg sends entry points to lib/testudo for `ros2 run`, which isn't on PATH.
+        ("bin", ["scripts/testudo"]),
     ],
     # numpy: package.xml declares it as an apt exec_depend (python3-numpy),
     # which colcon/rosdep-based installs satisfy for free -- but a plain

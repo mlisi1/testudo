@@ -121,14 +121,13 @@ def _load_config_or_exit(path: str | None) -> tuple[TestudoConfig, str]:
     loudly, per the usual "malformed config fails at load time" rule --
     the user asked for that specific file. A missing file at the
     *default* location isn't an error: every config section is optional,
-    so no file at all just means "vitals tier only, nothing declared or
-    excluded" -- exactly what an empty file would mean too, and the
+    so no file at all just means "nothing declared or excluded" -- exactly what an empty file would mean too, and the
     default shouldn't require a user to create one just to get that.
     """
     explicit = path is not None
     resolved = path if explicit else DEFAULT_CONFIG_PATH
     if not explicit and not os.path.isfile(resolved):
-        _logger.info("no config file found at %s -- using defaults (vitals tier only)", resolved)
+        _logger.info("no config file found at %s -- using the defaults", resolved)
         return TestudoConfig(), resolved
     try:
         return load_config(resolved), resolved
