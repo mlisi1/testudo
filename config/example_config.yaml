@@ -107,6 +107,11 @@ topics:
         stuck_count:
           warn: 1
           error: 5
+      # Optional: lets the plugin measure gyro bias while odometry says the
+      # robot is standing still (IMU-010, gyro_bias_radps). What gravity to
+      # expect needs no setting: |a| at rest may be 9.81 or 0, on any axis.
+      related_topics:
+        odom: /odom
 
   # ImageStreamPlugin covers both sensor_msgs/msg/Image and
   # sensor_msgs/msg/CompressedImage -- declare whichever one your driver

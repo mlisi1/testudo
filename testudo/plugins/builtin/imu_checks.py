@@ -8,7 +8,9 @@ import math
 import statistics
 from collections import deque
 
-from testudo.plugins.base import Severity
+from typing import Any
+
+from testudo.plugins.base import Severity, SeverityLevels, evaluate_levels
 
 Finding = tuple[str, int, str]
 
@@ -32,6 +34,22 @@ GRAVITY_BAD_SCALE = "bad scale"
 
 #: How long a one-off event stays an active code.
 EVENT_HOLD_SECONDS = 10.0
+
+#: Below these an axis repeating a value isn't clipping at its range limit:
+#: no IMU's full scale is under 2 g or 2 rad/s.
+_SATURATION_FLOOR_MPS2 = 19.6
+_SATURATION_FLOOR_RADPS = 2.0
+
+#: Odometry below these counts as the robot standing still.
+_STILL_MPS = 0.01
+_STILL_RADPS = 0.01
+#: An odometry message older than this no longer says the robot is still.
+_ODOM_EXPIRY_SECONDS = 1.0
+
+#: Stamp intervals kept for the gap and jitter checks, and the fewest worth judging.
+_STAMP_INTERVALS = 20
+_MIN_INTERVALS_FOR_GAP = 5
+_MIN_INTERVALS_FOR_JITTER = 10
 
 
 def classify_gravity(magnitude: float) -> str:
@@ -88,3 +106,145 @@ class GravityCheck:
         if self._changed is not None and now - self._changed[0] < EVENT_HOLD_SECONDS:
             findings.append(("IMU-006", Severity.WARN, self._changed[1]))
         return findings
+
+
+def quaternion_norm_error(orientation: Any, covariance: Any) -> float | None:
+    """How far the orientation's norm is from 1; None when the IMU reports no orientation.
+
+    REP 145's -1 sentinel says so explicitly; an all-zero quaternion with an
+    all-zero covariance is a driver that never filled the field in (which
+    `placeholder_covariances` reports).
+    """
+    quaternion = (orientation.x, orientation.y, orientation.z, orientation.w)
+    if covariance[0] == -1 or (not any(quaternion) and not any(covariance)):
+        return None
+    return abs(math.sqrt(sum(value * value for value in quaternion)) - 1.0)
+
+
+def placeholder_covariances(covariances: dict[str, Any]) -> list[str]:
+    """The named 3x3 covariance blocks left all zero, which claims a perfect sensor."""
+    return [name for name, covariance in covariances.items() if not any(covariance)]
+
+
+class SaturationCheck:
+    """An axis repeating the same large value: clipped at the sensor's range limit (IMU-009)."""
+
+    def __init__(self) -> None:
+        self._last: tuple[float, ...] | None = None
+        self._runs = [0] * 6
+        self._held: tuple[float, int, str] | None = None
+
+    def observe(self, fields: tuple[float, ...], now: float, levels: SeverityLevels | None) -> None:
+        """Take one sample's (accel x, y, z, gyro x, y, z). All six repeating is IMU-002's frozen driver, not clipping."""
+        previous, self._last = self._last, fields
+        if previous is None or previous == fields:
+            self._runs = [0] * 6
+            return
+        for index, (value, last) in enumerate(zip(fields, previous)):
+            floor = _SATURATION_FLOOR_MPS2 if index < 3 else _SATURATION_FLOOR_RADPS
+            self._runs[index] = self._runs[index] + 1 if value == last and abs(value) >= floor else 0
+        worst = max(range(6), key=self._runs.__getitem__)
+        severity = evaluate_levels(self._runs[worst], levels)
+        if severity != Severity.OK:
+            sensor = "accel" if worst < 3 else "gyro"
+            axis = "xyz"[worst % 3]
+            self._held = (now, severity, f"{sensor} {axis} clipped at {fields[worst]:.3g} for {self._runs[worst]} samples")
+
+    def findings(self, now: float) -> list[Finding]:
+        """IMU-009 while recent clipping is held."""
+        if self._held is None or now - self._held[0] >= EVENT_HOLD_SECONDS:
+            return []
+        return [("IMU-009", self._held[1], self._held[2])]
+
+
+class GyroBiasCheck:
+    """The gyro's mean reading while odometry says the robot is standing still.
+
+    Needs that second opinion: a steady reading alone can't tell a biased
+    gyro from a robot turning at a constant rate.
+    """
+
+    def __init__(self) -> None:
+        self._window: deque[tuple[float, tuple[float, float, float]]] = deque()
+        self._still_since: float | None = None
+        self._last_odom: float | None = None
+        self.bias: float | None = None
+
+    def observe_odometry(self, linear: float, angular: float, now: float) -> None:
+        """Take one odometry message's speeds."""
+        expired = self._last_odom is None or now - self._last_odom > _ODOM_EXPIRY_SECONDS
+        self._last_odom = now
+        if abs(linear) >= _STILL_MPS or abs(angular) >= _STILL_RADPS:
+            self._still_since = None
+        elif self._still_since is None or expired:
+            self._still_since = now
+
+    def observe_gyro(self, gyro: tuple[float, float, float], now: float) -> None:
+        """Take one gyro sample; refreshes `bias` once the robot has been still for a full window."""
+        self._window.append((now, gyro))
+        while now - self._window[0][0] > REST_WINDOW_SECONDS:
+            self._window.popleft()
+        if not self._robot_still(now) or len(self._window) < _MIN_REST_SAMPLES:
+            return
+        means = [statistics.fmean(sample[axis] for _time, sample in self._window) for axis in range(3)]
+        self.bias = math.sqrt(sum(mean * mean for mean in means))
+
+    def _robot_still(self, now: float) -> bool:
+        if self._still_since is None or self._last_odom is None or now - self._last_odom > _ODOM_EXPIRY_SECONDS:
+            return False
+        return now - self._still_since >= REST_WINDOW_SECONDS
+
+    def findings(self, levels: SeverityLevels | None) -> list[Finding]:
+        """IMU-010 for the last bias measured."""
+        if self.bias is None:
+            return []
+        severity = evaluate_levels(self.bias, levels)
+        if severity == Severity.OK:
+            return []
+        return [("IMU-010", severity, f"gyro reads {self.bias:.3f} rad/s with the robot standing still")]
+
+
+class StampRegularity:
+    """Gaps and jitter between the stamps of the messages the plugin gets to check (IMU-011).
+
+    High-rate topics are decimated, so this sees dropouts longer than the
+    check interval, not the odd late message between two checks.
+    """
+
+    def __init__(self) -> None:
+        self._last: float | None = None
+        self._intervals: deque[float] = deque(maxlen=_STAMP_INTERVALS)
+        self._held: tuple[float, int, str] | None = None
+
+    def observe(self, stamp: float, now: float, gap_levels: SeverityLevels | None) -> None:
+        """Take one message's stamp; an unset stamp is the core stamp check's to report."""
+        if stamp <= 0:
+            return
+        previous, self._last = self._last, stamp
+        if previous is None or stamp == previous:
+            return
+        interval = stamp - previous
+        if interval < 0:
+            self._held = (now, Severity.WARN, f"stamp went back {-interval:.3f} s")
+            return
+        if len(self._intervals) >= _MIN_INTERVALS_FOR_GAP:
+            usual = statistics.median(self._intervals)
+            severity = evaluate_levels(interval / usual, gap_levels)
+            if severity != Severity.OK:
+                self._held = (now, severity, f"{interval:.3f} s between stamps, usually {usual:.3f} s")
+                return  # a dropout says nothing about the usual interval
+        self._intervals.append(interval)
+
+    def jitter(self) -> float | None:
+        """The stamp intervals' standard deviation over their mean, once there are enough of them."""
+        if len(self._intervals) < _MIN_INTERVALS_FOR_JITTER:
+            return None
+        return statistics.pstdev(self._intervals) / statistics.fmean(self._intervals)
+
+    def findings(self, now: float, jitter_levels: SeverityLevels | None) -> list[Finding]:
+        """IMU-011 for a held gap or backward step, else for sustained jitter."""
+        if self._held is not None and now - self._held[0] < EVENT_HOLD_SECONDS:
+            return [("IMU-011", self._held[1], self._held[2])]
+        jitter = self.jitter()
+        severity = Severity.OK if jitter is None else evaluate_levels(jitter, jitter_levels)
+        return [] if severity == Severity.OK else [("IMU-011", severity, f"stamp jitter {jitter:.0%} of the interval")]

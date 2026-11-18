@@ -4,7 +4,10 @@ NaN/Inf values, a reading that's stuck (identical to the previous message),
 values outside a plausible range, a frame_id that changes between messages,
 and, whenever the IMU looks still, whether the length of its acceleration
 makes sense (`imu_checks.GravityCheck`). No setting says what to expect: an
-IMU may report gravity or have it filtered out, on any axis.
+IMU may report gravity or have it filtered out, on any axis. Also the
+orientation's norm, covariances left at zero, axes clipped at their range
+limit, stamp gaps and jitter, and, given an `odom` related topic to say the
+robot is standing still, gyro bias.
 """
 from __future__ import annotations
 
@@ -15,7 +18,15 @@ from typing import Any
 from sensor_msgs.msg import Imu
 
 from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, SeverityLevels, ThresholdZone, evaluate_levels
-from testudo.plugins.builtin.imu_checks import Finding, GravityCheck
+from testudo.plugins.builtin.imu_checks import (
+    Finding,
+    GravityCheck,
+    GyroBiasCheck,
+    SaturationCheck,
+    StampRegularity,
+    placeholder_covariances,
+    quaternion_norm_error,
+)
 from testudo.plugins.render import downsample, sparkline
 
 _IMU_TYPE = "sensor_msgs/msg/Imu"
@@ -76,6 +87,11 @@ class ImuPlugin(CheckPlugin):
         self._gyro_trend: deque[float] = deque(maxlen=_TREND_SIZE)
         self._last_trend_sample: float | None = None
         self._gravity = GravityCheck()
+        self._saturation = SaturationCheck()
+        self._gyro_bias = GyroBiasCheck()
+        self._stamps = StampRegularity()
+        self._quaternion_error: float | None = None
+        self._placeholders: list[str] = []
 
     @classmethod
     def msg_types(cls) -> tuple[str, ...]:
@@ -94,6 +110,11 @@ class ImuPlugin(CheckPlugin):
         return {
             "invalid_ratio": SeverityLevels(error=0.0),
             "stuck_count": SeverityLevels(warn=2, error=10),
+            "quaternion_norm_error": SeverityLevels(warn=0.01, error=0.1),
+            "saturated_samples": SeverityLevels(warn=2),
+            "gyro_bias_radps": SeverityLevels(warn=0.02),
+            "stamp_gap_ratio": SeverityLevels(warn=3.0),
+            "stamp_jitter_ratio": SeverityLevels(warn=0.5),
         }
 
     def on_tick(self, now_seconds: float) -> None:
@@ -105,6 +126,10 @@ class ImuPlugin(CheckPlugin):
             self._last_trend_sample = now_seconds
 
     def on_message(self, topic: str, msg: Any) -> None:
+        if topic == self.related_topics.get("odom"):
+            twist = msg.twist.twist
+            self._gyro_bias.observe_odometry(math.hypot(twist.linear.x, twist.linear.y), twist.angular.z, self._now)
+            return
         self._message_count += 1
         self._check_frame_id(msg.header.frame_id)
         self._on_imu(msg)
@@ -135,7 +160,8 @@ class ImuPlugin(CheckPlugin):
 
         accel_magnitude = math.sqrt(sum(v * v for v in fields[0:3]))
         gyro_magnitude = math.sqrt(sum(v * v for v in fields[3:6]))
-        self._plausibility_ok = (
+        # A NaN reading is IMU-001's to report: it has no magnitude to judge.
+        self._plausibility_ok = invalid > 0 or (
             accel_magnitude <= _IMU_ACCEL_MAGNITUDE_CEILING_MPS2
             and gyro_magnitude <= _IMU_GYRO_MAGNITUDE_CEILING_RADPS
         )
@@ -151,10 +177,34 @@ class ImuPlugin(CheckPlugin):
         self._check_stuck(fields)
         if invalid == 0:
             self._gravity.observe(accel_magnitude, gyro_magnitude, self._now)
+            self._saturation.observe(fields, self._now, self.levels.get("saturated_samples"))
+            self._gyro_bias.observe_gyro(self._gyro, self._now)
+        self._quaternion_error = quaternion_norm_error(msg.orientation, msg.orientation_covariance)
+        self._placeholders = placeholder_covariances(
+            {
+                "orientation": msg.orientation_covariance,
+                "gyro": msg.angular_velocity_covariance,
+                "accel": msg.linear_acceleration_covariance,
+            }
+        )
+        stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        self._stamps.observe(stamp, self._now, self.levels.get("stamp_gap_ratio"))
 
     def _findings(self) -> list[Finding]:
-        """The problems the multi-message checks currently report."""
-        return self._gravity.findings(self._now)
+        """The problems the checks beyond a single reading's values currently report."""
+        findings = [
+            *self._gravity.findings(self._now),
+            *self._saturation.findings(self._now),
+            *self._gyro_bias.findings(self.levels.get("gyro_bias_radps")),
+            *self._stamps.findings(self._now, self.levels.get("stamp_jitter_ratio")),
+        ]
+        if self._quaternion_error is not None:
+            severity = evaluate_levels(self._quaternion_error, self.levels.get("quaternion_norm_error"))
+            if severity != Severity.OK:
+                findings.append(("IMU-007", severity, f"orientation norm off by {self._quaternion_error:.3f}"))
+        if self._placeholders:
+            findings.append(("IMU-008", Severity.WARN, f"{', '.join(self._placeholders)} covariance all zero"))
+        return findings
 
     def get_status(self) -> CheckStatus:
         if self._message_count == 0:
@@ -211,6 +261,8 @@ class ImuPlugin(CheckPlugin):
             "frame": self._last_frame_id or "",
             "gravity_on_more": f"{gravity_sign}{_AXES[gravity_axis]}",
         }
+        if self._gyro_bias.bias is not None:
+            values["gyro_bias"] = f"{self._gyro_bias.bias:.4f} rad/s"
         if self._gravity.mode is not None:
             values["gravity"] = f"{self._gravity.mode}  [dim]|a| {self._gravity.magnitude:.2f} at rest[/dim]"
         # |a| stays uncolored: it's only judged at rest (see GravityCheck).
@@ -242,6 +294,12 @@ class ImuPlugin(CheckPlugin):
                 "frame_id": self._last_frame_id or "",
             }
         )
+        optional = {
+            "gyro_bias_rad_per_s": self._gyro_bias.bias,
+            "quaternion_norm_error": self._quaternion_error,
+            "stamp_jitter_ratio": self._stamps.jitter(),
+        }
+        metrics.update({key: value for key, value in optional.items() if value is not None})
         if self._gravity.magnitude is not None:
             metrics["accel_magnitude_at_rest_m_per_s2"] = self._gravity.magnitude
             metrics["gravity"] = self._gravity.mode or ""
