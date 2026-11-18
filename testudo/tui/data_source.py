@@ -7,12 +7,14 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from functools import cached_property
 from typing import TYPE_CHECKING, Callable, Protocol
 
-from testudo.core.config import ConfigError, ExcludeRule, FaultsConfig, SeverityMode
+from testudo.core.config import ConfigError, ExcludeRule, FaultsConfig, NodeProfilingConfig, SeverityMode
 from testudo.core import live_tuning
-from testudo.core.config_writer import write_code_override, write_exclude_rules, write_warn_level
+from testudo.core.config_writer import write_code_override, write_exclude_rules, write_setting, write_warn_level
 from testudo.core.fault_history import ClearedFault, FaultHistory
+from testudo.core.live_settings import LiveChecks
 from testudo.core.node_profiling.profiler import NodeProfiler
 from testudo.core.node_profiling.report import node_stat_to_topic_report
 from testudo.core.subscription_manager import SubscriptionManager, TopicReport
@@ -74,9 +76,12 @@ class LiveDataSource:
         config_path: str | None = None,
         node_profiler: NodeProfiler | None = None,
         faults: FaultsConfig | None = None,
+        node_profiling: NodeProfilingConfig | None = None,
     ) -> None:
         self._manager = manager
         self._severity_mode = severity_mode
+        self._faults_config = faults or FaultsConfig()
+        self._node_profiling_config = node_profiling or NodeProfilingConfig()
         # Only used to persist an Options-screen exclude rule back to disk
         # (see `add_exclude_rule`/`remove_exclude_rule`) -- `None` (e.g. in
         # a test harness with no real config file) just skips that write,
@@ -90,6 +95,33 @@ class LiveDataSource:
         self.fault_history = FaultHistory(
             retention=faults.retention, recent_window_seconds=faults.recent_window_seconds
         )
+
+    @property
+    def severity_mode(self) -> SeverityMode:
+        """How the overall status rolls up right now (Options > Checks can change it)."""
+        return self._severity_mode
+
+    def _set_severity_mode(self, mode: SeverityMode) -> None:
+        self._severity_mode = mode
+
+    @cached_property
+    def checks(self) -> LiveChecks:
+        """The settings under Options > Checks."""
+        return LiveChecks(
+            self._manager,
+            self.fault_history,
+            self._node_profiler,
+            self._severity_mode,
+            self._set_severity_mode,
+            self._faults_config,
+            self._node_profiling_config,
+        )
+
+    def change_check(self, key: str, value: object) -> str:
+        """Apply one Options > Checks setting and save it; says where it went and when it starts."""
+        in_effect = self.checks.apply(key, value)
+        saved = self._saved(lambda path: write_setting(path, tuple(key.split(".")), value))
+        return saved if in_effect else f"{saved}, takes effect on the next start"
 
     def poll(self) -> WatchSnapshot:
         self._manager.tick()

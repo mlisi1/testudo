@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import time
 from collections import Counter
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from testudo.core.aggregator import DEFAULT_REQUIRED_CONSECUTIVE, HysteresisDebouncer
@@ -51,6 +52,24 @@ class NodeProfiler:
         self._hysteresis_required_consecutive = hysteresis_required_consecutive
         self._timer = None
         self._last_tick_monotonic: float | None = None
+        self._paused = False
+
+    def set_paused(self, paused: bool) -> None:
+        """Stop sampling and drop every row (node profiling off), or start again."""
+        self._paused = paused
+        if paused:
+            self._latest = ()
+        self._last_tick_monotonic = None
+
+    def set_gpu_enabled(self, enabled: bool) -> None:
+        """Read GPU memory on the next samples, or stop reading it."""
+        self._config = replace(self._config, gpu_enabled=enabled)
+
+    def set_debounce_samples(self, samples: int) -> None:
+        """Ask every process's status for this many disagreeing samples from now on."""
+        self._hysteresis_required_consecutive = samples
+        for debouncer in list(self._debouncers.values()):
+            debouncer.set_required_consecutive(samples)
 
     def start(self) -> None:
         """Run an initial rediscovery pass and arm the periodic one.
@@ -65,7 +84,8 @@ class NodeProfiler:
         self._timer = self._node.create_timer(self._config.rediscovery_interval_seconds, self._on_rediscovery_timer)
 
     def _on_rediscovery_timer(self) -> None:
-        _maintenance.rediscover(self)
+        if not self._paused:
+            _maintenance.rediscover(self)
 
     def tick_if_due(self) -> bool:
         """`tick()`, but at most once per `poll_interval_seconds`. Returns whether it sampled.
@@ -77,6 +97,8 @@ class NodeProfiler:
         thread, and a resource reading doesn't change meaningfully in
         200ms anyway. Same thread-safety as `tick()`.
         """
+        if self._paused:
+            return False
         now = time.monotonic()
         if (
             self._last_tick_monotonic is not None

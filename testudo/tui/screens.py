@@ -13,7 +13,9 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen, Screen
 from textual.widgets import DataTable, Input, Static
 
+from testudo.core.topic_report import TopicReport
 from testudo.tui.data_source import WatchSnapshot
+from testudo.tui.display_prefs import WORST_FIRST, shows_topic, visible_reports
 from testudo.tui.detail_render import render_detail
 from testudo.tui.pane_split import DETAIL_CHROME_ROWS, detail_cap, detail_height, rendered_rows
 from testudo.tui.keybinds import (
@@ -86,7 +88,7 @@ class DashboardScreen(Screen):
     def on_mount(self) -> None:
         self.query_one("#filter-input", Input).display = False
         self.sync_header()
-        self.refresh_categories()
+        self.apply_display_prefs()
         self.query_one(CategorySummaryTable).focus()
         # Nothing has a size until the first layout: size the Detail Panel then.
         self.call_after_refresh(self.refresh_detail)
@@ -99,6 +101,16 @@ class DashboardScreen(Screen):
             # A replay's options are read-only: its slot goes to scrubbing.
             return "j/k move · tab/←→ pane · / search · n problem · s sort · p play · [ ] scrub · ? help · q quit"
         return "j/k move · tab/←→ pane · / search · n problem · a actions · p pause · o options · ? help · q quit"
+
+    def apply_display_prefs(self) -> None:
+        """Show the data the way Options > Display asks: default sort, hidden rows."""
+        worst_first = self.app.display_prefs.default_sort == WORST_FIRST
+        self.query_one(CategorySummaryTable).set_sort_by_severity(worst_first)
+        self.query_one(TopicDetailTable).set_sort_by_severity(worst_first)
+        self.refresh_categories()
+
+    def _visible_reports(self) -> list[TopicReport]:
+        return visible_reports(self.app.latest_snapshot.reports, self.app.display_prefs)
 
     def sync_header(self) -> None:
         header = self.query_one(TestudoHeader)
@@ -117,7 +129,7 @@ class DashboardScreen(Screen):
         self.refresh_categories()
 
     def refresh_categories(self) -> None:
-        self.query_one(CategorySummaryTable).update_categories(self.app.latest_snapshot.reports)
+        self.query_one(CategorySummaryTable).update_categories(self._visible_reports())
         self.refresh_attention()
         self.refresh_topics()
 
@@ -125,19 +137,22 @@ class DashboardScreen(Screen):
         """Fill the Plugin Panel's free rows with the "Needs attention" list (hidden when there are none)."""
         attention = self.query_one("#attention", Static)
         snapshot = self.app.latest_snapshot
+        reports = self._visible_reports()
+        hidden = {report.topic for report in snapshot.reports} - {report.topic for report in reports}
         text = attention_text(
-            snapshot.reports,
+            reports,
             attention.content_size.width,
             attention.content_size.height,
-            snapshot.cleared_faults,
+            tuple(fault for fault in snapshot.cleared_faults if fault.topic not in hidden),
             snapshot.time_s,
         )
         attention.update(text or "")
 
     def refresh_topics(self) -> None:
         categories = self.query_one(CategorySummaryTable)
-        reports = categories.reports_in(categories.selected_category, self.app.latest_snapshot.reports)
-        self.query_one(TopicDetailTable).update_topics(reports)
+        reports = categories.reports_in(categories.selected_category, self._visible_reports())
+        prefs = self.app.display_prefs
+        self.query_one(TopicDetailTable).update_topics([report for report in reports if shows_topic(report, prefs)])
         self.refresh_detail()
 
     def refresh_detail(self) -> None:
@@ -154,7 +169,8 @@ class DashboardScreen(Screen):
         detail = self.query_one("#detail-pane", Static)
         report = self.query_one(TopicDetailTable).selected_report
         if report is None:
-            detail.update("[dim]no topic selected[/dim]")
+            hiding = self.app.display_prefs.hide_ok_topics
+            detail.update("[dim]every topic here is OK (hidden: Options > Display)[/dim]" if hiding else "[dim]no topic selected[/dim]")
             return
         width = detail.size.width
         available = self.query_one("#panes").outer_size.height + detail.outer_size.height
@@ -311,7 +327,7 @@ class DashboardScreen(Screen):
         """
         if self._filtering:
             return
-        reports = self.app.latest_snapshot.reports
+        reports = self._visible_reports()
         problems = problem_topics(reports)
         if not problems:
             self.notify("nothing needs attention", timeout=2)

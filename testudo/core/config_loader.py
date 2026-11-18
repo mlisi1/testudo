@@ -11,6 +11,8 @@ from typing import Any
 import yaml
 
 from testudo.core.config import (
+    DEFAULT_DEBOUNCE_SAMPLES,
+    DEFAULT_MAX_CHECK_RATE_HZ,
     ActionConfig,
     ConfigError,
     ExcludeRule,
@@ -67,6 +69,8 @@ _TOP_LEVEL_KEYS = {
     "node_profiling",
     "faults",
     "check_undeclared_topics",
+    "max_check_rate_hz",
+    "debounce_samples",
 }
 
 
@@ -83,6 +87,10 @@ def _parse_config(raw: dict[str, Any], source: str) -> TestudoConfig:
     if not isinstance(check_undeclared_topics, bool):
         raise ConfigError(f"{source}: 'check_undeclared_topics' must be true or false")
 
+    debounce_samples = raw.get("debounce_samples", DEFAULT_DEBOUNCE_SAMPLES)
+    if isinstance(debounce_samples, bool) or not isinstance(debounce_samples, int) or debounce_samples < 1:
+        raise ConfigError(f"{source}: 'debounce_samples' must be a whole number of at least 1")
+
     publish = _parse_publish(raw.get("publish", {}), source)
     return TestudoConfig(
         topics=_parse_topics(raw.get("topics", {}), source),
@@ -95,6 +103,10 @@ def _parse_config(raw: dict[str, Any], source: str) -> TestudoConfig:
         node_profiling=_parse_node_profiling(raw.get("node_profiling", {}), source, publish),
         faults=_parse_faults(raw.get("faults", {}), source, publish),
         check_undeclared_topics=check_undeclared_topics,
+        max_check_rate_hz=parse_positive_number(
+            raw.get("max_check_rate_hz", DEFAULT_MAX_CHECK_RATE_HZ), "'max_check_rate_hz'", source
+        ),
+        debounce_samples=debounce_samples,
     )
 
 

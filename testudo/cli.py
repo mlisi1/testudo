@@ -148,7 +148,14 @@ def cmd_watch(args: argparse.Namespace) -> int:
     spin_thread: threading.Thread | None = None
     node_profiler: NodeProfiler | None = None
     try:
-        manager = SubscriptionManager(node, config, plugins, monitor_hz=not args.no_hz)
+        manager = SubscriptionManager(
+            node,
+            config,
+            plugins,
+            monitor_hz=not args.no_hz,
+            max_check_rate_hz=config.max_check_rate_hz,
+            hysteresis_required_consecutive=config.debounce_samples,
+        )
         # With the TUI, everything from here through app.run() returning can
         # log from a background thread (a missing message-interface package
         # is the common case) while Textual owns the terminal --
@@ -171,7 +178,9 @@ def cmd_watch(args: argparse.Namespace) -> int:
             spin_thread.start()
 
             if config.node_profiling.enabled:
-                node_profiler = NodeProfiler(node, config.node_profiling)
+                node_profiler = NodeProfiler(
+                    node, config.node_profiling, hysteresis_required_consecutive=config.debounce_samples
+                )
                 # NodeProfiler.start() creates its own rediscovery timer on
                 # `node`, so its graph calls land on this same spin thread
                 # without any further plumbing here -- see profiler.py.
@@ -182,10 +191,12 @@ def cmd_watch(args: argparse.Namespace) -> int:
                 config_path=config_path,
                 node_profiler=node_profiler,
                 faults=config.faults,
+                node_profiling=config.node_profiling,
             )
             output = LiveOutput(node, config, plugins, node_profiler, data_source.fault_history)
 
             def on_snapshot(snapshot) -> None:
+                output.severity_mode = data_source.severity_mode
                 output.publish(snapshot.reports, snapshot.overall, snapshot.time_s)
 
             if args.headless:
@@ -218,9 +229,13 @@ def _run_tui(node: rclpy.node.Node, data_source, on_snapshot, poll_rate_hz: floa
     """The live dashboard, polling `data_source` (and publishing via `on_snapshot`) at `poll_rate_hz`."""
     # Imported lazily: textual is only needed with the TUI.
     from testudo.tui.app import TestudoApp
+    from testudo.tui.display_prefs import default_display_prefs_path, load_display_prefs
     from testudo.tui.terminal_title import TITLE, terminal_title
 
+    prefs_path = default_display_prefs_path()
     app = TestudoApp(
+        display_prefs=load_display_prefs(prefs_path),
+        display_prefs_path=prefs_path,
         data_source=data_source,
         ros_distro=os.environ.get("ROS_DISTRO", "unknown"),
         ros_domain_id=os.environ.get("ROS_DOMAIN_ID", "0"),
@@ -345,6 +360,7 @@ def _watch_replay(bag: str, config: TestudoConfig, plugins: list, node: rclpy.no
     """`replay --watch`: the bag sampled into frames (`replay_timeline`), played back and scrubbed in the TUI."""
     from testudo.core.replay_timeline import replay_timeline
     from testudo.tui.app import TestudoApp
+    from testudo.tui.display_prefs import default_display_prefs_path, load_display_prefs
     from testudo.tui.log_summary import suppressed_terminal_logging
     from testudo.tui.replay_source import ReplayDataSource
     from testudo.tui.terminal_title import REPLAY_SUFFIX, TITLE, terminal_title
@@ -354,7 +370,10 @@ def _watch_replay(bag: str, config: TestudoConfig, plugins: list, node: rclpy.no
     except FileNotFoundError as exc:
         _logger.error("%s", exc)
         return 2
+    prefs_path = default_display_prefs_path()
     app = TestudoApp(
+        display_prefs=load_display_prefs(prefs_path),
+        display_prefs_path=prefs_path,
         data_source=ReplayDataSource(frames, config.exclude_topics),
         ros_distro=os.environ.get("ROS_DISTRO", "unknown"),
         ros_domain_id=os.environ.get("ROS_DOMAIN_ID", "0"),

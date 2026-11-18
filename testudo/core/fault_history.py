@@ -93,6 +93,10 @@ class FaultHistory:
         self._retention = retention
         self._recent_window_seconds = recent_window_seconds
 
+    def set_retention(self, retention: FaultRetention) -> None:
+        """Keep cleared faults by this rule from the next `update` on."""
+        self._retention = retention
+
     def update(self, reports: list[TopicReport], now: float) -> None:
         """Fold in one poll's `reports`, taken at time `now`."""
         present = {report.topic for report in reports}

@@ -11,11 +11,11 @@ from __future__ import annotations
 from collections import Counter
 from typing import Callable
 
-from testudo.core.config import SeverityMode
+from testudo.core.config import DEFAULT_DEBOUNCE_SAMPLES, SeverityMode
 from testudo.core.topic_report import TopicReport
 from testudo.plugins.base import SEVERITY_LABELS, CheckStatus, Severity
 
-DEFAULT_REQUIRED_CONSECUTIVE = 3
+DEFAULT_REQUIRED_CONSECUTIVE = DEFAULT_DEBOUNCE_SAMPLES
 
 
 class HysteresisDebouncer:
@@ -34,6 +34,12 @@ class HysteresisDebouncer:
         self._stable: CheckStatus | None = None
         self._candidate_severity: int | None = None
         self._candidate_count = 0
+
+    def set_required_consecutive(self, required_consecutive: int) -> None:
+        """Ask for this many disagreeing samples from now on."""
+        if required_consecutive < 1:
+            raise ValueError("required_consecutive must be >= 1")
+        self._required_consecutive = required_consecutive
 
     @property
     def current(self) -> CheckStatus | None:

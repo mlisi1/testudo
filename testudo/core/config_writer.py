@@ -88,6 +88,11 @@ def edit_config_file(path: str | Path, edit: Callable[[str], str]) -> None:
         raise
 
 
+def write_setting(path: str | Path, key: ConfigPath, value: Any) -> None:
+    """Set one plain setting, such as `("faults", "retention")`, in the file at `path`."""
+    edit_config_file(path, lambda text: set_value(text, key, value))
+
+
 def write_exclude_rules(path: str | Path, rules: list[ExcludeRule]) -> None:
     """Make the `exclude_topics:` list in the file at `path` hold exactly `rules`.
 

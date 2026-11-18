@@ -16,6 +16,12 @@ from pathlib import Path
 from testudo.plugins.base import SeverityLevels, ThresholdZone
 
 
+#: Full-tier content checks run at most this often per topic (`max_check_rate_hz:`).
+DEFAULT_MAX_CHECK_RATE_HZ = 10.0
+#: Samples in a row that must disagree before a topic's severity changes (`debounce_samples:`).
+DEFAULT_DEBOUNCE_SAMPLES = 3
+
+
 def default_config_path() -> Path:
     """`$XDG_CONFIG_HOME/testudo/config.yaml`, or `~/.config/testudo/config.yaml` if unset.
 
@@ -283,3 +289,5 @@ class TestudoConfig:
     faults: FaultsConfig = field(default_factory=FaultsConfig)
     #: False limits content checks to what the config declares; other topics get liveness and rate only.
     check_undeclared_topics: bool = True
+    max_check_rate_hz: float = DEFAULT_MAX_CHECK_RATE_HZ
+    debounce_samples: int = DEFAULT_DEBOUNCE_SAMPLES

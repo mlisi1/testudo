@@ -3,15 +3,15 @@
 Split out of screens.py (which stays focused on the live dashboard + help
 overlay) since this is a separate, independently-growing concern: a
 top-level `OptionsMenuScreen` listing settings to drill into, and one
-screen per setting -- today just `ExcludeTopicsScreen`. A future setting
-gets its own screen alongside it and one more entry in the menu, rather
-than either screen accumulating unrelated widgets of its own.
+screen per kind of setting: `ExcludeTopicsScreen`, and `SettingsScreen` for
+the Checks and Display lists. A future setting gets its own screen or a row
+in those lists, rather than any screen accumulating unrelated widgets.
 """
 from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, OptionList, Static
 from textual.widgets.option_list import Option
@@ -19,6 +19,7 @@ from textual.widgets.option_list import Option
 from testudo.core.config import ExcludeMatchType, ExcludeRule, InvalidExcludePatternError
 from testudo.tui.data_source import WatchDataSource
 from testudo.tui.keybinds import NavDataTable
+from testudo.tui.settings_screen import ChecksSettings, DisplaySettings, SettingsScreen
 
 #: Case-insensitive prefixes marking a pattern as a regex, stripped before
 #: constructing the `ExcludeRule` -- one field, one convention, rather
@@ -43,8 +44,7 @@ def _parse_pattern_input(raw: str) -> tuple[str, ExcludeMatchType]:
 class OptionsMenuScreen(ModalScreen):
     """`o`: the top-level options menu -- a list of settings to drill into.
 
-    Currently just one entry (Exclude Topics); this screen's only job is
-    to list entries and push the screen behind whichever one is selected.
+    This screen's only job is to list entries and push the screen behind whichever one is selected.
     `Esc` from a pushed setting screen pops back to this menu for free
     (it's just the screen below on the stack again), and `Esc` from here
     closes the whole thing.
@@ -53,6 +53,14 @@ class OptionsMenuScreen(ModalScreen):
     BINDINGS = [Binding("escape", "dismiss_screen", "Close")]
 
     _EXCLUDE_TOPICS_OPTION_ID = "exclude_topics"
+    _CHECKS_OPTION_ID = "checks"
+    _DISPLAY_OPTION_ID = "display"
+
+    _HELP = {
+        _EXCLUDE_TOPICS_OPTION_ID: "Topics to stop watching, by name or regex. Testudo doesn't subscribe to them at all.",
+        _CHECKS_OPTION_ID: "How the running checks behave. Saved to the robot's config.",
+        _DISPLAY_OPTION_ID: "How the dashboard looks for you. Saved to your own preferences, not the robot's config.",
+    }
 
     def __init__(self, data_source: WatchDataSource) -> None:
         super().__init__()
@@ -61,14 +69,22 @@ class OptionsMenuScreen(ModalScreen):
     def compose(self) -> ComposeResult:
         with Vertical(id="options-menu-panel"):
             yield Static("[b]Options[/b]", id="options-menu-title")
-            yield OptionList(
-                Option("Exclude Topics", id=self._EXCLUDE_TOPICS_OPTION_ID),
-                id="options-menu-list",
-            )
+            entries = [Option("Exclude Topics", id=self._EXCLUDE_TOPICS_OPTION_ID)]
+            if self._data_source.is_live():  # a replay's checks have already run
+                entries.append(Option("Checks", id=self._CHECKS_OPTION_ID))
+            entries.append(Option("Display", id=self._DISPLAY_OPTION_ID))
+            with Horizontal(id="options-menu-body"):
+                yield OptionList(*entries, id="options-menu-list")
+                yield Static("", id="options-menu-help", markup=False)
             yield Static("enter: open   esc: close", id="options-menu-hint")
 
     def on_mount(self) -> None:
-        self.query_one(OptionList).focus()
+        menu = self.query_one(OptionList)
+        menu.highlighted = 0
+        menu.focus()
+
+    def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
+        self.query_one("#options-menu-help", Static).update(self._HELP[event.option_id])
 
     def action_dismiss_screen(self) -> None:
         self.dismiss()
@@ -76,6 +92,10 @@ class OptionsMenuScreen(ModalScreen):
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option_id == self._EXCLUDE_TOPICS_OPTION_ID:
             self.app.push_screen(ExcludeTopicsScreen(self._data_source))
+        elif event.option_id == self._CHECKS_OPTION_ID:
+            self.app.push_screen(SettingsScreen(ChecksSettings(self._data_source)))
+        elif event.option_id == self._DISPLAY_OPTION_ID:
+            self.app.push_screen(SettingsScreen(DisplaySettings(self.app)))
 
 
 class ExcludeTopicsScreen(ModalScreen):

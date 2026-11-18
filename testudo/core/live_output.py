@@ -40,7 +40,8 @@ class LiveOutput:
         self._faults_publisher = (
             node.create_publisher(DiagnosticArray, config.faults.publish_topic, 10) if fault_history is not None else None
         )
-        self._severity_mode = config.severity_mode
+        #: Follows the setting while running: the caller assigns it before publishing.
+        self.severity_mode = config.severity_mode
         self._topics = DiagnosticOutput(node, config.publish, plugins)
         self._node_profiler = node_profiler
         self._node_publisher = (
@@ -71,5 +72,5 @@ class LiveOutput:
         if node_stats is self._last_node_stats:
             return
         self._last_node_stats = node_stats
-        overall_nodes = self._node_profiler.overall_status(self._severity_mode)
+        overall_nodes = self._node_profiler.overall_status(self.severity_mode)
         self._node_publisher.publish(build_node_diagnostic_array(stamp, list(node_stats), overall_nodes))

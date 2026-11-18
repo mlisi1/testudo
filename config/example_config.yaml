@@ -34,6 +34,13 @@ severity_mode: worst  # worst | weighted | both
 # every message, which a big global costmap can make expensive.
 check_undeclared_topics: true
 
+# Content checks run at most this often per topic, however fast it publishes.
+# Liveness and rate still see every message.
+max_check_rate_hz: 10.0
+
+# Samples in a row that must disagree before a topic's severity changes.
+debounce_samples: 3
+
 publish:
   rate_hz: 5.0
   # One DiagnosticArray topic per plugin: /testudo/localization, /testudo/gnss,

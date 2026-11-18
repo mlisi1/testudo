@@ -58,31 +58,49 @@ QUICK_ACTIONS_BINDING = Binding("a", "quick_actions", "Actions")
 PANE_LEFT_BINDING = Binding("left", "focus_previous_pane", "Categories", priority=True, show=False)
 PANE_RIGHT_BINDING = Binding("right", "focus_next_pane", "Topics", priority=True, show=False)
 
-HELP_TEXT = """\
-[b]Testudo -- keybindings[/b]
+#: Width of the help overlay's key column.
+_HELP_KEY_WIDTH = 17
 
-  q                quit
-  p                pause / resume the live view (replay --watch: play / pause the bag)
-  [ / ]            replay --watch: one frame back / forward ({ / }: ten frames)
-  r                reset stats (clear accumulated history, keep watching)
-  o                options menu (exclude topics -- literal or regex)
-  /                search: on categories, topic names too; on topics, this category
-  j / k / arrows   move the cursor -- updates the panes to the right live
-  tab / shift+tab  switch focus between the categories and topics tables
-  left / right     switch focus between the categories and topics tables
-  enter            switch focus (categories <-> topics)
-  esc              focus categories (or clear the filter)
-  s                sort the focused table: worst first ▼ / by name ▲
-  y                copy the highlighted topic's name to the clipboard
-  n / N            jump to the next / previous topic that needs attention
-  a                actions on the highlighted topic, saved to the config:
-                     w downgrade the code to warn · m mute it · r restore it
-                     l warn at the current value · x exclude the topic
-                     c next code · esc cancel
-  ?                this help
 
-Press any key to close.
-"""
+def _help_row(keys: str, description: str) -> str:
+    """One help line: `keys` in bold (a literal `[` escaped from markup), then what they do."""
+    shown = keys.replace("[", "\\[")
+    return f"  [b]{shown}[/b]{' ' * (_HELP_KEY_WIDTH - len(keys))}{description}"
+
+
+def _help_detail(*actions: tuple[str, str]) -> str:
+    """A line under a key's row: the keys available once it's pressed, each in bold."""
+    return " " * (_HELP_KEY_WIDTH + 4) + " · ".join(f"[b]{key}[/b] {text}" for key, text in actions)
+
+
+HELP_TEXT = "\n".join(
+    [
+        "[b]Testudo -- keybindings[/b]",
+        "",
+        _help_row("q", "quit"),
+        _help_row("p", "pause / resume the live view (replay --watch: play / pause the bag)"),
+        _help_row("[ / ]", "replay --watch: one frame back / forward ([b]{ / }[/b]: ten frames)"),
+        _help_row("r", "reset stats (clear accumulated history, keep watching)"),
+        _help_row("o", "options: exclude topics, checks, display"),
+        _help_row("/", "search: on categories, topic names too; on topics, this category"),
+        _help_row("j / k / arrows", "move the cursor -- updates the panes to the right live"),
+        _help_row("tab / shift+tab", "switch focus between the categories and topics tables"),
+        _help_row("left / right", "switch focus between the categories and topics tables"),
+        _help_row("enter", "switch focus (categories <-> topics)"),
+        _help_row("esc", "focus categories (or clear the filter)"),
+        _help_row("s", "sort the focused table: worst first ▼ / by name ▲"),
+        _help_row("y", "copy the highlighted topic's name to the clipboard"),
+        _help_row("n / N", "jump to the next / previous topic that needs attention"),
+        _help_row("a", "actions on the highlighted topic, saved to the config:"),
+        _help_detail(("w", "downgrade the code to warn"), ("m", "mute it"), ("r", "restore it")),
+        _help_detail(("l", "warn at the current value"), ("x", "exclude the topic")),
+        _help_detail(("c", "next code"), ("esc", "cancel")),
+        _help_row("?", "this help"),
+        "",
+        "Press any key to close.",
+        "",
+    ]
+)
 
 
 class NavDataTable(DataTable):

@@ -38,7 +38,7 @@ import rclpy.node
 
 from testudo.core.aggregator import DEFAULT_REQUIRED_CONSECUTIVE, HysteresisDebouncer, aggregate_reports
 from testudo.core.clock import TestudoClock
-from testudo.core.config import ActionConfig, ExcludeRule, SeverityMode, TestudoConfig, TopicConfig
+from testudo.core.config import DEFAULT_MAX_CHECK_RATE_HZ, ActionConfig, ExcludeRule, SeverityMode, TestudoConfig, TopicConfig
 from testudo.core.exclusion import add_rule, matching_rule, remove_rule
 from testudo.core.global_watches import DEFAULT_GET_STATE_TIMEOUT_SECONDS
 from testudo.core.lifecycle import LifecycleTracker
@@ -94,12 +94,11 @@ def _index_presence_only_msg_types(plugins: list[DiscoveredPlugin]) -> frozenset
 #: before subscribing.
 DEFAULT_GRAPH_SETTLE_SECONDS = 1.0
 
-#: Full-tier content checks run at most this often per topic, regardless of
-#: the topic's actual publish rate -- a 200 Hz IMU still only gets its
-#: plugin's `on_message` called ~this many times a second. Liveness
-#: (TopicVitals) still sees every message; only the (potentially expensive)
-#: content check is decimated.
-DEFAULT_MAX_CHECK_RATE_HZ = 10.0
+#: `DEFAULT_MAX_CHECK_RATE_HZ`: full-tier content checks run at most this often
+#: per topic, regardless of the topic's actual publish rate -- a 200 Hz IMU
+#: still only gets its plugin's `on_message` called ~this many times a second.
+#: Liveness (TopicVitals) still sees every message; only the (potentially
+#: expensive) content check is decimated.
 
 
 def _index_plugins_by_msg_type(plugins: list[DiscoveredPlugin]) -> dict[str, type[CheckPlugin]]:

@@ -250,7 +250,14 @@ def run_replay(
 
     clock_source = ReplayClockSource()
     clock = TestudoClock(clock_source, sim_time_query=lambda: True)
-    manager = SubscriptionManager(node, config, discovered_plugins, clock=clock)
+    manager = SubscriptionManager(
+        node,
+        config,
+        discovered_plugins,
+        clock=clock,
+        max_check_rate_hz=config.max_check_rate_hz,
+        hysteresis_required_consecutive=config.debounce_samples,
+    )
     manager._latched = _latched_topics(bag_path)
 
     _wire_tf_watch_for_replay(manager, topic_types)

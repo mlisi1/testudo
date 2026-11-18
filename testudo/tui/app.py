@@ -9,12 +9,16 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Callable
+from dataclasses import replace
+from pathlib import Path
+from typing import Any, Callable
 
 from textual.app import App
 from textual.css.query import NoMatches
 
+from testudo.core.config import ConfigError
 from testudo.tui.data_source import WatchDataSource, WatchSnapshot
+from testudo.tui.display_prefs import DisplayPrefs, save_display_pref
 from testudo.tui.replay_source import ReplayTimeline
 from testudo.tui.keybinds import APP_BINDINGS
 from testudo.tui.options_screen import OptionsMenuScreen
@@ -79,15 +83,19 @@ class TestudoApp(App):
        own default CSS only sets layout/overflow/background, not
        alignment, so left alone a panel renders pinned to the top-left
        corner of an otherwise-full-height, mostly-empty overlay. */
-    HelpScreen, OptionsMenuScreen, ExcludeTopicsScreen { align: center middle; }
+    HelpScreen, OptionsMenuScreen, ExcludeTopicsScreen, SettingsScreen { align: center middle; }
     #help-text { padding: 0 2; border: round $primary; }
-    #options-menu-panel { padding: 1 2; border: round $primary; width: 40%; height: auto; }
-    #options-menu-list { height: auto; }
+    #options-menu-panel { padding: 1 2; border: round $primary; width: 70%; height: auto; }
+    #options-menu-body, #settings-body { height: auto; }
+    #options-menu-list { width: 22; height: auto; }
+    #options-menu-help, #settings-help { width: 1fr; height: auto; padding: 1 0 1 2; color: $text-muted; }
     #options-menu-hint { height: 1; color: $text-muted; }
     #options-panel { padding: 1 2; border: round $primary; width: 80%; height: auto; max-height: 80%; }
     #exclude-table { height: 10; }
+    #settings-panel { padding: 1 2; border: round $primary; width: 90%; height: auto; }
+    #settings-list { width: 36; height: auto; max-height: 12; }
     #options-preview { height: 1; color: $text-muted; }
-    #options-message { height: 1; color: $text-muted; }
+    #options-message { height: auto; color: $text-muted; }
     /* DataTable's own header row styling defaults to $panel/$foreground --
        overridden here (not per-table) so both the Plugin Panel's and Topic
        Panel's column headers pick up the neutral slate, distinguishing
@@ -121,8 +129,13 @@ class TestudoApp(App):
         poll_rate_hz: float = DEFAULT_POLL_RATE_HZ,
         sim_time_active: bool = False,
         on_snapshot: Callable[[WatchSnapshot], None] | None = None,
+        display_prefs: DisplayPrefs | None = None,
+        display_prefs_path: Path | None = None,
     ) -> None:
         super().__init__()
+        self.display_prefs = display_prefs or DisplayPrefs()
+        self._display_prefs_path = display_prefs_path
+        self._last_draw_monotonic = 0.0
         self.data_source = data_source
         self.ros_distro = ros_distro
         self.ros_domain_id = ros_domain_id
@@ -166,7 +179,37 @@ class TestudoApp(App):
         self.latest_snapshot = self.data_source.poll()
         if self._on_snapshot is not None:
             self._on_snapshot(self.latest_snapshot)
-        self._notify_dashboard()
+        if force or self._draw_is_due():
+            self._notify_dashboard()
+
+    def _draw_is_due(self) -> bool:
+        """Whether the display's refresh rate allows a redraw; polling and publishing go on regardless."""
+        now = time.monotonic()
+        # 0.8: a timer firing a little early mustn't skip every other frame.
+        if now - self._last_draw_monotonic < 0.8 / self.display_prefs.refresh_hz:
+            return False
+        self._last_draw_monotonic = now
+        return True
+
+    @property
+    def poll_rate_hz(self) -> float:
+        """How often new data arrives, which limits the display's refresh rate."""
+        return self._poll_rate_hz
+
+    def change_display_pref(self, key: str, value: Any) -> str:
+        """Apply one Options > Display setting and save it to the per-user file; says where it went."""
+        self.display_prefs = replace(self.display_prefs, **{key: value})
+        for screen in self.screen_stack:
+            if isinstance(screen, DashboardScreen):
+                screen.apply_display_prefs()
+        if self._display_prefs_path is None:
+            return "for this session only: no preferences file"
+        try:
+            save_display_pref(self._display_prefs_path, key, value)
+        except (OSError, ConfigError) as exc:
+            _logger.warning("could not save to %s: %s", self._display_prefs_path, exc)
+            return f"for this session only: could not save ({exc})"
+        return f"saved to {self._display_prefs_path}"
 
     def _notify_dashboard(self) -> None:
         for screen in self.screen_stack:

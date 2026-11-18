@@ -200,7 +200,7 @@ def test_every_code_metric_names_a_level_the_plugin_reads(module) -> None:
 
 def test_the_help_lists_every_quick_action_key() -> None:
     keys = {binding.key for binding in QuickActionBar.BINDINGS}
-    section = HELP_TEXT[HELP_TEXT.index("  a   ") : HELP_TEXT.index("  ?   ")]
+    section = HELP_TEXT[HELP_TEXT.index("[b]a[/b]") : HELP_TEXT.index("[b]?[/b]")]
     assert keys == {"w", "m", "l", "r", "c", "x", "escape"}
     for key in keys:
-        assert re.search(rf"\b{'esc' if key == 'escape' else key} ", section), key
+        assert f"[b]{'esc' if key == 'escape' else key}[/b]" in section, key
