@@ -78,11 +78,13 @@ def discover_light_path_plugins(plugins_dir: str | Path) -> list[DiscoveredPlugi
 
     Each file is expected to decorate its plugin class(es) with
     `@register_plugin`. A file that fails to import is logged and skipped.
-    Returns an empty list if `plugins_dir` doesn't exist.
+    A leading `~` is expanded. Returns an empty list, with a warning, if
+    `plugins_dir` isn't a directory.
     """
-    plugins_dir = Path(plugins_dir)
+    plugins_dir = Path(plugins_dir).expanduser()
     discovered: list[DiscoveredPlugin] = []
     if not plugins_dir.is_dir():
+        _logger.warning("plugins_dir '%s' is not a directory: no plugins loaded from it", plugins_dir)
         return discovered
 
     seen_before = list(_light_path_registry)

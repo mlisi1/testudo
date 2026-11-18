@@ -71,10 +71,10 @@ Every non-OK status needs at least one active code, because that's what the dash
 
 ## 2. Load it
 
-Point the config at the directory, with an absolute path because `~` isn't expanded:
+Point the config at the directory:
 
 ```yaml
-plugins_dir: /home/you/testudo_plugins
+plugins_dir: ~/testudo_plugins
 ```
 
 Check that Testudo finds it:
