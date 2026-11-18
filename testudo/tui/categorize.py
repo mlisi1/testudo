@@ -12,6 +12,7 @@ from testudo.core.topic_report import TopicReport
 #: "Actions", "NavSatFix" -> "GNSS").
 _FRIENDLY_NAMES = {
     "nav_msgs/msg/Odometry": "Localization",
+    "geometry_msgs/msg/PoseWithCovarianceStamped": "Localization",
     "action_msgs/msg/GoalStatusArray": "Actions",
     "nav2_msgs/msg/BehaviorTreeLog": "BT Navigator",
     "tf2_msgs/msg/TFMessage": "TF",

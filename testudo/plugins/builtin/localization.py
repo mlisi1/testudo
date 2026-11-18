@@ -1,7 +1,8 @@
 """Localization/covariance content-check plugin.
 
-Checks a nav_msgs/msg/Odometry stream for: covariance magnitude against
-configured threshold zones, positive-semi-definiteness of the pose/twist
+Checks a nav_msgs/msg/Odometry or geometry_msgs/msg/PoseWithCovarianceStamped
+stream (the same checks on two wire formats; a pose simply has no twist) for:
+covariance magnitude against configured threshold zones, positive-semi-definiteness of the pose/twist
 covariance matrices, an unbounded covariance growth-rate sanity check, and
 (when a `cmd_vel` related topic is configured) a cross-check against
 commanded velocity to catch a robot that isn't moving despite being told to.
@@ -40,6 +41,9 @@ from testudo.plugins.builtin.localization_layout import (
     twist_sigma_line,
 )
 from testudo.plugins.render import downsample, meter, sparkline
+
+ODOMETRY_MSG_TYPE = "nav_msgs/msg/Odometry"
+POSE_MSG_TYPE = "geometry_msgs/msg/PoseWithCovarianceStamped"
 
 #: Position (x, y, z) and orientation (roll, pitch, yaw -- rotation about
 #: X/Y/Z, per REP 103) variances live at these diagonal indices in the
@@ -108,7 +112,7 @@ def _split_zone(zone: ThresholdZone | None, parts: int) -> ThresholdZone | None:
 
 
 class LocalizationPlugin(CheckPlugin):
-    """Covariance sanity, growth-rate, and (optional) cmd_vel cross-check for nav_msgs/Odometry."""
+    """Covariance sanity, growth-rate, and (optional) cmd_vel cross-check for a localization output."""
 
     def __init__(
         self,
@@ -135,13 +139,13 @@ class LocalizationPlugin(CheckPlugin):
         self._twist_variance: tuple[float, float] = (0.0, 0.0)
         self._frames: tuple[str, str] = ("", "")
         self._now = 0.0
-        self._stamp_lag: float | None = None
+        self._has_twist = False
         self._sigma_xy_history: deque[float] = deque(maxlen=_SIGMA_HISTORY_SIZE)
         self._last_sigma_sample: float | None = None
 
     @classmethod
     def msg_types(cls) -> tuple[str, ...]:
-        return ("nav_msgs/msg/Odometry",)
+        return (ODOMETRY_MSG_TYPE, POSE_MSG_TYPE)
 
     @classmethod
     def default_thresholds(cls) -> dict[str, ThresholdZone]:
@@ -176,15 +180,16 @@ class LocalizationPlugin(CheckPlugin):
 
     def on_message(self, topic: str, msg: Any) -> None:
         if topic == self.related_topics.get("cmd_vel"):
-            self._last_cmd_vel = (msg.linear.x, msg.angular.z)
+            # geometry_msgs Twist, or TwistStamped with the same fields under `.twist`.
+            twist = getattr(msg, "twist", msg)
+            self._last_cmd_vel = (twist.linear.x, twist.angular.z)
             return
-        self._on_odometry(msg)
+        self._on_pose(msg)
 
-    def _on_odometry(self, msg: Any) -> None:
+    def _on_pose(self, msg: Any) -> None:
         self._message_count += 1
 
         pose_covariance = msg.pose.covariance
-        twist_covariance = msg.twist.covariance
 
         self._position_variance = tuple(float(pose_covariance[i]) for i in _POSITION_VARIANCE_INDICES)
         self._orientation_variance = tuple(float(pose_covariance[i]) for i in _ORIENTATION_VARIANCE_INDICES)
@@ -197,24 +202,27 @@ class LocalizationPlugin(CheckPlugin):
         self._orientation_rpy = _quaternion_to_euler(orientation.x, orientation.y, orientation.z, orientation.w)
 
         pose_matrix = np.array(pose_covariance, dtype=float).reshape(6, 6)
-        twist_matrix = np.array(twist_covariance, dtype=float).reshape(6, 6)
         self._pose_psd_ok = _is_positive_semidefinite(pose_matrix)
-        self._twist_psd_ok = _is_positive_semidefinite(twist_matrix)
+        self._frames = (msg.header.frame_id, getattr(msg, "child_frame_id", ""))
 
+        stamp_seconds = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        self._growth_history.append((stamp_seconds, self._position_covariance_trace))
+        self._growth_rate = self._compute_growth_rate()
+
+        self._has_twist = hasattr(msg, "twist")
+        if self._has_twist:
+            self._on_twist(msg.twist)
+
+    def _on_twist(self, twist: Any) -> None:
+        """An Odometry message's velocity half; a pose message has none."""
+        twist_covariance = twist.covariance
+        self._twist_psd_ok = _is_positive_semidefinite(np.array(twist_covariance, dtype=float).reshape(6, 6))
         self._twist_variance = (
             float(twist_covariance[_TWIST_LINEAR_X_VARIANCE_INDEX]),
             float(twist_covariance[_TWIST_ANGULAR_Z_VARIANCE_INDEX]),
         )
-        self._frames = (msg.header.frame_id, msg.child_frame_id)
-
-        stamp_seconds = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-        # Only meaningful once a tick has set the clock and the stamp is set at all.
-        self._stamp_lag = self._now - stamp_seconds if self._now > 0 and stamp_seconds > 0 else None
-        self._growth_history.append((stamp_seconds, self._position_covariance_trace))
-        self._growth_rate = self._compute_growth_rate()
-
-        self._last_linear_x = msg.twist.twist.linear.x
-        self._last_angular_z = msg.twist.twist.angular.z
+        self._last_linear_x = twist.twist.linear.x
+        self._last_angular_z = twist.twist.angular.z
 
     def _compute_growth_rate(self) -> float:
         if len(self._growth_history) < 2:
@@ -227,6 +235,8 @@ class LocalizationPlugin(CheckPlugin):
         return (v1 - v0) / span
 
     def _cmd_vel_cross_check(self) -> tuple[int, str]:
+        if not self._has_twist:
+            return Severity.OK, "no velocity on this message type"
         if self._last_cmd_vel is None:
             return Severity.OK, "no cmd_vel received yet"
         cmd_linear_x, cmd_angular_z = self._last_cmd_vel
@@ -295,7 +305,8 @@ class LocalizationPlugin(CheckPlugin):
         orientation_zone = self.thresholds.get("yaw_variance")
         growth_zone = self.thresholds.get("covariance_growth_rate")
         psd = (self._pose_psd_ok, self._twist_psd_ok)
-        motion = motion_rows((self._last_linear_x, self._last_angular_z), self._last_cmd_vel, psd)
+        actual = (self._last_linear_x, self._last_angular_z) if self._has_twist else (None, None)
+        motion = motion_rows(actual, self._last_cmd_vel, psd)
 
         def sigmas(segments: int) -> list[str]:
             return sigma_rows(self._position_variance, self._orientation_variance, position_zone, orientation_zone, segments)
@@ -313,10 +324,9 @@ class LocalizationPlugin(CheckPlugin):
                 f"[dim]{frame or '?'} → {child or '?'}[/dim]"
             ),
             "pose_more": pose_line(self._position, self._orientation_rpy[2]),
-            "twist_σ_more": twist_sigma_line(*self._twist_variance),
         }
-        if self._stamp_lag is not None:
-            values["stamp_lag_more"] = f"{self._stamp_lag * 1000:.0f} ms"
+        if self._has_twist:
+            values["twist_σ_more"] = twist_sigma_line(*self._twist_variance)
 
         return CheckStatus(
             severity=worst,
@@ -345,20 +355,23 @@ class LocalizationPlugin(CheckPlugin):
                 "position_covariance_trace_m2": self._position_covariance_trace,
                 "sigma_xy_m": self._sigma_xy(),
                 "covariance_growth_rate_m2_per_s": self._growth_rate,
-                "linear_x_m_per_s": self._last_linear_x,
-                "angular_z_rad_per_s": self._last_angular_z,
-                "linear_variance_m2_per_s2": self._twist_variance[0],
-                "angular_variance_rad2_per_s2": self._twist_variance[1],
                 "pose_psd_ok": self._pose_psd_ok,
-                "twist_psd_ok": self._twist_psd_ok,
                 "frame_id": frame,
                 "child_frame_id": child,
             }
         )
+        if self._has_twist:
+            metrics.update(
+                {
+                    "linear_x_m_per_s": self._last_linear_x,
+                    "angular_z_rad_per_s": self._last_angular_z,
+                    "linear_variance_m2_per_s2": self._twist_variance[0],
+                    "angular_variance_rad2_per_s2": self._twist_variance[1],
+                    "twist_psd_ok": self._twist_psd_ok,
+                }
+            )
         if self._last_cmd_vel is not None:
             metrics["cmd_linear_x_m_per_s"], metrics["cmd_angular_z_rad_per_s"] = self._last_cmd_vel
-        if self._stamp_lag is not None:
-            metrics["stamp_lag_s"] = self._stamp_lag
         return metrics
 
     def _sigma_xy_cell(self, severity: int, growth_zone: ThresholdZone | None) -> str:

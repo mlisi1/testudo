@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 
 import pytest
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import PoseWithCovarianceStamped, Twist, TwistStamped
 from nav_msgs.msg import Odometry
 
 from rich.text import Text
@@ -39,6 +39,42 @@ def _odometry(
     msg.twist.twist.linear.x = linear_x
     msg.twist.twist.angular.z = angular_z
     return msg
+
+
+def _pose(*, xx: float = 0.0, frame_id: str = "map") -> PoseWithCovarianceStamped:
+    msg = PoseWithCovarianceStamped()
+    msg.header.frame_id = frame_id
+    cov = [0.0] * 36
+    cov[0] = xx
+    msg.pose.covariance = cov
+    msg.pose.pose.orientation.w = 1.0
+    return msg
+
+
+def test_pose_message_is_covered_with_the_same_covariance_checks() -> None:
+    assert "geometry_msgs/msg/PoseWithCovarianceStamped" in LocalizationPlugin.msg_types()
+    plugin = LocalizationPlugin()
+    plugin.on_message("/amcl_pose", _pose(xx=9999.0))
+    assert plugin.get_status().code_severities["LOC-001"] == Severity.ERROR
+
+
+def test_pose_message_reports_no_velocity() -> None:
+    plugin = LocalizationPlugin(related_topics={"cmd_vel": "/cmd_vel"})
+    plugin.on_message("/cmd_vel", _twist(linear_x=0.5))
+    plugin.on_message("/amcl_pose", _pose())
+    status = plugin.get_status()
+    assert "LOC-006" not in status.codes  # a pose can't say the robot isn't moving
+    assert "linear_x_m_per_s" not in status.metrics
+    assert "twist_σ_more" not in status.values
+
+
+def test_stamped_cmd_vel_is_read_like_a_plain_one() -> None:
+    plugin = LocalizationPlugin(related_topics={"cmd_vel": "/cmd_vel"})
+    stamped = TwistStamped()
+    stamped.twist.linear.x = 0.5
+    plugin.on_message("/cmd_vel", stamped)
+    plugin.on_message("/odom", _odometry(linear_x=0.0))
+    assert "LOC-006" in plugin.get_status().codes
 
 
 def _twist(linear_x: float = 0.0, angular_z: float = 0.0) -> Twist:
@@ -233,7 +269,6 @@ def test_frame_pair_and_secondary_values() -> None:
     values = plugin.get_status().values
     assert _plain(values["σxy"]).endswith("odom → base_link")
     assert "x 1.234" in _plain(values["pose_more"])
-    assert values["stamp_lag_more"] == "12 ms"
     assert "twist_σ_more" in values
 
 

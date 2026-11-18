@@ -42,8 +42,8 @@ def _speed(value: float | None) -> str:
     return f"{value:>{_SPEED_WIDTH}.2f}" if value is not None else f"{'–':>{_SPEED_WIDTH}}"
 
 
-def motion_rows(actual: tuple[float, float], commanded: tuple[float, float] | None, psd: tuple[bool, bool]) -> list[str]:
-    """The third group: forward/turn speed next to the last cmd_vel (or "–"), then the PSD verdicts."""
+def motion_rows(actual: tuple[float | None, float | None], commanded: tuple[float, float] | None, psd: tuple[bool, bool]) -> list[str]:
+    """The third group: forward/turn speed (None on a pose message) next to the last cmd_vel (or "–"), then the PSD verdicts."""
     cmd_v, cmd_w = commanded if commanded is not None else (None, None)
     pose_ok, twist_ok = psd
 
