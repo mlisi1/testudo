@@ -1,18 +1,31 @@
 /* The Explore page's model of the dashboard. Colors follow testudo/tui/theme.py. */
 
-/* This page is the dashboard: the side menus glide out to the screen's edges to make room. */
-.md-main__inner {
-  transition: max-width 800ms cubic-bezier(0.22, 0.7, 0.2, 1);
+/* This page is the dashboard: the side menus slowly glide outwards to make room. */
+.md-main__inner,
+.md-sidebar {
+  transition: max-width 2400ms cubic-bezier(0.45, 0, 0.2, 1), width 2400ms cubic-bezier(0.45, 0, 0.2, 1);
 }
 body.tx-explore-page .md-main__inner {
-  max-width: 100%;
+  max-width: max(61rem, min(92%, 72rem));
+}
+/* Slimmer menus leave the room to the dashboard, without pushing them far from it. */
+@media (min-width: 76.25em) {
+  body.tx-explore-page .md-sidebar {
+    width: 9.6rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .md-main__inner,
+  .md-sidebar {
+    transition: none;
+  }
 }
 .md-content:has(#tx-explorer) {
   container-type: inline-size;
 }
 /* One size for the terminal and what sits under it, so all of it fits on one screen. */
 .md-content__inner:has(#tx-explorer) {
-  --tx-font: max(10px, min(16px, calc((100cqw - 2.4rem) / 75), calc((100vh - 18rem) / 43)));
+  --tx-font: max(10px, min(16px, calc((100cqw - 2.4rem) / 75), calc((100vh - 18rem) / 45)));
   margin-top: 0.4rem;
   padding-top: 0;
 }
@@ -79,7 +92,7 @@ body.tx-explore-page .md-main__inner {
   flex-direction: column;
   font-family: "DejaVu Sans Mono", "Noto Sans Mono", Menlo, Consolas, monospace;
   font-size: var(--tx-font);
-  height: 43em;
+  height: 45em;
   line-height: 1.25;
   margin: 0 auto;
   max-width: 100%;
@@ -87,6 +100,22 @@ body.tx-explore-page .md-main__inner {
   position: relative;
   white-space: pre;
   width: 75em;
+}
+/* The window the dashboard runs in. */
+.tx-term::before {
+  background:
+    radial-gradient(circle, #971b2f 0 0.32em, transparent 0.36em) 0.9em 50% / 1em 1em no-repeat,
+    radial-gradient(circle, #ffb500 0 0.32em, transparent 0.36em) 2.3em 50% / 1em 1em no-repeat,
+    radial-gradient(circle, #6b7280 0 0.32em, transparent 0.36em) 3.7em 50% / 1em 1em no-repeat,
+    #2b2f3a;
+  border-bottom: 1px solid #0b0c10;
+  box-sizing: border-box;
+  color: #aeb4bf;
+  content: "testudo watch" / "";
+  flex: none;
+  height: 2em;
+  line-height: 2em;
+  text-align: center;
 }
 .tx-term:focus {
   outline: none;
