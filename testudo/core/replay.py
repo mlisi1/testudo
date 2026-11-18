@@ -244,11 +244,6 @@ def run_replay(
     _wire_tf_watch_for_replay(manager, topic_types)
 
     msg_classes: dict[str, type] = {}
-    # Topics whose message class couldn't be resolved (its interface package
-    # isn't installed): logged once, then every later message on them is
-    # skipped without retrying the lookup -- a bag can hold tens of
-    # thousands of messages on such a topic.
-    unresolvable: set[str] = set()
     message_count = 0
 
     while reader.has_next():
@@ -267,7 +262,9 @@ def run_replay(
         if maybe_record_excluded(manager, topic_name, msg_type_str):
             continue
 
-        if topic_name in unresolvable:
+        # Logged once, then every later message is skipped without retrying
+        # the lookup: a bag can hold tens of thousands of them on such a topic.
+        if topic_name in manager._unresolved:
             continue
         msg_class = msg_classes.get(topic_name)
         if msg_class is None:
@@ -282,7 +279,7 @@ def run_replay(
                     msg_type_str,
                     exc_info=_logger.isEnabledFor(logging.DEBUG),
                 )
-                unresolvable.add(topic_name)
+                manager._unresolved[topic_name] = msg_type_str
                 continue
             msg_classes[topic_name] = msg_class
 

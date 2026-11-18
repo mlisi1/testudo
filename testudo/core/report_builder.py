@@ -13,7 +13,12 @@ from typing import TYPE_CHECKING
 from testudo.core.code_overrides import apply_code_overrides
 from testudo.core.exclusion import matching_rule
 from testudo.core.global_watches import TF_TOPIC
-from testudo.core.passive_reports import excluded_report, no_publishers_report, presence_report
+from testudo.core.passive_reports import (
+    excluded_report,
+    missing_type_report,
+    no_publishers_report,
+    presence_report,
+)
 from testudo.core.topic_report import (
     TopicReport,
     full_tier_report,
@@ -48,6 +53,10 @@ def build_reports(manager: "SubscriptionManager", *, code_overrides: bool = True
                 manager._subscribers_by_topic.get(topic_name, ()),
             )
         )
+    for topic_name, msg_type in manager._unresolved.items():
+        # An undeclared one stays out of the reports: nobody asked for it.
+        if is_declared(manager, topic_name):
+            reports.append(_suppress(manager, topic_name, missing_type_report(topic_name, msg_type)))
     for topic_name, msg_type in manager._presence_only.items():
         reports.append(_suppress(manager, topic_name, presence_report(topic_name, msg_type)))
     for topic_name, msg_type in manager._excluded.items():

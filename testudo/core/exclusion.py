@@ -9,7 +9,7 @@ into its private state, the same way those modules do.
 
 An excluded topic gets no subscription and no publisher-info query -- just
 enough bookkeeping to render as a bare row in the TUI's own "Excluded
-Topics" category (see `topic_report.excluded_report`). Distinct from the
+Topics" category (see `passive_reports.excluded_report`). Distinct from the
 DEFAULT_EXCLUDED_TOPICS/self-topic exclusion (`SubscriptionManager.
 excluded_topics()`), which stays fully invisible -- that's ROS graph
 bookkeeping, not something a user chose to drop.
@@ -97,6 +97,7 @@ def exclude_tracked_topic(manager: SubscriptionManager, topic_name: str) -> None
     manager._vitals.pop(topic_name, None)
     manager._full_tier.pop(topic_name, None)
     manager._presence_only.pop(topic_name, None)
+    manager._unresolved.pop(topic_name, None)
     manager._owning_node_by_topic.pop(topic_name, None)
     manager._no_publishers.discard(topic_name)
     manager._latched.discard(topic_name)

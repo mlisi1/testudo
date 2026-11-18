@@ -105,6 +105,7 @@ def subscribe_topic(
         msg_class = get_message(msg_type_str)
     except Exception:
         _warn_unresolved(topic_name, msg_type_str)
+        manager._unresolved[topic_name] = msg_type_str
         return
 
     plugin_class = manager._plugin_class_by_msg_type.get(msg_type_str)

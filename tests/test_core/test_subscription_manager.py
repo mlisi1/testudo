@@ -1092,6 +1092,47 @@ def test_related_topic_of_an_uninstalled_type_is_one_warning_and_keeps_the_prima
     assert records and all(record.levelname == "WARNING" and not record.exc_info for record in records)
 
 
+def _uninstalled_type_manager(**config_overrides: Any) -> tuple[_FakeNode, SubscriptionManager]:
+    missing = "nonexistent_testudo_pkg/msg/Nope"
+    node = _FakeNode(
+        topics=[("/declared", [missing]), ("/undeclared", [missing])],
+        publishers_by_topic={
+            "/declared": [_FakeEndpointInfo(qos_profile=_qos())],
+            "/undeclared": [_FakeEndpointInfo(qos_profile=_qos())],
+        },
+    )
+    config = TestudoConfig(topics={missing: [TopicConfig(name="/declared", msg_type=missing)]}, **config_overrides)
+    manager = SubscriptionManager(node, config, [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+    return node, manager
+
+
+def test_declared_topic_of_an_uninstalled_type_is_an_error_and_an_undeclared_one_stays_out() -> None:
+    node, manager = _uninstalled_type_manager()
+
+    reports = {report.topic: report for report in manager.reports()}
+    assert set(reports) == {"/declared"}
+    assert reports["/declared"].status.severity == Severity.ERROR
+    assert set(reports["/declared"].status.codes) == {"LIVE-005"}
+    assert "nonexistent_testudo_pkg" in reports["/declared"].status.message
+    assert node.subscriptions == []
+
+
+def test_uninstalled_type_is_not_a_dead_topic_for_dead_stack_detection() -> None:
+    _node, manager = _uninstalled_type_manager()
+    assert manager.reports()[0].status.label != "liveness"
+
+
+def test_excluding_a_declared_topic_of_an_uninstalled_type_clears_its_error() -> None:
+    _node, manager = _uninstalled_type_manager(exclude_topics=[])
+    manager.add_exclude_rule(ExcludeRule("/declared"))
+    manager.maintain()
+
+    reports = {report.topic: report for report in manager.reports()}
+    assert reports["/declared"].tier == "excluded"
+    assert reports["/declared"].status.severity == Severity.OK
+
+
 def test_tf_watch_routes_tf_and_tf_static_to_one_instance() -> None:
     node = _FakeNode(
         topics=[

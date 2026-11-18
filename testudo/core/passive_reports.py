@@ -38,6 +38,25 @@ def no_publishers_report(
     return TopicReport(topic=topic_name, msg_type=msg_type, tier="vitals", status=status)
 
 
+def missing_type_report(topic_name: str, msg_type: str) -> TopicReport:
+    """A declared topic whose message type can't be imported here (LIVE-005): asked for, but unmonitored.
+
+    Its own label rather than "liveness": the topic may be perfectly alive,
+    so this must not count toward dead-stack detection.
+    """
+    package = msg_type.split("/", 1)[0]
+    message = f"not monitored: package {package} isn't installed"
+    status = CheckStatus(
+        severity=Severity.ERROR,
+        label="missing-type",
+        message=message,
+        values={"missing_package": package},
+        codes={"LIVE-005": colorize(message, Severity.ERROR)},
+        code_severities={"LIVE-005": Severity.ERROR},
+    )
+    return TopicReport(topic=topic_name, msg_type=msg_type, tier="vitals", status=status)
+
+
 def presence_report(topic_name: str, msg_type: str) -> TopicReport:
     """Build a presence-only report: a publisher exists, but the topic isn't subscribed at all.
 

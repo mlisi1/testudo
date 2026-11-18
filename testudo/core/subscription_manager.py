@@ -181,7 +181,7 @@ class SubscriptionManager:
         # topic name -> msg type, for topics matching a user `exclude_topics`
         # rule -- no subscription, no publisher-info resolution, just enough
         # to render as a bare row in the TUI's own "Excluded Topics"
-        # category (see topic_report.excluded_report). Distinct from the
+        # category (see passive_reports.excluded_report). Distinct from the
         # DEFAULT_EXCLUDED_TOPICS/self-topic exclusion in `excluded_topics()`,
         # which stays fully invisible -- that's ROS graph bookkeeping, not
         # something a user chose to drop.
@@ -189,6 +189,9 @@ class SubscriptionManager:
         self._msg_type_by_topic: dict[str, str] = {}
         self._owning_node_by_topic: dict[str, str] = {}
         self._no_publishers: set[str] = set()
+        # Topic -> message type for topics whose type can't be imported here
+        # (its interface package isn't installed): never subscribed.
+        self._unresolved: dict[str, str] = {}
         # Topics seen with a publisher at some point this session (never
         # cleared, not even with a dead stack): losing it is a fault, while
         # a topic that never had one is just an input nobody drives.

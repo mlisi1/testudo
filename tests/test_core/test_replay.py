@@ -16,7 +16,7 @@ from rclpy.serialization import serialize_message
 from std_msgs.msg import String
 from tf2_msgs.msg import TFMessage
 
-from testudo.core.config import PublishConfig, SeverityMode, TestudoConfig
+from testudo.core.config import PublishConfig, SeverityMode, TestudoConfig, TopicConfig
 from testudo.core.replay import replay_bag
 from testudo.plugins.base import Severity
 from testudo.plugins.registry import discover_all_plugins
@@ -211,6 +211,19 @@ def test_replay_unresolvable_message_type_is_logged_once(tmp_path: Path, ros_nod
         replay_logger.removeHandler(handler)
 
     assert sum("could not resolve message class" in message for message in handler.messages) == 1
+
+
+def test_replay_declared_topic_of_an_uninstalled_type_is_an_error(tmp_path: Path, ros_node) -> None:
+    missing = "nonexistent_testudo_pkg/msg/Nope"
+    bag_path = tmp_path / "bag_declared_unresolvable"
+    _write_bag(bag_path, [("/status", missing, String(data="x"), 1_000_000)])
+    config = _config(topics={missing: [TopicConfig(name="/status", msg_type=missing)]})
+
+    reports, overall = replay_bag(str(bag_path), config, _plugins(), ros_node)
+
+    assert [report.topic for report in reports] == ["/status"]
+    assert set(reports[0].status.codes) == {"LIVE-005"}
+    assert overall.severity == Severity.ERROR
 
 
 def test_replay_transient_local_topic_reads_as_latched(tmp_path: Path, ros_node) -> None:

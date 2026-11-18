@@ -208,6 +208,7 @@ def _clear_all_topics(manager: "SubscriptionManager") -> None:
     manager._msg_type_by_topic.clear()
     manager._owning_node_by_topic.clear()
     manager._no_publishers.clear()
+    manager._unresolved.clear()
     manager._latched.clear()
     manager._related_topic_targets.clear()
     manager._lifecycle_tracker = LifecycleTracker()
