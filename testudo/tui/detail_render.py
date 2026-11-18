@@ -31,6 +31,7 @@ from rich.text import Text
 from testudo.core.fault_history import ClearedFault, format_ago, latest_per_code
 from testudo.core.plain_values import strip_markup
 from testudo.core.topic_report import TopicReport
+from testudo.tui.detail_picture import picture_lines
 from testudo.tui.detail_values import humanize_pairs, resolve_values, style_value
 from testudo.plugins.base import (
     COMPACT_VALUE_SUFFIX,
@@ -61,6 +62,9 @@ _MAX_VALUES_MOVED_OUT_OF_GRID = 3
 
 #: At most this many of the topic's cleared codes, under its active ones.
 MAX_CLEARED_LINES = 3
+
+#: Fewer free rows than this and a status's picture isn't worth drawing.
+_MIN_PICTURE_ROWS = 4
 
 #: Rows the grid aims to stay within when the pane's height isn't known.
 _DEFAULT_GRID_ROWS = 6
@@ -288,6 +292,11 @@ def render_detail(
         if sum(line.count("\n") + 1 for line in body) <= max_rows:
             break
     lines.extend(body)
+
+    if report.status.picture is not None and height is not None:
+        used = header_rows + sum(line.count("\n") + 1 for line in body) + (code_rows + 1 if codes else 0)
+        if height - used >= _MIN_PICTURE_ROWS:
+            lines.extend(picture_lines(report.status.picture, width, height - used))
 
     if codes:
         # A blank line sets the codes apart -- unless it's the one line

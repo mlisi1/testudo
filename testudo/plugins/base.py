@@ -11,6 +11,7 @@ import abc
 from dataclasses import dataclass, field
 from typing import Any
 
+from testudo.plugins.picture import StatusPicture
 from testudo.plugins.severity import (  # noqa: F401 -- part of this module's public interface
     SEVERITY_COLORS,
     SEVERITY_ICONS,
@@ -83,6 +84,10 @@ class CheckStatus:
     status falls back to `values` as plain text (see
     `core.plain_values.published_values`), so a plugin that never sets it
     still publishes something readable.
+
+    `picture` is an optional image of what the topic carries, drawn in the
+    Detail Panel when the topic is highlighted and left out of every other
+    output.
     """
 
     severity: int
@@ -94,6 +99,7 @@ class CheckStatus:
     codes: dict[str, str] = field(default_factory=dict)
     metrics: dict[str, float | str] = field(default_factory=dict)
     code_severities: dict[str, int] = field(default_factory=dict)
+    picture: StatusPicture | None = None
 
 
 def code_severity(status: CheckStatus, code: str) -> int:

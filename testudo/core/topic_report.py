@@ -324,6 +324,7 @@ def full_tier_report(
             topic_panel_column=content.topic_panel_column,
             topic_panel_value=content.topic_panel_value,
             metrics=metrics,
+            picture=content.picture,
         )
     return TopicReport(topic=topic_name, msg_type=msg_type, tier="full", status=status, rate_hz=reported_rate)
 
