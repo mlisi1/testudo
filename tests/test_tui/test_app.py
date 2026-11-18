@@ -594,7 +594,7 @@ def _problem_app() -> TestudoApp:
     reports = [
         report("/odom", "nav_msgs/msg/Odometry", Severity.ERROR, "LOC-001"),
         report("/odom_ok", "nav_msgs/msg/Odometry", Severity.OK, None),
-        report("/imu", "sensor_msgs/msg/Imu", Severity.WARN, "SENS-001"),
+        report("/imu", "sensor_msgs/msg/Imu", Severity.WARN, "IMU-001"),
         report("/battery", "sensor_msgs/msg/BatteryState", Severity.OK, None),
     ]
     overall = CheckStatus(Severity.ERROR, "overall", "")

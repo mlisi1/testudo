@@ -38,7 +38,7 @@ setup(
         "testudo.checks": [
             "dummy = testudo.plugins.builtin.dummy:DummyPlugin",
             "localization = testudo.plugins.builtin.localization:LocalizationPlugin",
-            "sensors_generic = testudo.plugins.builtin.sensors_generic:GenericSensorPlugin",
+            "imu = testudo.plugins.builtin.imu:ImuPlugin",
             "gnss = testudo.plugins.builtin.gnss:GnssPlugin",
             # Re-enabled now that undeclared Image/CompressedImage topics
             # default to the presence-only tier (no subscription at all) --

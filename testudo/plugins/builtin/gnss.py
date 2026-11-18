@@ -16,7 +16,7 @@ speed between consecutive real fixes, and frame_id consistency.
 The default covariance zone is RTK-grade (green=1e-4 m^2, ~1cm std): a
 consumer/SBAS-grade receiver reporting a few meters of std should override
 `position_covariance` per topic in config, the same way a noisier lidar
-overrides GenericSensorPlugin's `invalid_ratio`.
+overrides PointStreamPlugin's `invalid_ratio`.
 """
 from __future__ import annotations
 

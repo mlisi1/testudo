@@ -1,13 +1,8 @@
-"""Generic sensor content-check plugin.
+"""IMU content-check plugin for sensor_msgs/msg/Imu.
 
-Covers sensor_msgs/msg/Imu with checks that generalize across simple raw
-sensor shapes: NaN/Inf values, a reading that's stuck (identical to the
-previous message), values outside a plausible range, and a frame_id that
-changes between messages. LaserScan (and PointCloud2) live in
-`point_stream.py`'s PointStreamPlugin instead -- lidar-shaped data is its
-own semantic domain (2D/3D range readings), not a generic sensor shape,
-and PointCloud2's presence-only-by-default tiering needs to live with a
-plugin that actually implements its checks.
+NaN/Inf values, a reading that's stuck (identical to the previous message),
+values outside a plausible range, and a frame_id that changes between
+messages.
 """
 from __future__ import annotations
 
@@ -52,8 +47,8 @@ def _is_bad_float(value: float) -> bool:
     return math.isnan(value) or math.isinf(value)
 
 
-class GenericSensorPlugin(CheckPlugin):
-    """Zero/stuck-value, NaN/Inf, range-plausibility, and frame_id checks for Imu."""
+class ImuPlugin(CheckPlugin):
+    """Stuck-value, NaN/Inf, range-plausibility, and frame_id checks for an IMU."""
 
     def __init__(
         self,
@@ -75,7 +70,6 @@ class GenericSensorPlugin(CheckPlugin):
         self._gyro: tuple[float, float, float] = (0.0, 0.0, 0.0)
         self._covariances = {"orient": "", "gyro": "", "accel": ""}
         self._now = 0.0
-        self._stamp_lag: float | None = None
         self._gyro_trend: deque[float] = deque(maxlen=_TREND_SIZE)
         self._last_trend_sample: float | None = None
 
@@ -92,9 +86,9 @@ class GenericSensorPlugin(CheckPlugin):
 
     @classmethod
     def default_levels(cls) -> dict[str, SeverityLevels]:
-        # ERROR once most readings are invalid, or the driver has frozen.
+        # Any NaN/Inf is an ERROR: consumers such as an EKF can't survive one.
         return {
-            "invalid_ratio": SeverityLevels(warn=0.01, error=0.5),
+            "invalid_ratio": SeverityLevels(error=0.0),
             "stuck_count": SeverityLevels(warn=2, error=10),
         }
 
@@ -149,14 +143,12 @@ class GenericSensorPlugin(CheckPlugin):
             "gyro": _covariance_state(msg.angular_velocity_covariance),
             "accel": _covariance_state(msg.linear_acceleration_covariance),
         }
-        stamp_seconds = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-        self._stamp_lag = self._now - stamp_seconds if self._now > 0 and stamp_seconds > 0 else None
 
         self._check_stuck(fields)
 
     def get_status(self) -> CheckStatus:
         if self._message_count == 0:
-            return CheckStatus(severity=Severity.OK, label="sensor", message="no messages received yet")
+            return CheckStatus(severity=Severity.OK, label="imu", message="no messages received yet")
 
         invalid_severity = evaluate_levels(self._invalid_ratio, self.levels.get("invalid_ratio"))
         stuck_severity = evaluate_levels(float(self._stuck_count), self.levels.get("stuck_count"))
@@ -178,13 +170,13 @@ class GenericSensorPlugin(CheckPlugin):
 
         codes = ActiveCodes()
         if invalid_severity != Severity.OK:
-            codes.add("SENS-001", f"NaN/Inf in {self._invalid_ratio:.0%} of accel/gyro fields", invalid_severity)
+            codes.add("IMU-001", f"NaN/Inf in {self._invalid_ratio:.0%} of accel/gyro fields", invalid_severity)
         if stuck_severity != Severity.OK:
-            codes.add("SENS-002", f"reading identical for {self._stuck_count} messages", stuck_severity)
+            codes.add("IMU-002", f"reading identical for {self._stuck_count} messages", stuck_severity)
         if plausibility_severity != Severity.OK:
-            codes.add("SENS-004", f"implausible magnitude ({self._detail})", plausibility_severity)
+            codes.add("IMU-003", f"implausible magnitude ({self._detail})", plausibility_severity)
         if frame_id_severity != Severity.OK:
-            codes.add("SENS-005", f"frame_id changed (now '{self._last_frame_id}')", frame_id_severity)
+            codes.add("IMU-004", f"frame_id changed (now '{self._last_frame_id}')", frame_id_severity)
 
         accel_magnitude = math.sqrt(sum(v * v for v in self._accel))
         gyro_trend = sparkline(downsample(self._gyro_trend, _TREND_WIDTH), floor=0.0)
@@ -202,14 +194,12 @@ class GenericSensorPlugin(CheckPlugin):
             "frame": self._last_frame_id or "",
             "gravity_on_more": f"{gravity_sign}{_AXES[gravity_axis]}",
         }
-        if self._stamp_lag is not None:
-            values["stamp_lag_more"] = f"{self._stamp_lag * 1000:.0f} ms"
         # |a| is the strongest single sanity number (1.00 = a g-vs-m/s² unit
         # bug, 0.00 = a dead accel) but stays uncolored: some drivers publish
         # gravity-compensated acceleration, where ~0 is correct.
         return CheckStatus(
             severity=worst,
-            label="sensor",
+            label="imu",
             message=message,
             values=values,
             topic_panel_column="|a|",
@@ -220,7 +210,7 @@ class GenericSensorPlugin(CheckPlugin):
         )
 
     def _metrics(self, accel_magnitude: float) -> dict[str, float | str]:
-        """The published numbers: accel/gyro per axis and magnitude, stuck/invalid, plausibility, stamp lag."""
+        """The published numbers: accel/gyro per axis and magnitude, stuck/invalid, plausibility."""
         metrics: dict[str, float | str] = {}
         for axis, accel, gyro in zip(_AXES, self._accel, self._gyro):
             metrics[f"accel_{axis}_m_per_s2"] = accel
@@ -235,6 +225,4 @@ class GenericSensorPlugin(CheckPlugin):
                 "frame_id": self._last_frame_id or "",
             }
         )
-        if self._stamp_lag is not None:
-            metrics["stamp_lag_s"] = self._stamp_lag
         return metrics

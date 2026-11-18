@@ -1,10 +1,10 @@
-"""Unit tests for GenericSensorPlugin -- synthetic Imu, no live ROS graph."""
+"""Unit tests for ImuPlugin -- synthetic Imu, no live ROS graph."""
 from __future__ import annotations
 
 from sensor_msgs.msg import Imu
 
 from testudo.plugins.base import Severity
-from testudo.plugins.builtin.sensors_generic import GenericSensorPlugin
+from testudo.plugins.builtin.imu import ImuPlugin
 
 
 def _imu(
@@ -20,60 +20,59 @@ def _imu(
 
 
 def test_no_messages_yet_is_ok() -> None:
-    plugin = GenericSensorPlugin()
+    plugin = ImuPlugin()
     status = plugin.get_status()
     assert status.severity == Severity.OK
     assert "no messages received" in status.message
 
 
 def test_imu_nominal_is_ok() -> None:
-    plugin = GenericSensorPlugin()
+    plugin = ImuPlugin()
     plugin.on_message("/imu", _imu(linear_accel=(0.0, 0.0, 9.81)))
     assert plugin.get_status().severity == Severity.OK
 
 
 def test_imu_nan_field_counts_as_invalid() -> None:
-    plugin = GenericSensorPlugin()
+    plugin = ImuPlugin()
     plugin.on_message("/imu", _imu(linear_accel=(float("nan"), 0.0, 9.81)))
     status = plugin.get_status()
-    # 1 of 6 fields: past warn (0.01), under error (0.5).
-    assert status.severity == Severity.WARN
-    assert "SENS-001" in status.codes
+    assert status.severity == Severity.ERROR
+    assert "IMU-001" in status.codes
 
 
 def test_imu_implausible_acceleration_is_flagged() -> None:
-    plugin = GenericSensorPlugin()
+    plugin = ImuPlugin()
     plugin.on_message("/imu", _imu(linear_accel=(500.0, 0.0, 0.0)))
     status = plugin.get_status()
     assert status.severity != Severity.OK
     assert "outside plausible range" in status.message
-    assert "SENS-004" in status.codes
+    assert "IMU-003" in status.codes
 
 
 def test_imu_stuck_value_escalates_after_repeats() -> None:
-    plugin = GenericSensorPlugin()
+    plugin = ImuPlugin()
     reading = _imu(linear_accel=(1.0, 2.0, 3.0), angular_vel=(0.1, 0.2, 0.3))
     for _ in range(4):
         plugin.on_message("/imu", reading)
     status = plugin.get_status()
     assert status.severity == Severity.WARN
     assert status.values["stuck"] == "3"
-    assert "SENS-002" in status.codes
+    assert "IMU-002" in status.codes
 
 
 def test_default_thresholds_cover_both_metrics() -> None:
-    thresholds = GenericSensorPlugin.default_thresholds()
+    thresholds = ImuPlugin.default_thresholds()
     assert set(thresholds) == {"invalid_ratio", "stuck_count"}
 
 
 def test_msg_types_is_imu_only() -> None:
-    assert GenericSensorPlugin.msg_types() == ("sensor_msgs/msg/Imu",)
+    assert ImuPlugin.msg_types() == ("sensor_msgs/msg/Imu",)
 
 
 def test_imu_panel_shows_vectors_magnitude_and_covariance_fill() -> None:
     from rich.text import Text
 
-    plugin = GenericSensorPlugin()
+    plugin = ImuPlugin()
     msg = _imu(linear_accel=(0.12, -0.08, 9.78), angular_vel=(0.003, -0.001, 0.004))
     msg.orientation_covariance = [-1.0] + [0.0] * 8
     msg.angular_velocity_covariance = [0.01, 0, 0, 0, 0.01, 0, 0, 0, 0.01]
@@ -88,7 +87,7 @@ def test_imu_panel_shows_vectors_magnitude_and_covariance_fill() -> None:
 
 
 def test_imu_gyro_trend_samples_once_a_second() -> None:
-    plugin = GenericSensorPlugin()
+    plugin = ImuPlugin()
     plugin.on_message("/imu", _imu(angular_vel=(0.0, 0.0, 0.5)))
     for t in (1.0, 1.4, 2.0):
         plugin.on_tick(t)
@@ -96,7 +95,7 @@ def test_imu_gyro_trend_samples_once_a_second() -> None:
 
 
 def test_metrics_publish_per_axis_readings_and_magnitudes() -> None:
-    plugin = GenericSensorPlugin()
+    plugin = ImuPlugin()
     plugin.on_message("/imu", _imu(linear_accel=(0.0, 0.0, 9.81), angular_vel=(0.0, 0.0, 0.5)))
     metrics = plugin.get_status().metrics
     assert metrics["accel_z_m_per_s2"] == 9.81
