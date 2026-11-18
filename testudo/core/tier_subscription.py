@@ -150,6 +150,8 @@ def subscribe_topic(
         related_topics = topic_config.related_topics
     if action_config is not None:
         related_topics = {**related_topics, **action_config.related_topics}
+    conventional = plugin_class.default_related_topics(topic_name)
+    related_topics = {**{key: name for key, name in conventional.items() if name in topics_by_name}, **related_topics}
     plugin = build_plugin(plugin_class, related_topics, topic_config, action_config)
     subscribe_full_tier(manager, topic_name, msg_class, qos, plugin, topics_by_name)
 

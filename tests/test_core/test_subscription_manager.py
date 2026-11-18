@@ -717,6 +717,37 @@ def test_a_declared_action_status_stays_monitored_when_a_topic_also_reads_it() -
     assert manager._full_tier["/odom_a"].plugin.calls == [(status_topic, sentinel)]
 
 
+class _CompanionPlugin(_RecordingPlugin):
+    """Names a companion topic by convention, the way a costmap does."""
+
+    @classmethod
+    def default_related_topics(cls, topic_name: str) -> dict[str, str]:
+        return {"updates": f"{topic_name}_updates"}
+
+
+def _companion_manager(topics: list[tuple[str, list[str]]]) -> tuple[_FakeNode, SubscriptionManager]:
+    node = _FakeNode(topics, {name: [_FakeEndpointInfo(qos_profile=_qos())] for name, _types in topics})
+    discovered = [DiscoveredPlugin(name="companion", plugin_class=_CompanionPlugin, source="packaged")]
+    manager = SubscriptionManager(node, TestudoConfig(), discovered, clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+    return node, manager
+
+
+def test_a_conventional_companion_topic_feeds_the_plugin_when_it_exists() -> None:
+    node, manager = _companion_manager(
+        [("/odom", ["nav_msgs/msg/Odometry"]), ("/odom_updates", ["std_msgs/msg/Empty"])]
+    )
+    assert manager._full_tier["/odom"].plugin.related_topics == {"updates": "/odom_updates"}
+    sentinel = object()
+    next(sub for sub in node.subscriptions if sub.topic == "/odom_updates" and not sub.raw).callback(sentinel)
+    assert manager._full_tier["/odom"].plugin.calls == [("/odom_updates", sentinel)]
+
+
+def test_a_conventional_companion_topic_that_does_not_exist_is_left_out() -> None:
+    _node, manager = _companion_manager([("/odom", ["nav_msgs/msg/Odometry"])])
+    assert manager._full_tier["/odom"].plugin.related_topics == {}
+
+
 def test_decimation_skips_plugin_calls_faster_than_max_check_rate() -> None:
     node = _FakeNode(
         topics=[("/odom", ["nav_msgs/msg/Odometry"])],

@@ -214,6 +214,16 @@ class CheckPlugin(abc.ABC):
         """
         return False
 
+    @classmethod
+    def default_related_topics(cls, topic_name: str) -> dict[str, str]:
+        """Companion topics that follow from `topic_name` itself, as {logical name: topic}.
+
+        For a companion fixed by convention, such as a costmap's
+        `<topic>_updates`. Used only when the topic exists; an entry under
+        the topic's `related_topics:` in config wins. Empty by default.
+        """
+        return {}
+
     def silence_expected(self, msg_type: str) -> bool:
         """True while this topic (of `msg_type`) is legitimately allowed to stop publishing.
 

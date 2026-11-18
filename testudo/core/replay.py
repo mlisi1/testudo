@@ -125,7 +125,10 @@ def _track_for_replay(manager: SubscriptionManager, topic_name: str, msg_type_st
 
     topic_config = manager._topic_config_by_name.get(topic_name)
     action_config = manager._action_config_by_status_topic.get(topic_name)
-    related_topics: dict[str, str] = topic_config.related_topics if topic_config is not None else {}
+    related_topics: dict[str, str] = {
+        **plugin_class.default_related_topics(topic_name),
+        **(topic_config.related_topics if topic_config is not None else {}),
+    }
     plugin = build_plugin(plugin_class, related_topics, topic_config, action_config)
     state = FullTierState(
         plugin=plugin,
