@@ -304,3 +304,39 @@ def test_replay_transient_local_topic_reads_as_latched(tmp_path: Path, ros_node)
     by_topic = {r.topic: r for r in reports}
     assert by_topic["/robot_description"].status.severity == Severity.OK
     assert by_topic["/robot_description"].status.label == "latched"
+
+
+def test_replay_feeds_a_shared_declared_related_topic_to_everyone(tmp_path: Path, ros_node) -> None:
+    from nav_msgs.msg import Odometry
+    from sensor_msgs.msg import Imu
+
+    from testudo.core.config import TopicConfig
+
+    entries = []
+    for step in range(60):
+        time_ns = int((1000 + step * 0.1) * 1e9)
+        odom = Odometry()
+        odom.header.frame_id = "odom"
+        odom.header.stamp.sec, odom.header.stamp.nanosec = time_ns // 10**9, time_ns % 10**9
+        odom.pose.pose.orientation.w = 1.0
+        entries.append(("/odom", "nav_msgs/msg/Odometry", odom, time_ns))
+        for topic in ("/imu_a", "/imu_b"):
+            imu = Imu()
+            imu.header.stamp = odom.header.stamp
+            imu.linear_acceleration.z = 9.81 + 0.001 * (step % 2)
+            imu.angular_velocity.z = 0.05
+            entries.append((topic, "sensor_msgs/msg/Imu", imu, time_ns))
+    bag = tmp_path / "bag"
+    _write_bag(bag, entries)
+    imus = [
+        TopicConfig(name=name, msg_type="sensor_msgs/msg/Imu", related_topics={"odom": "/odom"})
+        for name in ("/imu_a", "/imu_b")
+    ]
+    config = _config(
+        topics={"nav_msgs/msg/Odometry": [TopicConfig(name="/odom", msg_type="nav_msgs/msg/Odometry")], "sensor_msgs/msg/Imu": imus}
+    )
+    reports, _overall = replay_bag(str(bag), config, _plugins(), ros_node)
+    by_topic = {report.topic: report for report in reports}
+    assert by_topic["/imu_a"].status.metrics["gyro_bias_rad_per_s"] > 0.04
+    assert by_topic["/imu_b"].status.metrics["gyro_bias_rad_per_s"] > 0.04
+    assert by_topic["/odom"].status.metrics["message_count"] == 60

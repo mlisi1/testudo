@@ -640,6 +640,64 @@ def test_related_topic_is_routed_to_same_plugin_instance_not_subscribed_separate
     assert [r.topic for r in reports] == ["/odom"]
 
 
+def _sharing_manager(declared: list[TopicConfig], topics: list[tuple[str, list[str]]]) -> tuple[_FakeNode, SubscriptionManager]:
+    node = _FakeNode(
+        topics=topics,
+        publishers_by_topic={name: [_FakeEndpointInfo(qos_profile=_qos())] for name, _types in topics},
+    )
+    discovered = [DiscoveredPlugin(name="recording", plugin_class=_RecordingPlugin, source="packaged")]
+    by_type: dict[str, list[TopicConfig]] = {}
+    for topic_config in declared:
+        by_type.setdefault(topic_config.msg_type, []).append(topic_config)
+    manager = SubscriptionManager(node, TestudoConfig(topics=by_type), discovered, clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+    return node, manager
+
+
+def _odom_config(name: str, related: dict[str, str] | None = None) -> TopicConfig:
+    return TopicConfig(name=name, msg_type="nav_msgs/msg/Odometry", related_topics=related or {})
+
+
+def test_two_topics_sharing_a_related_topic_both_get_its_messages() -> None:
+    node, manager = _sharing_manager(
+        [_odom_config("/odom_a", {"cmd_vel": "/cmd_vel"}), _odom_config("/odom_b", {"cmd_vel": "/cmd_vel"})],
+        [("/odom_a", ["nav_msgs/msg/Odometry"]), ("/odom_b", ["nav_msgs/msg/Odometry"]), ("/cmd_vel", ["geometry_msgs/msg/Twist"])],
+    )
+    companions = [sub for sub in node.subscriptions if sub.topic == "/cmd_vel"]
+    assert len(companions) == 1
+    sentinel = object()
+    companions[0].callback(sentinel)
+    for name in ("/odom_a", "/odom_b"):
+        assert manager._full_tier[name].plugin.calls == [("/cmd_vel", sentinel)]
+
+
+def test_a_declared_topic_stays_monitored_when_another_topic_also_reads_it() -> None:
+    node, manager = _sharing_manager(
+        [_odom_config("/odom_a", {"odom": "/odom_b"}), _odom_config("/odom_b")],
+        [("/odom_a", ["nav_msgs/msg/Odometry"]), ("/odom_b", ["nav_msgs/msg/Odometry"])],
+    )
+    subscriptions = [sub for sub in node.subscriptions if sub.topic == "/odom_b"]
+    assert len(subscriptions) == 1
+    sentinel = object()
+    subscriptions[0].callback(sentinel)
+    assert manager._full_tier["/odom_a"].plugin.calls == [("/odom_b", sentinel)]
+    assert manager._full_tier["/odom_b"].plugin.calls == [("/odom_b", sentinel)]
+    assert [report.topic for report in manager.reports()] == ["/odom_a", "/odom_b"]
+
+
+def test_a_declared_topic_no_plugin_checks_still_feeds_its_listeners() -> None:
+    node, manager = _sharing_manager(
+        [_odom_config("/odom_a", {"cmd_vel": "/cmd_vel"}), TopicConfig(name="/cmd_vel", msg_type="geometry_msgs/msg/Twist")],
+        [("/odom_a", ["nav_msgs/msg/Odometry"]), ("/cmd_vel", ["geometry_msgs/msg/Twist"])],
+    )
+    subscriptions = [sub for sub in node.subscriptions if sub.topic == "/cmd_vel"]
+    assert [sub.raw for sub in subscriptions] == [False]
+    sentinel = object()
+    subscriptions[0].callback(sentinel)
+    assert manager._full_tier["/odom_a"].plugin.calls == [("/cmd_vel", sentinel)]
+    assert manager._vitals["/cmd_vel"].message_count == 1
+
+
 def test_decimation_skips_plugin_calls_faster_than_max_check_rate() -> None:
     node = _FakeNode(
         topics=[("/odom", ["nav_msgs/msg/Odometry"])],

@@ -41,6 +41,9 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
+#: Always a companion of /tf's plugin, never a topic of its own, even if declared.
+TF_STATIC_TOPIC = "/tf_static"
+
 
 @dataclass
 class FullTierState:
@@ -51,6 +54,30 @@ class FullTierState:
     debouncer: HysteresisDebouncer
     stamps: StampCheck = field(default_factory=StampCheck)
     last_checked_seconds: float | None = field(default=None)
+
+
+def has_own_subscription(manager: SubscriptionManager, topic_name: str) -> bool:
+    """True for a declared topic: monitored in its own right, even when plugins also listen to it."""
+    return topic_name in manager._topic_config_by_name and topic_name != TF_STATIC_TOPIC
+
+
+def add_related_listener(manager: SubscriptionManager, related_topic_name: str, plugin: CheckPlugin, primary: str) -> None:
+    """Make `plugin` (checking `primary`) one of the listeners of a related topic."""
+    listeners = manager._related_topic_targets.setdefault(related_topic_name, [])
+    # A primary subscribed again (un-excluded, say) replaces its previous plugin.
+    listeners[:] = [listener for listener in listeners if listener[1] != primary]
+    listeners.append((plugin, primary))
+
+
+def feed_related_listeners(manager: SubscriptionManager, topic_name: str, msg: object, now: float) -> None:
+    """Hand one message to every plugin using `topic_name` as a related topic.
+
+    Not decimated. `on_tick` first, because a plugin timestamps with it: a
+    latched topic like /tf_static can arrive before the primary's first check.
+    """
+    for plugin, _primary in manager._related_topic_targets.get(topic_name, ()):
+        plugin.on_tick(now)
+        plugin.on_message(topic_name, msg)
 
 
 def _warn_unresolved(topic_name: str, msg_type_str: str) -> None:
@@ -131,6 +158,18 @@ def subscribe_vitals_tier(manager: SubscriptionManager, topic_name: str, msg_cla
     vitals = TopicVitals(topic=topic_name)
     manager._vitals[topic_name] = vitals
 
+    if topic_name in manager._related_topic_names():
+        # A plugin reads this topic's content, so it has to be deserialized after all.
+        def _on_message(msg: object) -> None:
+            now = manager._clock.now_seconds()
+            vitals.record_arrival(now)
+            feed_related_listeners(manager, topic_name, msg, now)
+
+        manager._subscriptions[topic_name] = manager._node.create_subscription(
+            msg_class, topic_name, _on_message, qos_profile
+        )
+        return
+
     def _on_raw_message(_raw_bytes: bytes) -> None:
         vitals.record_arrival(manager._clock.now_seconds())
 
@@ -167,8 +206,9 @@ def subscribe_full_tier(
     )
 
     for related_topic_name in plugin.related_topics.values():
-        manager._related_topic_targets[related_topic_name] = (plugin, topic_name)
-        subscribe_related_topic(manager, related_topic_name, plugin, topics_by_name)
+        add_related_listener(manager, related_topic_name, plugin, topic_name)
+        if not has_own_subscription(manager, related_topic_name):
+            subscribe_related_topic(manager, related_topic_name, topics_by_name)
 
     return state
 
@@ -183,6 +223,7 @@ def process_full_tier_message(
     on_tick timing, and hysteresis debouncing.
     """
     state.vitals.record_arrival(now)
+    feed_related_listeners(manager, topic_name, msg, now)
     max_check_rate_hz = manager._max_check_rate_hz
     min_check_interval = 1.0 / max_check_rate_hz if max_check_rate_hz > 0 else 0.0
     due = state.last_checked_seconds is None or (now - state.last_checked_seconds) >= min_check_interval
@@ -200,14 +241,16 @@ def process_full_tier_message(
 
 
 def subscribe_related_topic(
-    manager: SubscriptionManager, related_topic_name: str, plugin: CheckPlugin, topics_by_name: dict[str, TopicInfo]
+    manager: SubscriptionManager, related_topic_name: str, topics_by_name: dict[str, TopicInfo]
 ) -> None:
-    """Feed a plugin's related-topic input (e.g. cmd_vel) to the same instance's `on_message`.
+    """One subscription feeding an undeclared related topic (e.g. cmd_vel) to all its listeners.
 
     Best-effort: if the related topic isn't currently on the graph or
     has no publishers, the cross-check it feeds simply never fires --
     this doesn't block or degrade the primary topic's own checks.
     """
+    if related_topic_name in manager._related_subscriptions:
+        return
     topic_info = topics_by_name.get(related_topic_name)
     if topic_info is None or not topic_info.msg_types:
         _logger.warning("related topic '%s' not found on the graph; skipping", related_topic_name)
@@ -224,16 +267,8 @@ def subscribe_related_topic(
         return
 
     def _on_related_message(msg: object) -> None:
-        # Related-topic messages aren't decimated (no vitals tracking of
-        # their own), but a plugin relying on on_tick's `now` (e.g.
-        # TFWatchPlugin timestamping an edge) needs it kept current here
-        # too -- a latched (transient-local) related topic like
-        # /tf_static can otherwise deliver its message before the
-        # primary topic's first check ever calls on_tick, leaving `now`
-        # at its plugin-default and making that edge look stale forever.
-        plugin.on_tick(manager._clock.now_seconds())
-        plugin.on_message(related_topic_name, msg)
+        feed_related_listeners(manager, related_topic_name, msg, manager._clock.now_seconds())
 
-    manager._subscriptions[related_topic_name] = manager._node.create_subscription(
+    manager._related_subscriptions[related_topic_name] = manager._node.create_subscription(
         msg_class, related_topic_name, _on_related_message, qos_profile
     )

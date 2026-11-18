@@ -52,7 +52,7 @@ from testudo.core.maintenance import discover_and_subscribe as _discover_and_sub
 from testudo.core.maintenance import maintain as _maintain
 from testudo.core.report_builder import build_reports as _build_reports
 from testudo.core.topic_report import TopicReport
-from testudo.core.tier_subscription import FullTierState
+from testudo.core.tier_subscription import FullTierState, has_own_subscription
 from testudo.core.vitals import DEFAULT_STALE_AFTER_SECONDS, TopicVitals
 from testudo.plugins.base import CheckPlugin, CheckStatus
 from testudo.plugins.registry import DiscoveredPlugin
@@ -212,11 +212,12 @@ class SubscriptionManager:
         # this dict the same way it does `_msg_type_by_topic`). Only needed
         # so maintenance.py's `_clear_all_topics` can destroy everything cleanly.
         self._subscriptions: dict[str, Any] = {}
-        # related-topic name -> (owning plugin instance, its primary topic
-        # name). Populated by `tier_subscription.subscribe_full_tier` and consulted by replay
-        # (`feed_replayed_message`), which has no live-subscription callback
-        # of its own to close over the plugin the way `subscribe_related_topic` does.
-        self._related_topic_targets: dict[str, tuple[CheckPlugin, str]] = {}
+        # related-topic name -> every (plugin instance, its primary topic
+        # name) listening to it: several topics may share one, such as /odom.
+        self._related_topic_targets: dict[str, list[tuple[CheckPlugin, str]]] = {}
+        # related-topic name -> the subscription feeding those listeners, for
+        # an undeclared topic (a declared one forwards from its own subscription).
+        self._related_subscriptions: dict[str, Any] = {}
         # Only `start()` flips this on -- `replay` constructs
         # a manager and drives `tick()` without ever calling `start()`'s live
         # discovery, so periodic rediscovery and stale-stack clearing (both
@@ -282,10 +283,16 @@ class SubscriptionManager:
         self._live = True
 
     def _reserved_related_topic_names(self) -> set[str]:
+        """Topics that are only another topic's input: declaring one monitors it as well."""
         reserved: set[str] = set()
         for topic_config in self._topic_config_by_name.values():
             reserved.update(topic_config.related_topics.values())
-        return reserved
+        return {name for name in reserved if not has_own_subscription(self, name)}
+
+    def _related_topic_names(self) -> set[str]:
+        """Every topic some declared topic or action reads as a related topic."""
+        configs = [*self._topic_config_by_name.values(), *self._action_config_by_status_topic.values()]
+        return {name for config in configs for name in config.related_topics.values()}
 
     def _wait_for_graph_settle(self) -> None:
         """Give ROS graph discovery `graph_settle_seconds` to reach this node.

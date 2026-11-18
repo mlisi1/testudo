@@ -38,7 +38,13 @@ from testudo.core.exclusion import maybe_record_excluded
 from testudo.core.plugin_settings import build_plugin
 from testudo.core.subscription_manager import SubscriptionManager
 from testudo.core.stamp_check import stamp_check_for
-from testudo.core.tier_subscription import FullTierState, process_full_tier_message
+from testudo.core.tier_subscription import (
+    FullTierState,
+    add_related_listener,
+    feed_related_listeners,
+    has_own_subscription,
+    process_full_tier_message,
+)
 from testudo.core.topic_report import TopicReport
 from testudo.core.vitals import TopicVitals
 from testudo.plugins.base import CheckStatus
@@ -129,7 +135,7 @@ def _track_for_replay(manager: SubscriptionManager, topic_name: str, msg_type_st
     )
     manager._full_tier[topic_name] = state
     for related_topic_name in related_topics.values():
-        manager._related_topic_targets[related_topic_name] = (plugin, topic_name)
+        add_related_listener(manager, related_topic_name, plugin, topic_name)
 
 
 def _feed_replayed_message(manager: SubscriptionManager, topic_name: str, msg_type_str: str, msg: object) -> None:
@@ -139,19 +145,19 @@ def _feed_replayed_message(manager: SubscriptionManager, topic_name: str, msg_ty
     to have advanced that clock to this message's recorded timestamp
     already, so liveness/decimation/hysteresis all reason in bag time.
     """
-    target = manager._related_topic_targets.get(topic_name)
-    if target is not None:
-        plugin, _primary_topic = target
-        now = manager._clock.now_seconds()
-        plugin.on_tick(now)
-        plugin.on_message(topic_name, msg)
-        return
+    now = manager._clock.now_seconds()
+    if not has_own_subscription(manager, topic_name):
+        if topic_name in manager._related_topic_targets:
+            feed_related_listeners(manager, topic_name, msg, now)
+            return
+        if topic_name in manager._reserved_related_topic_names():
+            return  # its listener's first message is still to come
 
     _track_for_replay(manager, topic_name, msg_type_str)
 
-    now = manager._clock.now_seconds()
     if topic_name in manager._vitals:
         manager._vitals[topic_name].record_arrival(now)
+        feed_related_listeners(manager, topic_name, msg, now)
         return
     state = manager._full_tier.get(topic_name)
     if state is not None:
@@ -173,7 +179,7 @@ def _wire_tf_watch_for_replay(manager: SubscriptionManager, topic_types: dict[st
         return
 
     if TF_STATIC_TOPIC in topic_types:
-        manager._related_topic_targets[TF_STATIC_TOPIC] = (state.plugin, TF_TOPIC)
+        add_related_listener(manager, TF_STATIC_TOPIC, state.plugin, TF_TOPIC)
         # What the live path passes to the plugin's constructor: how it
         # tells a static edge (never aged) from a dynamic one.
         state.plugin.related_topics = {**state.plugin.related_topics, "tf_static": TF_STATIC_TOPIC}

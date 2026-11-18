@@ -27,7 +27,7 @@ from testudo.core.discovery import (
     subscription_qos,
 )
 from testudo.core.plugin_settings import build_plugin
-from testudo.core.tier_subscription import subscribe_full_tier
+from testudo.core.tier_subscription import TF_STATIC_TOPIC, subscribe_full_tier
 
 if TYPE_CHECKING:
     from testudo.core.subscription_manager import SubscriptionManager
@@ -36,7 +36,6 @@ _logger = logging.getLogger(__name__)
 
 TF_TYPE = "tf2_msgs/msg/TFMessage"
 TF_TOPIC = "/tf"
-TF_STATIC_TOPIC = "/tf_static"
 TRANSITION_EVENT_TYPE = "lifecycle_msgs/msg/TransitionEvent"
 
 #: Total shared budget for seeding *every* lifecycle node's current state at

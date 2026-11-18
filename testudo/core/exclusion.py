@@ -101,7 +101,9 @@ def exclude_tracked_topic(manager: SubscriptionManager, topic_name: str) -> None
     manager._owning_node_by_topic.pop(topic_name, None)
     manager._no_publishers.discard(topic_name)
     manager._latched.discard(topic_name)
-    manager._related_topic_targets.pop(topic_name, None)
+    companion = manager._related_subscriptions.pop(topic_name, None)
+    if companion is not None:
+        manager._node.destroy_subscription(companion)
     if msg_type is not None:
         manager._excluded[topic_name] = msg_type
 

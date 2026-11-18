@@ -203,6 +203,9 @@ def _clear_all_topics(manager: "SubscriptionManager") -> None:
     for subscription in manager._subscriptions.values():
         manager._node.destroy_subscription(subscription)
     manager._subscriptions.clear()
+    for subscription in manager._related_subscriptions.values():
+        manager._node.destroy_subscription(subscription)
+    manager._related_subscriptions.clear()
     manager._vitals.clear()
     manager._full_tier.clear()
     manager._presence_only.clear()
