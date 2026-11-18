@@ -1,0 +1,121 @@
+/* Testudo docs theme: the logo's maroon and gold (testudo/tui/theme.py).
+   Gold has too little contrast on white, so in light mode it is only ever a
+   fill or an underline, never text. Severity colors are status, not brand:
+   they stay separate and always come with their icon. */
+
+:root {
+  --testudo-maroon: #971b2f;
+  --testudo-maroon-dark: #74101f;
+  --testudo-gold: #ffb500;
+  --testudo-slate: #4b5563;
+  --md-primary-fg-color: var(--testudo-maroon);
+  --md-primary-fg-color--light: #b23347;
+  --md-primary-fg-color--dark: var(--testudo-maroon-dark);
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: #ffffffb3;
+}
+
+[data-md-color-scheme="default"] {
+  --md-accent-fg-color: var(--testudo-maroon);
+  --md-accent-fg-color--transparent: #971b2f1a;
+  --md-typeset-a-color: var(--testudo-maroon);
+  --md-default-fg-color--light: var(--testudo-slate);
+  --testudo-rule: #4b556333;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-hue: 220;
+  --md-default-bg-color: #16181d;
+  --md-code-bg-color: #20232a;
+  --md-accent-fg-color: var(--testudo-gold);
+  --md-accent-fg-color--transparent: #ffb5001a;
+  --md-typeset-a-color: var(--testudo-gold);
+  --md-footer-bg-color: #101216;
+  --md-footer-bg-color--dark: #0b0d10;
+  --testudo-rule: #9ca3af33;
+}
+
+/* The header stays maroon in both schemes, with a gold edge. */
+.md-header {
+  background-color: var(--testudo-maroon);
+  border-bottom: 2px solid var(--testudo-gold);
+}
+.md-tabs {
+  background-color: var(--testudo-maroon-dark);
+}
+.md-tabs__item--active .md-tabs__link {
+  box-shadow: inset 0 -2px 0 var(--testudo-gold);
+}
+.md-header__button.md-logo img {
+  height: 1.7rem;
+  width: auto;
+}
+
+.md-typeset h1 {
+  color: var(--md-default-fg-color);
+  font-weight: 700;
+}
+.md-typeset h2 {
+  border-bottom: 1px solid var(--testudo-rule);
+  font-weight: 650;
+  padding-bottom: 0.2rem;
+}
+.md-typeset h2::after {
+  background: var(--testudo-gold);
+  content: "";
+  display: block;
+  height: 2px;
+  margin-bottom: -0.25rem;
+  margin-top: 0.2rem;
+  width: 2.5rem;
+}
+
+.md-typeset table:not([class]) th {
+  background-color: var(--testudo-slate);
+  color: #ffffff;
+}
+
+/* A code's entry: its anchor is the stable link to it. */
+.md-typeset h3[id] code {
+  font-size: 0.95em;
+}
+
+/* Severity badges. Each carries its icon, since WARN and ERROR sit close to the brand colors. */
+.md-typeset .sev {
+  border-radius: 0.2rem;
+  color: #ffffff;
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.4;
+  padding: 0 0.4rem;
+  white-space: nowrap;
+}
+.md-typeset .sev-ok { background-color: #15803d; }
+.md-typeset .sev-warn { background-color: #facc15; color: #1f2937; }
+.md-typeset .sev-error { background-color: #dc2626; }
+.md-typeset .sev-stale { background-color: #a21caf; }
+
+/* Home page: the wordmark is the title, the heading stays for search and screen readers. */
+.md-typeset h1.testudo-page-title {
+  border: 0;
+  clip: rect(0 0 0 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  width: 1px;
+}
+.testudo-hero {
+  margin: 0.5rem auto 1.5rem;
+  max-width: 34rem;
+  text-align: center;
+}
+.testudo-hero img {
+  width: 100%;
+}
+.md-typeset .testudo-tagline {
+  font-size: 1.05rem;
+  text-align: center;
+}

@@ -1,9 +1,14 @@
 build/
 install/
 log/
+site/
 __pycache__/
 *.egg-info/
 .pytest_cache/
 *.pyc
-*.md
 bags/
+
+# Markdown stays local, except the README and the documentation.
+*.md
+!/README.md
+!/docs/**/*.md
