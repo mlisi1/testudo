@@ -128,7 +128,7 @@ _RATE_FORMATS = (
 )
 
 
-#: The leading glyph of nav2_goals' `state` headline chip -> the Nav2
+#: The leading glyph of the actions plugin's `state` headline chip -> the
 #: Actions "State" cell: what the action server is doing now.
 _ACTION_STATE_CELLS = {
     "▶": "[green]▶ run[/green]",

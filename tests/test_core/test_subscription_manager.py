@@ -189,7 +189,7 @@ class _RecordingPlugin(CheckPlugin):
 
 
 class _ActionPlugin(CheckPlugin):
-    """Test-only plugin covering action_msgs/msg/GoalStatusArray, mirroring Nav2GoalPlugin's shape."""
+    """Test-only plugin covering action_msgs/msg/GoalStatusArray, mirroring ActionsPlugin's shape."""
 
     def __init__(self, thresholds=None, related_topics=None) -> None:
         super().__init__(thresholds, related_topics)

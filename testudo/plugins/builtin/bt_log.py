@@ -4,7 +4,7 @@ Tracks nav2_msgs/msg/BehaviorTreeLog, the stream of every BT node's
 IDLE/RUNNING/SUCCESS/FAILURE status transitions Nav2's BT navigator
 publishes on `/behavior_tree_log` whenever a node's status actually
 changes (not once per tick). Two things fall out of that log that
-Nav2GoalPlugin's action-status tracking can't see:
+ActionsPlugin's action-status tracking can't see:
 
 - which node(s) are currently RUNNING -- BT.CPP keeps every ancestor of the
   currently-ticking leaf (a Sequence, a Fallback, a RecoveryNode, ...)
@@ -13,7 +13,7 @@ Nav2GoalPlugin's action-status tracking can't see:
 - how often a *recovery* node actually triggers -- including ones wired
   directly into the tree as a synchronous service call (e.g.
   ClearEntireCostmap) rather than exposed as their own action server, which
-  is the only kind Nav2GoalPlugin's recovery-frequency tracking (via
+  is the only kind ActionsPlugin's recovery-frequency tracking (via
   /spin, /backup, /wait's own status topics) can ever see.
 """
 from __future__ import annotations

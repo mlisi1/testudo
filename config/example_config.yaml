@@ -166,7 +166,7 @@ actions:
     action_type: nav2_msgs/action/NavigateToPose
     weight: 3
     # NavigateToPose's Feedback carries distance_remaining and
-    # estimated_time_remaining; Nav2GoalPlugin reads them off this topic on
+    # estimated_time_remaining; ActionsPlugin reads them off this topic on
     # a best-effort basis (most other actions' Feedback doesn't have them).
     related_topics:
       feedback: /navigate_to_pose/_action/feedback

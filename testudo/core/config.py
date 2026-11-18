@@ -166,7 +166,7 @@ class ActionConfig:
     # {code: Severity}, applied to the action's status topic (core/code_overrides.py).
     codes: dict[str, int] = field(default_factory=dict)
     # e.g. {"feedback": "/navigate_to_pose/_action/feedback"} -- routed to
-    # the same Nav2GoalPlugin instance as the derived status topic, exactly
+    # the same ActionsPlugin instance as the derived status topic, exactly
     # like a declared topic's related_topics (see TopicConfig above).
     related_topics: dict[str, str] = field(default_factory=dict)
 

@@ -1,4 +1,4 @@
-"""Nav2 action goal-lifecycle plugin.
+"""Action goal-lifecycle plugin.
 
 Tracks one action server's goal lifecycle via its status topic
 (action_msgs/msg/GoalStatusArray -- common to every ROS 2 action regardless
@@ -88,7 +88,7 @@ class _GoalRecord:
         self.last_status = last_status
 
 
-class Nav2GoalPlugin(CheckPlugin):
+class ActionsPlugin(CheckPlugin):
     """Goal-lifecycle, success-rate, duration, and invocation-frequency tracking for one action."""
 
     def __init__(
@@ -271,7 +271,7 @@ class Nav2GoalPlugin(CheckPlugin):
 
     def get_status(self) -> CheckStatus:
         if self._message_count == 0:
-            return CheckStatus(severity=Severity.OK, label="nav2-action", message="no goal status received yet")
+            return CheckStatus(severity=Severity.OK, label="action", message="no goal status received yet")
 
         success_rate = self._success_rate()
         mean_duration = self._mean_duration()
@@ -294,13 +294,13 @@ class Nav2GoalPlugin(CheckPlugin):
         codes = ActiveCodes()
         if success_severity != Severity.OK:
             problems.append(f"success rate {success_rate:.0%}")
-            codes.add("NAV-001", f"success rate {success_rate:.0%}", success_severity)
+            codes.add("ACT-001", f"success rate {success_rate:.0%}", success_severity)
         if duration_severity != Severity.OK:
             problems.append(f"mean duration {mean_duration:.1f}s")
-            codes.add("NAV-002", f"mean goal duration {mean_duration:.1f}s", duration_severity)
+            codes.add("ACT-002", f"mean goal duration {mean_duration:.1f}s", duration_severity)
         if frequency_severity != Severity.OK:
             problems.append(f"invocation frequency {frequency:.1f}/min")
-            codes.add("NAV-003", f"invoked {frequency:.1f} times/min", frequency_severity)
+            codes.add("ACT-003", f"invoked {frequency:.1f} times/min", frequency_severity)
         message = "; ".join(problems) if problems else "nominal"
 
         values = {"state": self._state_line(), "history": self._history_line()}
@@ -319,7 +319,7 @@ class Nav2GoalPlugin(CheckPlugin):
         recent = strip((outcome for outcome, _duration in self._outcomes), width=_TOPIC_PANEL_OUTCOMES)
         return CheckStatus(
             severity=worst,
-            label="nav2-action",
+            label="action",
             message=message,
             values=values,
             topic_panel_column="Last 5",

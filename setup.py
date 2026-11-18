@@ -45,7 +45,7 @@ setup(
             # that's what previously caused problems on real hardware.
             "image_stream = testudo.plugins.builtin.image_stream:ImageStreamPlugin",
             "point_stream = testudo.plugins.builtin.point_stream:PointStreamPlugin",
-            "nav2_goals = testudo.plugins.builtin.nav2_goals:Nav2GoalPlugin",
+            "actions = testudo.plugins.builtin.actions:ActionsPlugin",
             "bt_log = testudo.plugins.builtin.bt_log:BehaviorTreeLogPlugin",
             "tf_watch = testudo.plugins.builtin.tf_watch:TFWatchPlugin",
         ],

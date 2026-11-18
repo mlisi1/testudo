@@ -8,11 +8,11 @@ from __future__ import annotations
 from testudo.core.topic_report import TopicReport
 
 #: Message types whose category reads better as what the topics *are* than
-#: as the message type's own short name (e.g. "GoalStatusArray" -> "Nav2
-#: Actions", "NavSatFix" -> "GNSS").
+#: as the message type's own short name (e.g. "GoalStatusArray" ->
+#: "Actions", "NavSatFix" -> "GNSS").
 _FRIENDLY_NAMES = {
     "nav_msgs/msg/Odometry": "Localization",
-    "action_msgs/msg/GoalStatusArray": "Nav2 Actions",
+    "action_msgs/msg/GoalStatusArray": "Actions",
     "nav2_msgs/msg/BehaviorTreeLog": "BT Navigator",
     "tf2_msgs/msg/TFMessage": "TF",
     "sensor_msgs/msg/NavSatFix": "GNSS",

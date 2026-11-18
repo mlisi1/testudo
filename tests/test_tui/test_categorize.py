@@ -21,7 +21,7 @@ def test_full_tier_uses_message_type_short_name() -> None:
 
 
 def test_full_tier_friendly_name_overrides() -> None:
-    assert category_for(_report("action_msgs/msg/GoalStatusArray", "full")) == "Nav2 Actions"
+    assert category_for(_report("action_msgs/msg/GoalStatusArray", "full")) == "Actions"
     assert category_for(_report("tf2_msgs/msg/TFMessage", "full")) == "TF"
 
 

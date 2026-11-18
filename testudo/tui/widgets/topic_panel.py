@@ -80,8 +80,8 @@ class TopicDetailTable(NavDataTable):
     updated on every message arrival for every subscribed topic regardless
     of tier or content-check decimation -- displaying it here is free, not
     an extra measurement. Two categories swap it for something that means
-    more there (see `rate_column_header`): Nodes shows memory, Nav2
-    Actions the server's current state. Nav2 Actions rows are also named
+    more there (see `rate_column_header`): Nodes shows memory,
+    Actions the server's current state. Actions rows are also named
     for the action, not its `/_action/status` topic (`display_name`).
 
     A 4th column appears when the visible category's reports carry a

@@ -642,12 +642,12 @@ def test_code_overrides_parse_on_topics_and_actions(tmp_path: Path) -> None:
         actions:
           - name: spin
             action_type: nav2_msgs/action/Spin
-            codes: {NAV-003: error}
+            codes: {ACT-003: error}
         """,
     )
     config = load_config(path)
     assert config.topics["sensor_msgs/msg/NavSatFix"][0].codes == {"GNSS-001": Severity.WARN, "GNSS-007": Severity.OK}
-    assert config.actions[0].codes == {"NAV-003": Severity.ERROR}
+    assert config.actions[0].codes == {"ACT-003": Severity.ERROR}
 
 
 def test_code_override_severity_must_be_ok_warn_or_error(tmp_path: Path) -> None:
