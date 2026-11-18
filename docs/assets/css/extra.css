@@ -374,6 +374,83 @@
   top: 0.05rem;
 }
 
+/* The Dashboard page: parts of the screenshot, each marked area a link. */
+.md-typeset figure.tx-map {
+  display: block;
+  margin: 1.5rem auto;
+  padding: 0.6rem 1.2rem;
+  width: 100%;
+}
+.tx-map__frame {
+  position: relative;
+}
+.tx-map__view {
+  border-radius: 0.2rem;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+.md-typeset .tx-map__view img {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  max-width: none;
+  position: absolute;
+}
+.md-typeset .tx-spot {
+  border: 1.5px solid var(--testudo-callout);
+  border-radius: 0.15rem;
+  box-sizing: border-box;
+  position: absolute;
+  transition: background-color 120ms;
+}
+.md-typeset a.tx-spot:hover,
+.md-typeset a.tx-spot:focus-visible {
+  background-color: #22d3ee40;
+  z-index: 2;
+}
+.tx-spot b,
+.md-typeset .tx-num,
+.md-typeset .tx-pane-link b {
+  background: var(--testudo-callout);
+  border-radius: 50%;
+  color: #1f2937;
+  display: inline-block;
+  font-size: 0.55rem;
+  font-weight: 700;
+  height: 0.85rem;
+  line-height: 0.85rem;
+  text-align: center;
+  width: 0.85rem;
+}
+.tx-spot b {
+  position: absolute;
+  z-index: 1;
+}
+.tx-spot__badge--top { left: 0; top: -0.6rem; }
+.tx-spot__badge--bottom { bottom: -0.6rem; left: 0; }
+.tx-spot__badge--left { left: -1rem; top: 50%; transform: translateY(-50%); }
+.tx-spot__badge--right { right: -1rem; top: 50%; transform: translateY(-50%); }
+.tx-spot__badge--bottom-right { bottom: -0.6rem; right: 0; }
+.tx-spot__badge--inside { bottom: 0.3rem; right: 0.3rem; }
+.md-typeset a.tx-spot--pane {
+  border-width: 2px;
+}
+/* Status glyphs stay text: some systems would draw ▶ as a colored emoji. */
+.md-typeset code {
+  font-variant-emoji: text;
+}
+.md-typeset .tx-pane-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1.1rem;
+  justify-content: center;
+}
+.md-typeset .tx-pane-link {
+  font-size: 0.72rem;
+}
+
 /* A cropped picture keeps its own size instead of stretching across the page. */
 .md-typeset img[src*="plugins/costmap"] {
   margin: 0 auto;

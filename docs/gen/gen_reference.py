@@ -11,8 +11,12 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import dashboard_map  # noqa: E402  (found through the line above)
 from testudo import cli
 from testudo.core.config import NodeProfilingConfig
 from testudo.core.stamp_check import (
@@ -142,6 +146,7 @@ def generated_files() -> dict[Path, str]:
     )
     files[INCLUDES / "cli.md"] = cli_reference()
     files[INCLUDES / "codes.md"] = code_index()
+    files.update(dashboard_map.generated_files(INCLUDES))
     return files
 
 

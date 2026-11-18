@@ -61,5 +61,17 @@ def test_generated_reference_is_current(path: Path) -> None:
     assert path.read_text(encoding="utf-8") == GEN.generated_files()[path], "run docs/gen/gen_reference.py"
 
 
+def test_every_mark_on_the_dashboard_page_stays_on_screen_and_links_to_a_real_page() -> None:
+    dashboard_map = GEN.dashboard_map
+    for crops in dashboard_map.SECTIONS.values():
+        for crop in crops:
+            for item in crop.items:
+                for spot in item.spots:
+                    assert crop.col <= spot.col and spot.col + spot.width <= crop.col + crop.width, item.name
+                    assert crop.row <= spot.row and spot.row + spot.height <= crop.row + crop.height, item.name
+                    target = spot.target or item.target
+                    assert target is None or (DOCS / target.partition("#")[0]).is_file(), target
+
+
 def test_example_config_is_valid_yaml() -> None:
     assert yaml.safe_load((ROOT / "config" / "example_config.yaml").read_text(encoding="utf-8"))
