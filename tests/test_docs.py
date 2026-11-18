@@ -1,0 +1,65 @@
+"""The documentation stays true to the code: every code documented, every generated table current."""
+from __future__ import annotations
+
+import importlib.util
+import re
+from collections import Counter
+from pathlib import Path
+
+import pytest
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+DOCS = ROOT / "docs"
+
+
+def _generator():
+    spec = importlib.util.spec_from_file_location("gen_reference", DOCS / "gen" / "gen_reference.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+GEN = _generator()
+SOURCE_CODE = re.compile(rf"\b(?:{'|'.join(GEN.CODE_PAGES)})-\d{{3}}\b")
+
+
+def _source_codes() -> set[str]:
+    return {code for path in (ROOT / "testudo").rglob("*.py") for code in SOURCE_CODE.findall(path.read_text(encoding="utf-8"))}
+
+
+def _documented() -> list[tuple[str, str, str]]:
+    """(code, page, anchor) for every code entry in the docs."""
+    entries = []
+    for page in GEN.CODE_PAGES.values():
+        text = (DOCS / page).read_text(encoding="utf-8")
+        entries += [(code, page, anchor) for code, _title, anchor in GEN.CODE_HEADING.findall(text)]
+    return entries
+
+
+def test_every_code_in_the_source_has_exactly_one_entry_and_every_entry_a_code() -> None:
+    counts = Counter(code for code, _page, _anchor in _documented())
+    assert set(counts) == _source_codes()
+    assert max(counts.values()) == 1
+
+
+def test_a_code_is_documented_on_its_prefix_page_under_its_own_anchor() -> None:
+    for code, page, anchor in _documented():
+        assert page == GEN.CODE_PAGES[code.split("-")[0]]
+        assert anchor == code.lower()
+
+
+def test_every_builtin_plugin_has_a_page_in_the_navigation() -> None:
+    config = (ROOT / "mkdocs.yml").read_text(encoding="utf-8")
+    for page in GEN.PLUGIN_PAGES:
+        assert (DOCS / "plugins" / f"{page}.md").is_file()
+        assert f"plugins/{page}.md" in config
+
+
+@pytest.mark.parametrize("path", sorted(GEN.generated_files()), ids=lambda path: path.name)
+def test_generated_reference_is_current(path: Path) -> None:
+    assert path.read_text(encoding="utf-8") == GEN.generated_files()[path], "run docs/gen/gen_reference.py"
+
+
+def test_example_config_is_valid_yaml() -> None:
+    assert yaml.safe_load((ROOT / "config" / "example_config.yaml").read_text(encoding="utf-8"))
