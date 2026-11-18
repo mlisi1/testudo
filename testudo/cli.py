@@ -96,6 +96,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
     _add_config_arg(subparsers.add_parser("plugins", help="list discovered plugins and the msg types they cover"))
 
+    config_parser = subparsers.add_parser("config", help="work with the config file")
+    config_commands = config_parser.add_subparsers(dest="config_command", required=True)
+    init_parser = config_commands.add_parser("init", help="write a config for the stack running now")
+    _add_config_arg(init_parser)
+    init_parser.add_argument("--force", action="store_true", help="replace the file if it already exists")
+
     return parser
 
 
@@ -397,10 +403,55 @@ def cmd_plugins(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_config_init(args: argparse.Namespace) -> int:
+    """`config init`: declare every topic the plugins cover on the running stack, in a new config file."""
+    from testudo.core.config_init import GRAPH_WAIT_SECONDS, read_graph, render_config
+    from testudo.core.config_writer import edit_config_file
+
+    path = args.config or DEFAULT_CONFIG_PATH
+    if os.path.exists(path) and not args.force:
+        _logger.error("%s already exists: pass --force to replace it, or -c to write somewhere else", path)
+        return 2
+
+    plugins = discover_all_plugins(None)
+    rclpy.init(args=args.rclpy_args)
+    node = rclpy.create_node("testudo_config_init")
+    try:
+        # A new node sees the graph only after discovery has reached it.
+        time.sleep(GRAPH_WAIT_SECONDS)
+        graph = read_graph(node)
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
+
+    if not graph.topics:
+        _logger.error("no publishers found: is the stack running, on this ROS_DOMAIN_ID? Nothing was written")
+        return 1
+    rendered = render_config(graph, plugins)
+    try:
+        edit_config_file(path, lambda _text: rendered.text)
+    except OSError as exc:
+        _logger.error("could not write %s: %s", path, exc)
+        return 2
+    _logger.info(
+        "wrote %s: %d topic(s) and %d action(s) declared, %d camera/point cloud topic(s) left commented out",
+        path,
+        rendered.topics,
+        rendered.actions,
+        rendered.heavy_topics,
+    )
+    return 0
+
+
+def cmd_config(args: argparse.Namespace) -> int:
+    return cmd_config_init(args)
+
+
 _COMMANDS = {
     "watch": cmd_watch,
     "replay": cmd_replay,
     "plugins": cmd_plugins,
+    "config": cmd_config,
 }
 
 

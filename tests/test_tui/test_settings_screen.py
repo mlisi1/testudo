@@ -278,6 +278,20 @@ def test_a_count_of_one_is_not_shown_as_on() -> None:
     assert format_value(1) == "1" and format_value(True) == "on" and format_value(10.0) == "10"
 
 
+def test_the_help_shows_every_key_on_an_80x24_terminal() -> None:
+    async def body() -> None:
+        app = TestudoApp(StaticDataSource([], CheckStatus(Severity.OK, "overall", "")), ros_distro="jazzy")
+        lines = Content.from_markup(HELP_TEXT).plain.splitlines()
+        assert max(map(len, lines)) <= 72
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.press("question_mark")
+            await pilot.pause()
+            region = app.screen.query_one("#help-text").region
+            assert region.y + 1 + lines.index("Press any key to close.") < 24
+
+    asyncio.run(body())
+
+
 def test_every_key_in_the_help_is_bold() -> None:
     content = Content.from_markup(HELP_TEXT)
     assert "[ / ]" in content.plain and "{ / }" in content.plain
