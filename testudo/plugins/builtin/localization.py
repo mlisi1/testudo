@@ -31,6 +31,7 @@ from testudo.plugins.base import (
     colorize,
     evaluate_levels,
 )
+from testudo.plugins.builtin.localization_jumps import PoseJumpCheck
 from testudo.plugins.builtin.localization_math import _is_positive_semidefinite, _quaternion_to_euler, _split_zone
 from testudo.plugins.builtin.localization_roles import GLOBAL_ROLE, ROLE_LEVELS, frame_role
 from testudo.plugins.builtin.localization_layout import (
@@ -107,6 +108,7 @@ class LocalizationPlugin(CheckPlugin):
         self._now = 0.0
         self._has_twist = False
         self._role_override: str | None = None
+        self._jumps = PoseJumpCheck()
         self._sigma_xy_history: deque[float] = deque(maxlen=_SIGMA_HISTORY_SIZE)
         self._last_sigma_sample: float | None = None
 
@@ -131,6 +133,13 @@ class LocalizationPlugin(CheckPlugin):
             "position_covariance_trace": SeverityLevels(warn=0.01, error=1000.0),
             "yaw_variance": SeverityLevels(warn=0.01, error=10.0),
             "covariance_growth_rate": SeverityLevels(warn=0.01),
+            # Meters/radians beyond what the reported motion explains. On a
+            # continuous topic any jump is a bug; a global one may relocalize.
+            "pose_jump_m": SeverityLevels(warn=0.1, error=1.0),
+            "pose_jump_rad": SeverityLevels(warn=0.2, error=1.0),
+            "global_pose_jump_m": SeverityLevels(warn=2.0, error=10.0),
+            "global_pose_jump_rad": SeverityLevels(warn=1.0),
+            "relocalizations_per_min": SeverityLevels(warn=3),
         }
 
     def set_frame_role(self, role: str) -> None:
@@ -192,9 +201,12 @@ class LocalizationPlugin(CheckPlugin):
 
         pose_matrix = np.array(pose_covariance, dtype=float).reshape(6, 6)
         self._pose_psd_ok = _is_positive_semidefinite(pose_matrix)
+        if msg.header.frame_id != self._frames[0]:
+            self._jumps.restart()
         self._frames = (msg.header.frame_id, getattr(msg, "child_frame_id", ""))
 
         stamp_seconds = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        self._jumps.observe(msg, stamp_seconds, self._now, self._role(), self.levels)
         self._growth_history.append((stamp_seconds, self._position_covariance_trace))
         self._growth_rate = self._compute_growth_rate()
 
@@ -249,8 +261,12 @@ class LocalizationPlugin(CheckPlugin):
         growth_severity = evaluate_levels(abs(self._growth_rate), self._levels_for("covariance_growth_rate"))
         psd_severity = Severity.OK if (self._pose_psd_ok and self._twist_psd_ok) else Severity.ERROR
         cmd_vel_severity, cmd_vel_message = self._cmd_vel_cross_check()
+        jumps = self._jumps.findings(self._now, self.levels)
 
-        worst = max(trace_severity, yaw_severity, growth_severity, psd_severity, cmd_vel_severity)
+        worst = max(
+            trace_severity, yaw_severity, growth_severity, psd_severity, cmd_vel_severity,
+            *(severity for _code, severity, _text in jumps),
+        )
 
         problems = []
         if psd_severity != Severity.OK:
@@ -263,6 +279,7 @@ class LocalizationPlugin(CheckPlugin):
             problems.append(f"covariance growing at {self._growth_rate:.4g}/s")
         if cmd_vel_severity != Severity.OK:
             problems.append(cmd_vel_message)
+        problems.extend(text for _code, _severity, text in jumps)
         message = "; ".join(problems) if problems else "localization nominal"
 
         codes = ActiveCodes()
@@ -282,6 +299,8 @@ class LocalizationPlugin(CheckPlugin):
             codes.add("LOC-005", "twist covariance not positive semi-definite", Severity.ERROR)
         if cmd_vel_severity != Severity.OK:
             codes.add("LOC-006", "cmd_vel commands motion, odometry reports none", cmd_vel_severity)
+        for code, severity, text in jumps:
+            codes.add(code, text, severity)
 
         # Position axes are judged per axis, not against the trace (a sum of
         # three variances, so judging one axis by it reads every axis as
@@ -317,6 +336,9 @@ class LocalizationPlugin(CheckPlugin):
         }
         if self._has_twist:
             values["twist_σ_more"] = twist_sigma_line(*self._twist_variance)
+        jump_summary = self._jumps.summary(self._now)
+        if jump_summary is not None:
+            values["pose_jumps"] = jump_summary
 
         return CheckStatus(
             severity=worst,
@@ -349,6 +371,7 @@ class LocalizationPlugin(CheckPlugin):
                 "frame_id": frame,
                 "child_frame_id": child,
                 "frame_role": self._role() or "unknown",
+                **self._jumps.metrics(self._now),
             }
         )
         if self._has_twist:

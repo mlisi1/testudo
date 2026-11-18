@@ -143,6 +143,97 @@ def test_global_frame_skips_the_cmd_vel_cross_check() -> None:
     assert "LOC-006" not in plugin.get_status().codes
 
 
+def _at(frame_id: str, stamp_sec: int, x: float = 0.0, yaw: float = 0.0, linear_x: float = 0.0) -> Odometry:
+    msg = _framed_odometry(frame_id, stamp_sec=stamp_sec, linear_x=linear_x)
+    msg.pose.pose.position.x = x
+    msg.pose.pose.orientation.z = math.sin(yaw / 2.0)
+    msg.pose.pose.orientation.w = math.cos(yaw / 2.0)
+    return msg
+
+
+def _feed(plugin: LocalizationPlugin, *messages: Odometry) -> None:
+    for msg in messages:
+        plugin.on_tick(float(msg.header.stamp.sec) + 100.0)
+        plugin.on_message("/topic", msg)
+
+
+def test_motion_the_twist_explains_is_not_a_jump() -> None:
+    plugin = LocalizationPlugin()
+    _feed(plugin, _at("odom", 1, x=0.0, linear_x=1.0), _at("odom", 2, x=1.0, linear_x=1.0))
+    assert "LOC-007" not in plugin.get_status().codes
+
+
+def test_a_continuous_topic_flags_a_small_jump() -> None:
+    plugin = LocalizationPlugin()
+    _feed(plugin, _at("odom", 1, x=0.0), _at("odom", 2, x=0.3))
+    assert plugin.get_status().code_severities["LOC-007"] == Severity.WARN
+
+
+def test_a_large_continuous_jump_is_an_error() -> None:
+    plugin = LocalizationPlugin()
+    _feed(plugin, _at("odom", 1, x=0.0), _at("odom", 2, x=3.0))
+    assert plugin.get_status().code_severities["LOC-007"] == Severity.ERROR
+
+
+def test_a_heading_jump_counts_and_wraps_around_pi() -> None:
+    plugin = LocalizationPlugin()
+    _feed(plugin, _at("odom", 1, yaw=3.1), _at("odom", 2, yaw=-3.1))
+    assert "LOC-007" not in plugin.get_status().codes  # 0.08 rad apart, not 6.2
+    _feed(plugin, _at("odom", 3, yaw=1.0))
+    assert "LOC-007" in plugin.get_status().codes
+
+
+def test_a_jump_stays_active_for_a_while_then_clears() -> None:
+    plugin = LocalizationPlugin()
+    _feed(plugin, _at("odom", 1, x=0.0), _at("odom", 2, x=0.3))
+    plugin.on_tick(102.0 + 9.0)
+    assert "LOC-007" in plugin.get_status().codes
+    plugin.on_tick(102.0 + 10.0)
+    status = plugin.get_status()
+    assert "LOC-007" not in status.codes
+    assert status.metrics["pose_jumps"] == 1
+
+
+def test_a_global_topic_tolerates_a_relocalization_but_flags_a_large_one() -> None:
+    plugin = LocalizationPlugin()
+    _feed(plugin, _at("map", 1, x=0.0), _at("map", 2, x=1.0))
+    assert "LOC-007" not in plugin.get_status().codes
+    _feed(plugin, _at("map", 3, x=6.0))
+    assert plugin.get_status().code_severities["LOC-007"] == Severity.WARN
+
+
+def test_a_burst_of_relocalizations_is_flagged() -> None:
+    plugin = LocalizationPlugin()
+    _feed(plugin, _at("map", 1, x=0.0), _at("map", 2, x=1.0), _at("map", 3, x=0.0), _at("map", 4, x=1.0))
+    assert "LOC-008" not in plugin.get_status().codes  # three in a minute: on the limit, not past it
+    _feed(plugin, _at("map", 5, x=0.0))
+    assert plugin.get_status().code_severities["LOC-008"] == Severity.WARN
+
+
+def test_relocalizations_age_out_of_the_burst_window() -> None:
+    plugin = LocalizationPlugin()
+    _feed(plugin, *(_at("map", second, x=float(second % 2)) for second in range(1, 6)))
+    assert "LOC-008" in plugin.get_status().codes
+    plugin.on_tick(105.0 + 60.0)
+    assert "LOC-008" not in plugin.get_status().codes
+
+
+def test_a_new_frame_is_not_compared_with_the_old_one() -> None:
+    plugin = LocalizationPlugin()
+    _feed(plugin, _at("odom", 1, x=0.0), _at("odom_alt", 2, x=50.0))
+    assert "LOC-007" not in plugin.get_status().codes
+
+
+def test_a_pose_without_velocity_is_credited_a_plausible_speed() -> None:
+    plugin = LocalizationPlugin()
+    plugin.set_frame_role("continuous")
+    first, second = _pose(), _pose()
+    first.header.stamp.sec, second.header.stamp.sec = 1, 2
+    second.pose.pose.position.x = 2.0  # 2 m/s
+    _feed(plugin, first, second)
+    assert "LOC-007" not in plugin.get_status().codes
+
+
 def _twist(linear_x: float = 0.0, angular_z: float = 0.0) -> Twist:
     msg = Twist()
     msg.linear.x = linear_x
