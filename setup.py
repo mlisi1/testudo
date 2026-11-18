@@ -46,6 +46,7 @@ setup(
             "image_stream = testudo.plugins.builtin.image_stream:ImageStreamPlugin",
             "point_stream = testudo.plugins.builtin.point_stream:PointStreamPlugin",
             "velocity_command = testudo.plugins.builtin.velocity_command:VelocityCommandPlugin",
+            "costmap = testudo.plugins.builtin.costmap:CostmapPlugin",
             "actions = testudo.plugins.builtin.actions:ActionsPlugin",
             "bt_log = testudo.plugins.builtin.bt_log:BehaviorTreeLogPlugin",
             "tf_watch = testudo.plugins.builtin.tf_watch:TFWatchPlugin",

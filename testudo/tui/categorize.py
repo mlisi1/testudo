@@ -17,6 +17,7 @@ _FRIENDLY_NAMES = {
     "geometry_msgs/msg/TransformStamped": "Localization",
     "geometry_msgs/msg/Twist": "Velocity Commands",
     "geometry_msgs/msg/TwistStamped": "Velocity Commands",
+    "nav_msgs/msg/OccupancyGrid": "Maps",
     "action_msgs/msg/GoalStatusArray": "Actions",
     "nav2_msgs/msg/BehaviorTreeLog": "BT Navigator",
     "tf2_msgs/msg/TFMessage": "TF",

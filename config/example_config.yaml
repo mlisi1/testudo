@@ -154,10 +154,16 @@ topics:
   # for an event-driven or latched topic). This costmap
   # is configured to update at 5 Hz; falling much below that means the
   # controller isn't keeping up.
+  #
+  # CostmapPlugin also checks the grid itself and draws it in the Detail
+  # Panel; it follows <topic>_updates on its own when that topic exists.
   nav_msgs/msg/OccupancyGrid:
     - name: /local_costmap/costmap
       weight: 2
       thresholds:
+        # A tight corridor can legitimately be mostly obstacles.
+        lethal_ratio:
+          warn: 0.8
         rate_hz:
           warn: 4.0
           error: 1.0
