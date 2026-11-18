@@ -27,7 +27,7 @@ from testudo.core.discovery import (
     subscription_qos,
 )
 from testudo.core.plugin_settings import build_plugin
-from testudo.core.tier_subscription import TF_STATIC_TOPIC, subscribe_full_tier
+from testudo.core.tier_subscription import TF_STATIC_TOPIC, TF_TOPIC, runs_content_checks, subscribe_full_tier
 
 if TYPE_CHECKING:
     from testudo.core.subscription_manager import SubscriptionManager
@@ -35,7 +35,6 @@ if TYPE_CHECKING:
 _logger = logging.getLogger(__name__)
 
 TF_TYPE = "tf2_msgs/msg/TFMessage"
-TF_TOPIC = "/tf"
 TRANSITION_EVENT_TYPE = "lifecycle_msgs/msg/TransitionEvent"
 
 #: Total shared budget for seeding *every* lifecycle node's current state at
@@ -63,7 +62,7 @@ def subscribe_tf_watch(manager: "SubscriptionManager", topics_by_name: dict[str,
     previously recorded as publisher-less is retried.
     """
     plugin_class = manager._plugin_class_by_msg_type.get(TF_TYPE)
-    if plugin_class is None or TF_TOPIC not in topics_by_name:
+    if plugin_class is None or TF_TOPIC not in topics_by_name or not runs_content_checks(manager, TF_TOPIC):
         return set()
 
     claimed = {TF_TOPIC} | ({TF_STATIC_TOPIC} if TF_STATIC_TOPIC in topics_by_name else set())

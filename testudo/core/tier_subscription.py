@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
+TF_TOPIC = "/tf"
 #: Always a companion of /tf's plugin, never a topic of its own, even if declared.
 TF_STATIC_TOPIC = "/tf_static"
 
@@ -60,6 +61,16 @@ def has_own_subscription(manager: SubscriptionManager, topic_name: str) -> bool:
     """True for a declared topic or action status: monitored in its own right, even when plugins also listen to it."""
     declared = topic_name in manager._topic_config_by_name or topic_name in manager._action_config_by_status_topic
     return declared and topic_name != TF_STATIC_TOPIC
+
+
+def runs_content_checks(manager: SubscriptionManager, topic_name: str) -> bool:
+    """True when a plugin covering this topic should check it: always, unless `check_undeclared_topics` is off."""
+    config = manager._config
+    return (
+        config.check_undeclared_topics
+        or has_own_subscription(manager, topic_name)
+        or (topic_name == TF_TOPIC and bool(config.tf))
+    )
 
 
 def add_related_listener(manager: SubscriptionManager, related_topic_name: str, plugin: CheckPlugin, primary: str) -> None:
@@ -139,7 +150,7 @@ def subscribe_topic(
         return
 
     plugin_class = manager._plugin_class_by_msg_type.get(msg_type_str)
-    if plugin_class is None:
+    if plugin_class is None or not runs_content_checks(manager, topic_name):
         subscribe_vitals_tier(manager, topic_name, msg_class, qos)
         return
 

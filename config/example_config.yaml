@@ -1,11 +1,10 @@
 # Example Testudo configuration.
 #
-# Only `topics`, `actions`, and `tf` need entries specific to your robot.
-# Any topic you don't declare here still gets the vitals tier (liveness +
-# frequency) automatically. A topic you *do* declare, whose message type a
-# discovered plugin covers, also gets that plugin's content checks -- with
-# thresholds merged over the plugin's own defaults, so you only need to
-# override the metrics you actually want to change.
+# Every section is optional: with no config at all, each topic whose message
+# type a discovered plugin covers gets that plugin's content checks at its
+# default limits, and any other topic gets liveness + frequency. Declare a
+# topic only to tune it -- thresholds merge over the plugin's own defaults,
+# so you only need to override the metrics you actually want to change.
 #
 # A metric's threshold takes two kinds of keys, both optional:
 #   warn / error         -- severity: past `warn` the topic is WARN, past
@@ -29,6 +28,11 @@
 # under `exclude_topics:` below just for this -- it's already the default.
 
 severity_mode: worst  # worst | weighted | both
+
+# Set false on a very large stack: only topics declared below get content
+# checks, and the rest liveness + frequency. A content check deserializes
+# every message, which a big global costmap can make expensive.
+check_undeclared_topics: true
 
 publish:
   rate_hz: 5.0

@@ -66,6 +66,7 @@ _TOP_LEVEL_KEYS = {
     "exclude_topics",
     "node_profiling",
     "faults",
+    "check_undeclared_topics",
 }
 
 
@@ -78,6 +79,10 @@ def _parse_config(raw: dict[str, Any], source: str) -> TestudoConfig:
     if plugins_dir is not None and not isinstance(plugins_dir, str):
         raise ConfigError(f"{source}: 'plugins_dir' must be a string")
 
+    check_undeclared_topics = raw.get("check_undeclared_topics", True)
+    if not isinstance(check_undeclared_topics, bool):
+        raise ConfigError(f"{source}: 'check_undeclared_topics' must be true or false")
+
     publish = _parse_publish(raw.get("publish", {}), source)
     return TestudoConfig(
         topics=_parse_topics(raw.get("topics", {}), source),
@@ -89,6 +94,7 @@ def _parse_config(raw: dict[str, Any], source: str) -> TestudoConfig:
         exclude_topics=_parse_exclude_topics(raw.get("exclude_topics", []), source),
         node_profiling=_parse_node_profiling(raw.get("node_profiling", {}), source, publish),
         faults=_parse_faults(raw.get("faults", {}), source, publish),
+        check_undeclared_topics=check_undeclared_topics,
     )
 
 

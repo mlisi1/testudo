@@ -679,3 +679,13 @@ def test_code_override_severity_must_be_ok_warn_or_error(tmp_path: Path) -> None
     )
     with pytest.raises(ConfigError, match="GNSS-001 must be one of ok, warn, error"):
         load_config(path)
+
+
+def test_undeclared_topics_are_checked_unless_opted_out(tmp_path: Path) -> None:
+    assert load_config(_write(tmp_path, "severity_mode: worst\n")).check_undeclared_topics is True
+    assert load_config(_write(tmp_path, "check_undeclared_topics: false\n")).check_undeclared_topics is False
+
+
+def test_the_opt_out_must_be_a_boolean(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="check_undeclared_topics"):
+        load_config(_write(tmp_path, "check_undeclared_topics: sometimes\n"))

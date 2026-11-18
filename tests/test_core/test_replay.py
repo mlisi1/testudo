@@ -340,3 +340,12 @@ def test_replay_feeds_a_shared_declared_related_topic_to_everyone(tmp_path: Path
     assert by_topic["/imu_a"].status.metrics["gyro_bias_rad_per_s"] > 0.04
     assert by_topic["/imu_b"].status.metrics["gyro_bias_rad_per_s"] > 0.04
     assert by_topic["/odom"].status.metrics["message_count"] == 60
+
+
+def test_replay_opted_out_leaves_undeclared_topics_liveness_only(tmp_path: Path, ros_node) -> None:
+    from nav_msgs.msg import Odometry
+
+    bag = tmp_path / "bag"
+    _write_bag(bag, [("/odom", "nav_msgs/msg/Odometry", Odometry(), int(1e9 + step * 1e8)) for step in range(5)])
+    reports, _overall = replay_bag(str(bag), _config(check_undeclared_topics=False), _plugins(), ros_node)
+    assert [(report.topic, report.tier) for report in reports] == [("/odom", "vitals")]

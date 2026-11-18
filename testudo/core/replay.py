@@ -44,6 +44,7 @@ from testudo.core.tier_subscription import (
     feed_related_listeners,
     has_own_subscription,
     process_full_tier_message,
+    runs_content_checks,
 )
 from testudo.core.topic_report import TopicReport
 from testudo.core.vitals import TopicVitals
@@ -119,7 +120,7 @@ def _track_for_replay(manager: SubscriptionManager, topic_name: str, msg_type_st
         return
 
     plugin_class = manager._plugin_class_by_msg_type.get(msg_type_str)
-    if plugin_class is None:
+    if plugin_class is None or not runs_content_checks(manager, topic_name):
         manager._vitals[topic_name] = TopicVitals(topic=topic_name)
         return
 

@@ -748,6 +748,49 @@ def test_a_conventional_companion_topic_that_does_not_exist_is_left_out() -> Non
     assert manager._full_tier["/odom"].plugin.related_topics == {}
 
 
+def _opted_out_manager(**config) -> tuple[_FakeNode, SubscriptionManager]:
+    topics = [("/odom", ["nav_msgs/msg/Odometry"]), ("/odom_declared", ["nav_msgs/msg/Odometry"])]
+    node = _FakeNode(topics, {name: [_FakeEndpointInfo(qos_profile=_qos())] for name, _types in topics})
+    discovered = [DiscoveredPlugin(name="recording", plugin_class=_RecordingPlugin, source="packaged")]
+    declared = {"nav_msgs/msg/Odometry": [_odom_config("/odom_declared")]}
+    manager = SubscriptionManager(node, TestudoConfig(topics=declared, **config), discovered, clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+    return node, manager
+
+
+def test_undeclared_topics_a_plugin_covers_are_checked_by_default() -> None:
+    _node, manager = _opted_out_manager()
+    assert set(manager._full_tier) == {"/odom", "/odom_declared"}
+
+
+def test_opting_out_leaves_undeclared_topics_liveness_only() -> None:
+    node, manager = _opted_out_manager(check_undeclared_topics=False)
+    assert set(manager._full_tier) == {"/odom_declared"}
+    assert set(manager._vitals) == {"/odom"}
+    assert next(sub for sub in node.subscriptions if sub.topic == "/odom").raw
+
+
+def _tf_only_manager(**config) -> SubscriptionManager:
+    topics = [("/tf", ["tf2_msgs/msg/TFMessage"])]
+    node = _FakeNode(topics, {"/tf": [_FakeEndpointInfo(qos_profile=_qos())]})
+
+    class _TfPlugin(_RecordingPlugin):
+        @classmethod
+        def msg_types(cls) -> tuple[str, ...]:
+            return ("tf2_msgs/msg/TFMessage",)
+
+    discovered = [DiscoveredPlugin(name="tf", plugin_class=_TfPlugin, source="packaged")]
+    manager = SubscriptionManager(node, TestudoConfig(**config), discovered, clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+    return manager
+
+
+def test_opting_out_covers_tf_unless_frame_pairs_are_declared() -> None:
+    assert set(_tf_only_manager(check_undeclared_topics=False)._vitals) == {"/tf"}
+    pairs = [TFPairConfig(parent="map", child="odom")]
+    assert set(_tf_only_manager(check_undeclared_topics=False, tf=pairs)._full_tier) == {"/tf"}
+
+
 def test_decimation_skips_plugin_calls_faster_than_max_check_rate() -> None:
     node = _FakeNode(
         topics=[("/odom", ["nav_msgs/msg/Odometry"])],

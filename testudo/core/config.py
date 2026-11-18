@@ -281,3 +281,5 @@ class TestudoConfig:
     exclude_topics: list[ExcludeRule] = field(default_factory=list)
     node_profiling: NodeProfilingConfig = field(default_factory=NodeProfilingConfig)
     faults: FaultsConfig = field(default_factory=FaultsConfig)
+    #: False limits content checks to what the config declares; other topics get liveness and rate only.
+    check_undeclared_topics: bool = True
