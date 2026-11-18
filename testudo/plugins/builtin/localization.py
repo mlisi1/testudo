@@ -24,7 +24,7 @@ import numpy as np
 from testudo.plugins.base import (
     ActiveCodes,
     CheckPlugin,
-    CheckStatus,
+    CheckStatus, CodeMetric,
     Severity,
     SeverityLevels,
     ThresholdZone,
@@ -350,6 +350,7 @@ class LocalizationPlugin(CheckPlugin):
             topic_panel_value=self._sigma_xy_cell(trace_severity, growth_zone),
             codes=codes.messages,
             code_severities=codes.severities,
+            code_metrics={"LOC-001": CodeMetric("position_covariance_trace", self._position_covariance_trace), "LOC-002": CodeMetric("yaw_variance", self._yaw_variance), "LOC-003": CodeMetric("covariance_growth_rate", abs(self._growth_rate))},
             metrics=self._metrics(),
         )
 

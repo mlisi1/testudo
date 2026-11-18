@@ -30,7 +30,7 @@ from typing import Any
 
 from action_msgs.msg import GoalStatus
 
-from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, SeverityLevels, ThresholdZone, colorize, evaluate_levels
+from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, CodeMetric, Severity, SeverityLevels, ThresholdZone, colorize, evaluate_levels
 from testudo.plugins.render import meter, sparkline, strip
 
 _TERMINAL_STATUSES = frozenset({GoalStatus.STATUS_SUCCEEDED, GoalStatus.STATUS_CANCELED, GoalStatus.STATUS_ABORTED})
@@ -234,6 +234,20 @@ class ActionsPlugin(CheckPlugin):
         ended = {Severity.OK: "succeeded", Severity.ERROR: "aborted"}.get(outcome, "canceled")
         return f"{_IDLE_CHIP}{since} · last {strip([outcome])} {ended} in {duration:.1f}s"
 
+    @staticmethod
+    def _code_metrics(
+        success_rate: float | None, mean_duration: float | None, frequency: float | None
+    ) -> dict[str, CodeMetric]:
+        """The numbers behind ACT-001..003, for those measured so far."""
+        metrics = {}
+        if success_rate is not None:
+            metrics["ACT-001"] = CodeMetric("success_rate", success_rate, higher_is_worse=False)
+        if mean_duration is not None:
+            metrics["ACT-002"] = CodeMetric("avg_duration_s", mean_duration)
+        if frequency is not None:
+            metrics["ACT-003"] = CodeMetric("frequency_per_min", frequency)
+        return metrics
+
     def _metrics(
         self, success_rate: float | None, mean_duration: float | None, frequency: float | None
     ) -> dict[str, float | str]:
@@ -327,4 +341,5 @@ class ActionsPlugin(CheckPlugin):
             topic_panel_value=recent or "[dim]–[/dim]",
             codes=codes.messages,
             code_severities=codes.severities,
+            code_metrics=self._code_metrics(success_rate, mean_duration, frequency),
         )

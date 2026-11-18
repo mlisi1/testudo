@@ -90,6 +90,15 @@ def colorize(text: str, severity: int) -> str:
     return f"[{color}]{text}[/{color}]"
 
 
+@dataclass(frozen=True)
+class CodeMetric:
+    """The number behind an active code: the `thresholds:` metric that decides it, and its value now."""
+
+    name: str
+    value: float
+    higher_is_worse: bool = True
+
+
 def evaluate_levels(value: float, levels: SeverityLevels | None, *, higher_is_worse: bool = True) -> int:
     """Map `value` to a Severity: past `levels.error` ERROR, past `levels.warn` WARN, else OK.
 

@@ -24,6 +24,7 @@ from testudo.core.topic_report import (
     TopicReport,
     full_tier_report,
     is_event_driven,
+    rate_metric,
     suppress_if_inactive,
     vitals_report,
     with_code,
@@ -113,7 +114,7 @@ def _with_nav2_rate(manager: "SubscriptionManager", report: TopicReport, vitals:
     metrics = {**status.metrics, "expected_rate_hz": expected.hz} if status.metrics else status.metrics
     status = replace(status, values=values, metrics=metrics)
     problem = nav2_rate_problem(expected, vitals, now)
-    return replace(report, status=with_code(status, "LIVE-004", *problem) if problem is not None else status)
+    return replace(report, status=with_code(status, "LIVE-004", *problem, rate_metric(report.rate_hz)) if problem is not None else status)
 
 
 def _derived_reports(topic_name: str, state: "FullTierState") -> list[TopicReport]:

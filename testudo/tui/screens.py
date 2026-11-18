@@ -24,9 +24,11 @@ from testudo.tui.keybinds import (
     PANE_LEFT_BINDING,
     PANE_RIGHT_BINDING,
     PREVIOUS_PROBLEM_BINDING,
+    QUICK_ACTIONS_BINDING,
     SORT_BINDING,
 )
 from testudo.tui.categorize import category_for
+from testudo.tui.quick_actions import QuickActionBar, can_act_on
 from testudo.tui.widgets.attention import attention_text, problem_topics
 from testudo.tui.widgets.category_summary import CategorySummaryTable
 from testudo.tui.widgets.header import TestudoHeader
@@ -55,6 +57,7 @@ class DashboardScreen(Screen):
         COPY_BINDING,
         NEXT_PROBLEM_BINDING,
         PREVIOUS_PROBLEM_BINDING,
+        QUICK_ACTIONS_BINDING,
         PANE_LEFT_BINDING,
         PANE_RIGHT_BINDING,
         ("escape", "handle_escape", "Categories"),
@@ -77,6 +80,7 @@ class DashboardScreen(Screen):
             yield TopicDetailTable(id="topic-table")
         yield Static("", id="detail-pane")
         yield Input(placeholder="filter by name, enter/esc to apply", id="filter-input")
+        yield QuickActionBar(id="quick-actions")
         yield Static(self._hint_text(), id="hint")
 
     def on_mount(self) -> None:
@@ -94,7 +98,7 @@ class DashboardScreen(Screen):
         if self.app.timeline is not None:
             # A replay's options are read-only: its slot goes to scrubbing.
             return "j/k move · tab/←→ pane · / search · n problem · s sort · p play · [ ] scrub · ? help · q quit"
-        return "j/k move · tab/←→ pane · / search · n problem · s sort · p pause · o options · ? help · q quit"
+        return "j/k move · tab/←→ pane · / search · n problem · a actions · p pause · o options · ? help · q quit"
 
     def sync_header(self) -> None:
         header = self.query_one(TestudoHeader)
@@ -284,6 +288,18 @@ class DashboardScreen(Screen):
             return
         self.app.copy_to_clipboard(report.topic)
         self.notify(f"copied {report.topic}", timeout=2)
+
+    def action_quick_actions(self) -> None:
+        """`a`: the highlighted topic's actions, in place of the hint bar until one is chosen."""
+        report = self.query_one(TopicDetailTable).selected_report
+        if self._filtering or report is None:
+            return
+        if not self.app.data_source.is_live():
+            self.notify("a replay can't change the config", timeout=3)
+        elif not can_act_on(report):
+            self.notify("nothing to change on this row", timeout=3)
+        else:
+            self.query_one(QuickActionBar).open(report, self.app.data_source, self.focused)
 
     def action_jump_problem(self, step: int) -> None:
         """`n`/`N`: highlight the next/previous topic with an active code, whatever its category.

@@ -21,7 +21,7 @@ from __future__ import annotations
 from collections import deque
 from typing import Any
 
-from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, SeverityLevels, ThresholdZone, colorize, evaluate_levels
+from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, CodeMetric, Severity, SeverityLevels, ThresholdZone, colorize, evaluate_levels
 from testudo.plugins.render import sparkline
 
 _RUNNING = "RUNNING"
@@ -243,4 +243,5 @@ class BehaviorTreeLogPlugin(CheckPlugin):
             topic_panel_value=column,
             codes=codes.messages,
             code_severities=codes.severities,
+            code_metrics={"BT-001": CodeMetric("recovery_frequency_per_min", frequency)} if frequency is not None else {},
         )

@@ -7,7 +7,8 @@ import pytest
 
 from testudo.core.config import ConfigError, ExcludeMatchType, ExcludeRule
 from testudo.core.config_loader import load_config
-from testudo.core.config_writer import write_exclude_rules
+from testudo.core.config_writer import write_code_override, write_exclude_rules, write_warn_level
+from testudo.plugins.base import Severity
 
 
 def _write(tmp_path: Path, text: str) -> Path:
@@ -139,3 +140,52 @@ def test_a_config_that_cannot_be_parsed_is_left_alone(tmp_path: Path) -> None:
         write_exclude_rules(path, [ExcludeRule("/a")])
     assert path.read_text() == "topics: [1, 2\n"
     assert [entry.name for entry in tmp_path.iterdir()] == ["config.yaml"]
+
+
+_DECLARED = """\
+# the robot
+topics:
+  sensor_msgs/msg/NavSatFix:
+    - name: /gps   # the antenna
+      thresholds:
+        stuck_count: {warn: 5, error: 50}
+actions:
+  - name: navigate_to_pose
+    action_type: nav2_msgs/action/NavigateToPose
+"""
+
+
+def test_a_code_override_lands_on_the_declared_topic(tmp_path: Path) -> None:
+    path = _write(tmp_path, _DECLARED)
+    write_code_override(path, "/gps", "sensor_msgs/msg/NavSatFix", "GNSS-001", "warn")
+    assert load_config(path).topics["sensor_msgs/msg/NavSatFix"][0].codes == {"GNSS-001": Severity.WARN}
+    assert "    - name: /gps   # the antenna\n" in path.read_text()
+
+
+def test_a_code_override_lands_on_the_action_of_a_status_topic(tmp_path: Path) -> None:
+    path = _write(tmp_path, _DECLARED)
+    write_code_override(path, "/navigate_to_pose/_action/status", "action_msgs/msg/GoalStatusArray", "ACT-001", "ok")
+    assert load_config(path).actions[0].codes == {"ACT-001": Severity.OK}
+
+
+def test_an_undeclared_topic_gets_declared_under_its_message_type(tmp_path: Path) -> None:
+    path = _write(tmp_path, _DECLARED)
+    write_code_override(path, "/imu", "sensor_msgs/msg/Imu", "IMU-005", "ok")
+    write_code_override(path, "/gps2", "sensor_msgs/msg/NavSatFix", "GNSS-001", "ok")
+    topics = load_config(path).topics
+    assert topics["sensor_msgs/msg/Imu"][0].name == "/imu"
+    assert [entry.name for entry in topics["sensor_msgs/msg/NavSatFix"]] == ["/gps", "/gps2"]
+
+
+def test_restoring_a_code_removes_only_its_override(tmp_path: Path) -> None:
+    path = _write(tmp_path, _DECLARED)
+    write_code_override(path, "/gps", "sensor_msgs/msg/NavSatFix", "GNSS-001", "ok")
+    write_code_override(path, "/gps", "sensor_msgs/msg/NavSatFix", "GNSS-001", None)
+    assert path.read_text() == _DECLARED
+
+
+def test_a_warn_level_keeps_the_metric_s_error(tmp_path: Path) -> None:
+    path = _write(tmp_path, _DECLARED)
+    write_warn_level(path, "/gps", "sensor_msgs/msg/NavSatFix", "stuck_count", 12.0)
+    override = load_config(path).topics["sensor_msgs/msg/NavSatFix"][0].levels["stuck_count"]
+    assert (override.warn, override.error) == (12.0, 50.0)

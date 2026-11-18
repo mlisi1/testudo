@@ -17,7 +17,7 @@ from typing import Any
 
 import numpy as np
 
-from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, SeverityLevels, ThresholdZone, evaluate_levels
+from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, CodeMetric, Severity, SeverityLevels, ThresholdZone, evaluate_levels
 from testudo.plugins.builtin.costmap_grid import CLASS_NAMES, PALETTE, GridAnalysis, analyse
 
 _LABEL = "map"
@@ -184,6 +184,7 @@ class CostmapPlugin(CheckPlugin):
             topic_panel_value=f"{analysis.lethal_ratio:.1%}" if analysis is not None else "",
             codes=codes.messages,
             code_severities=codes.severities,
+            code_metrics={"MAP-002": CodeMetric("lethal_ratio", analysis.lethal_ratio), "MAP-003": CodeMetric("unknown_ratio", analysis.unknown_ratio)} if analysis is not None else {},
             metrics=self._metrics(analysis),
             picture=analysis.picture if analysis is not None else None,
         )

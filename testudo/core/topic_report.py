@@ -13,7 +13,7 @@ from testudo.core.lifecycle import LifecycleTracker
 from testudo.core.vitals import TopicVitals
 from testudo.plugins.base import (
     ActiveCodes,
-    CheckStatus,
+    CheckStatus, CodeMetric,
     Severity,
     SeverityLevels,
     code_severity,
@@ -245,8 +245,14 @@ def vitals_report(
         values=values,
         codes=codes.messages,
         code_severities=codes.severities,
+        code_metrics={"LIVE-004": rate_metric(rate)} if slow is not None else {},
     )
     return TopicReport(topic=topic_name, msg_type=msg_type, tier="vitals", status=status, rate_hz=rate)
+
+
+def rate_metric(rate: float | None) -> CodeMetric | None:
+    """The number behind LIVE-004: lower is worse."""
+    return CodeMetric("rate_hz", rate, higher_is_worse=False) if rate is not None else None
 
 
 def rate_problem(
@@ -312,7 +318,7 @@ def full_tier_report(
         status = replace(content, metrics=metrics) if metrics else content
         slow = rate_problem(reported_rate, rate_levels, latched=latched, event_driven=event_driven)
         if slow is not None:
-            status = with_code(status, "LIVE-004", *slow)
+            status = with_code(status, "LIVE-004", *slow, rate_metric(reported_rate))
     elif liveness.label in QUIET_LABELS:
         quiet = {f"{liveness.label}_for_s": f"{age:.1f}"} if age is not None else {}
         quiet_metrics = {f"{liveness.label}_for_s": age} if metrics and age is not None else {}
@@ -329,8 +335,10 @@ def full_tier_report(
     return TopicReport(topic=topic_name, msg_type=msg_type, tier="full", status=status, rate_hz=reported_rate)
 
 
-def with_code(status: CheckStatus, code: str, severity: int, message: str) -> CheckStatus:
-    """`status` with one more active `code`; its severity becomes the worse of the two."""
+def with_code(
+    status: CheckStatus, code: str, severity: int, message: str, metric: CodeMetric | None = None
+) -> CheckStatus:
+    """`status` with one more active `code` (and the `metric` behind it); its severity becomes the worse of the two."""
     codes = ActiveCodes(dict(status.codes), {c: code_severity(status, c) for c in status.codes})
     codes.add(code, message, severity)
     return replace(
@@ -338,6 +346,7 @@ def with_code(status: CheckStatus, code: str, severity: int, message: str) -> Ch
         severity=max(status.severity, severity),
         codes=codes.messages,
         code_severities=codes.severities,
+        code_metrics={**status.code_metrics, code: metric} if metric is not None else status.code_metrics,
     )
 
 

@@ -7,15 +7,16 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Callable, Protocol
 
 from testudo.core.config import ConfigError, ExcludeRule, FaultsConfig, SeverityMode
-from testudo.core.config_writer import write_exclude_rules
+from testudo.core import live_tuning
+from testudo.core.config_writer import write_code_override, write_exclude_rules, write_warn_level
 from testudo.core.fault_history import ClearedFault, FaultHistory
 from testudo.core.node_profiling.profiler import NodeProfiler
 from testudo.core.node_profiling.report import node_stat_to_topic_report
 from testudo.core.subscription_manager import SubscriptionManager, TopicReport
-from testudo.plugins.base import CheckStatus
+from testudo.plugins.base import CheckStatus, CodeMetric
 
 if TYPE_CHECKING:
     from testudo.tui.replay_source import ReplayTimeline
@@ -136,6 +137,39 @@ class LiveDataSource:
         if removed:
             self._persist()
         return removed
+
+    def code_overrides(self, report: TopicReport) -> dict[str, int]:
+        """The `codes:` overrides in effect on `report`'s topic."""
+        return live_tuning.code_overrides(self._manager, live_tuning.owner_topic(report))
+
+    def override_code(self, report: TopicReport, code: str, severity: int | None) -> str:
+        """Apply a code's new severity now (None restores its own) and save it; says where it went."""
+        topic = live_tuning.owner_topic(report)
+        live_tuning.set_code_override(self._manager, topic, code, severity)
+        name = live_tuning.severity_name(severity) if severity is not None else None
+        msg_type = live_tuning.msg_type_of(self._manager, report)
+        return self._saved(lambda path: write_code_override(path, topic, msg_type, code, name))
+
+    def warn_cut(self, report: TopicReport, metric: CodeMetric) -> float | None:
+        """The `warn` level that `metric`'s current value would sit on; None if `warn` can't quiet it."""
+        return live_tuning.warn_cut(self._manager, live_tuning.owner_topic(report), metric)
+
+    def set_warn_level(self, report: TopicReport, metric: str, warn: float) -> str:
+        """Apply `metric`'s new `warn` level now and save it; says where it went."""
+        topic = live_tuning.owner_topic(report)
+        live_tuning.set_warn_level(self._manager, topic, metric, warn)
+        msg_type = live_tuning.msg_type_of(self._manager, report)
+        return self._saved(lambda path: write_warn_level(path, topic, msg_type, metric, warn))
+
+    def _saved(self, write: Callable[[str], None]) -> str:
+        if self._config_path is None:
+            return "for this session only: no config file"
+        try:
+            write(self._config_path)
+        except (OSError, ConfigError) as exc:
+            _logger.warning("could not save to %s: %s", self._config_path, exc)
+            return f"for this session only: could not save ({exc})"
+        return f"saved to {self._config_path}"
 
     def _persist(self) -> None:
         if self._config_path is None:

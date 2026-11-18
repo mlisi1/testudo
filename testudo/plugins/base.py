@@ -17,6 +17,7 @@ from testudo.plugins.severity import (  # noqa: F401 -- part of this module's pu
     SEVERITY_ICONS,
     SEVERITY_LABELS,
     Severity,
+    CodeMetric,
     SeverityLevels,
     ThresholdZone,
     colorize,
@@ -88,6 +89,10 @@ class CheckStatus:
     `picture` is an optional image of what the topic carries, drawn in the
     Detail Panel when the topic is highlighted and left out of every other
     output.
+
+    `code_metrics` optionally names the metric behind a code
+    ({code: CodeMetric}), which lets the TUI offer "warn from the current
+    value" for it. A code without an entry just doesn't get that action.
     """
 
     severity: int
@@ -100,6 +105,7 @@ class CheckStatus:
     metrics: dict[str, float | str] = field(default_factory=dict)
     code_severities: dict[str, int] = field(default_factory=dict)
     picture: StatusPicture | None = None
+    code_metrics: dict[str, CodeMetric] = field(default_factory=dict)
 
 
 def code_severity(status: CheckStatus, code: str) -> int:

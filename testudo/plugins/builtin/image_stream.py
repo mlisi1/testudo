@@ -35,7 +35,7 @@ from testudo.plugins.base import (
     SEVERITY_COLORS,
     ActiveCodes,
     CheckPlugin,
-    CheckStatus,
+    CheckStatus, CodeMetric,
     Severity,
     SeverityLevels,
     ThresholdZone,
@@ -301,6 +301,7 @@ class ImageStreamPlugin(CheckPlugin):
             topic_panel_value=topic_panel_value,
             codes=codes.messages,
             code_severities=codes.severities,
+            code_metrics={"IMG-003": CodeMetric("stuck_count", float(self._stuck_count)), "IMG-004": CodeMetric("size_drop_ratio", self._size_drop_ratio, higher_is_worse=False)},
             metrics=self._metrics(),
         )
 

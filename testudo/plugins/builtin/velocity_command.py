@@ -17,7 +17,7 @@ from typing import Any
 
 from action_msgs.msg import GoalStatus
 
-from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, SeverityLevels, ThresholdZone, evaluate_levels
+from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, CodeMetric, Severity, SeverityLevels, ThresholdZone, evaluate_levels
 from testudo.plugins.builtin.localization_motion import (
     CMD_MOVING_THRESHOLD_MPS,
     CMD_MOVING_THRESHOLD_RADPS,
@@ -149,6 +149,7 @@ class VelocityCommandPlugin(CheckPlugin):
             topic_panel_value=f"{self._linear:.2f} {self._angular:+.2f}",
             codes=codes.messages,
             code_severities=codes.severities,
+            code_metrics={"VEL-002": CodeMetric("stuck_seconds", stuck), "VEL-003": CodeMetric("reversals_per_s", reversals), "VEL-004": CodeMetric("pinned_seconds", pinned)},
             metrics=self._metrics(stuck, reversals, pinned),
         )
 

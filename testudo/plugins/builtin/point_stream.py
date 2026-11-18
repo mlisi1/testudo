@@ -45,7 +45,7 @@ from testudo.plugins.base import (
     SEVERITY_COLORS,
     ActiveCodes,
     CheckPlugin,
-    CheckStatus,
+    CheckStatus, CodeMetric,
     Severity,
     SeverityLevels,
     ThresholdZone,
@@ -320,6 +320,7 @@ class PointStreamPlugin(CheckPlugin):
             topic_panel_value=f"[{color}]{format_points(self._points)}[/{color}]",
             codes=codes.messages,
             code_severities=codes.severities,
+            code_metrics={"SENS-001": CodeMetric("invalid_ratio", self._invalid_ratio), "SENS-002": CodeMetric("stuck_count", float(self._stuck_count))},
             metrics=self._metrics(),
         )
 

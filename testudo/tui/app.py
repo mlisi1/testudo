@@ -73,13 +73,14 @@ class TestudoApp(App):
        previous background, keeping the hint text's de-emphasized look. */
     #hint { dock: bottom; height: auto; background: $accent; color: $text-muted; padding: 0 1; }
     #filter-input { dock: bottom; }
+    #quick-actions { dock: bottom; height: auto; background: $primary; padding: 0 1; }
     /* Every modal screen (help, options menu, exclude topics) centers its
        one panel in the middle of the screen it's dimming -- ModalScreen's
        own default CSS only sets layout/overflow/background, not
        alignment, so left alone a panel renders pinned to the top-left
        corner of an otherwise-full-height, mostly-empty overlay. */
     HelpScreen, OptionsMenuScreen, ExcludeTopicsScreen { align: center middle; }
-    #help-text { padding: 1 2; border: round $primary; }
+    #help-text { padding: 0 2; border: round $primary; }
     #options-menu-panel { padding: 1 2; border: round $primary; width: 40%; height: auto; }
     #options-menu-list { height: auto; }
     #options-menu-hint { height: 1; color: $text-muted; }
@@ -154,6 +155,10 @@ class TestudoApp(App):
         self._last_playback_monotonic = now
         if self.timeline.advance(elapsed):
             self._poll(force=True)
+
+    def refresh_now(self) -> None:
+        """Show the effect of a change straight away, even while paused."""
+        self._poll(force=True)
 
     def _poll(self, *, force: bool = False) -> None:
         if self.paused and not force:

@@ -14,7 +14,7 @@ from typing import Any
 
 from testudo.core.config import TopicConfig
 from testudo.core.topic_report import with_code
-from testudo.plugins.base import CheckStatus, Severity, SeverityLevels, evaluate_levels
+from testudo.plugins.base import CheckStatus, CodeMetric, Severity, SeverityLevels, evaluate_levels
 
 STAMP_ZERO_CODE = "STAMP-001"
 STAMP_FUTURE_CODE = "STAMP-002"
@@ -105,8 +105,16 @@ class StampCheck:
         for code, severity, message in self._findings:
             if status.severity == Severity.OK:
                 status = replace(status, message=message)
-            status = with_code(status, code, severity, message)
+            status = with_code(status, code, severity, message, self._metric_behind(code))
         return status
+
+    def _metric_behind(self, code: str) -> CodeMetric | None:
+        """The number behind a stamp code; a zero stamp has none."""
+        if self._lag_s is None:
+            return None
+        if code == STAMP_FUTURE_CODE:
+            return CodeMetric(STAMP_FUTURE_METRIC, -self._lag_s)
+        return CodeMetric(STAMP_LAG_METRIC, self._lag_s) if code == STAMP_LAG_CODE else None
 
 
 def stamp_check_for(topic_config: TopicConfig | None, *, judge_other_time_base: bool = True) -> StampCheck:

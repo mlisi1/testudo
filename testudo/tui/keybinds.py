@@ -5,7 +5,7 @@ module only adds the vim-style aliases and documents the rest of the
 project's keybind set (`q` quit, `p` pause, `/` filter, `j`/`k`/arrows/Tab/
 Left/Right navigate, `Enter` switch pane, `Esc` back to categories (or
 clear the filter), `s` toggle sort, `y` copy topic name, `n`/`N` next/previous
-problem, `r` reset stats, `o` options menu, `?`
+problem, `a` quick actions, `r` reset stats, `o` options menu, `?`
 help overlay) in one place other modules can point at.
 """
 from __future__ import annotations
@@ -40,6 +40,9 @@ COPY_BINDING = Binding("y", "copy_topic", "Copy topic")
 NEXT_PROBLEM_BINDING = Binding("n", "jump_problem(1)", "Next problem")
 PREVIOUS_PROBLEM_BINDING = Binding("N", "jump_problem(-1)", "Previous problem", key_display="N")
 
+#: Opens the highlighted topic's quick actions in the hint bar (`tui/quick_actions.py`).
+QUICK_ACTIONS_BINDING = Binding("a", "quick_actions", "Actions")
+
 #: Left/Right switch between the Plugin Panel and Topic Panel, alongside
 #: Tab/Shift+Tab (Textual's own default focus-cycling) and Enter (this
 #: screen's own row-select handler) -- three ways to do the same thing,
@@ -72,6 +75,10 @@ HELP_TEXT = """\
   s                sort the focused table: worst first ▼ / by name ▲
   y                copy the highlighted topic's name to the clipboard
   n / N            jump to the next / previous topic that needs attention
+  a                actions on the highlighted topic, saved to the config:
+                     w downgrade the code to warn · m mute it · r restore it
+                     l warn at the current value · x exclude the topic
+                     c next code · esc cancel
   ?                this help
 
 Press any key to close.

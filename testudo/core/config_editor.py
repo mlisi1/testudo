@@ -30,6 +30,17 @@ def _parse(text: str) -> yaml.Node | None:
         raise ConfigError(f"can't edit a config that isn't valid YAML: {exc}") from exc
 
 
+def load_document(text: str) -> dict[str, Any]:
+    """The config's top-level mapping (empty for an empty file), to read what's there before editing."""
+    root = _parse(text)
+    data = _construct(root) if root is not None else {}
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise ConfigError("can't edit a config whose top level isn't a mapping")
+    return data
+
+
 def _construct(node: yaml.Node) -> Any:
     """The Python value of a parsed node."""
     return yaml.SafeLoader("").construct_document(node)

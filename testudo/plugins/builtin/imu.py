@@ -17,7 +17,7 @@ from typing import Any
 
 from sensor_msgs.msg import Imu
 
-from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, Severity, SeverityLevels, ThresholdZone, evaluate_levels
+from testudo.plugins.base import ActiveCodes, CheckPlugin, CheckStatus, CodeMetric, Severity, SeverityLevels, ThresholdZone, evaluate_levels
 from testudo.plugins.builtin.imu_checks import (
     Finding,
     GravityCheck,
@@ -275,8 +275,21 @@ class ImuPlugin(CheckPlugin):
             topic_panel_value=f"{accel_magnitude:.2f}",
             codes=codes.messages,
             code_severities=codes.severities,
+            code_metrics=self._code_metrics(),
             metrics=self._metrics(accel_magnitude),
         )
+
+    def _code_metrics(self) -> dict[str, CodeMetric]:
+        """The numbers behind the IMU codes decided by a level."""
+        metrics = {
+            "IMU-001": CodeMetric("invalid_ratio", self._invalid_ratio),
+            "IMU-002": CodeMetric("stuck_count", float(self._stuck_count)),
+        }
+        if self._quaternion_error is not None:
+            metrics["IMU-007"] = CodeMetric("quaternion_norm_error", self._quaternion_error)
+        if self._gyro_bias.bias is not None:
+            metrics["IMU-010"] = CodeMetric("gyro_bias_radps", self._gyro_bias.bias)
+        return metrics
 
     def _metrics(self, accel_magnitude: float) -> dict[str, float | str]:
         """The published numbers: accel/gyro per axis and magnitude, stuck/invalid, plausibility."""

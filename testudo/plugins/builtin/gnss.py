@@ -29,7 +29,7 @@ from sensor_msgs.msg import NavSatFix, NavSatStatus
 from testudo.plugins.base import (
     ActiveCodes,
     CheckPlugin,
-    CheckStatus,
+    CheckStatus, CodeMetric,
     Severity,
     SeverityLevels,
     ThresholdZone,
@@ -355,8 +355,22 @@ class GnssPlugin(CheckPlugin):
             topic_panel_value=topic_panel_value,
             codes=codes.messages,
             code_severities=codes.severities,
+            code_metrics=self._code_metrics(covariance_known),
             metrics=self._metrics(fix_label, covariance_label, covariance_known),
         )
+
+    def _code_metrics(self, covariance_known: bool) -> dict[str, CodeMetric]:
+        """The numbers behind the GNSS codes decided by a level."""
+        metrics = {
+            "GNSS-003": CodeMetric("fix_dropout_ratio", self._dropout_ratio),
+            "GNSS-005": CodeMetric("stuck_count", float(self._stuck_count)),
+            "GNSS-006": CodeMetric("invalid_ratio", self._invalid_ratio),
+        }
+        if covariance_known:
+            metrics["GNSS-002"] = CodeMetric("position_covariance", max(self._position_covariance))
+        if self._jump_speed_mps is not None:
+            metrics["GNSS-004"] = CodeMetric("jump_speed_mps", self._jump_speed_mps)
+        return metrics
 
     def _metrics(self, fix_label: str, covariance_label: str, covariance_known: bool) -> dict[str, float | str]:
         """The published numbers: fix status, position, σ (when the receiver reports it), dropout/jump/stuck/invalid."""
