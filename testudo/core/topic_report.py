@@ -60,6 +60,8 @@ EVENT_DRIVEN_MSG_TYPES = frozenset(
         "dwb_msgs/msg/LocalPlanEvaluation",
         # A bond's heartbeat only flows while the bond is up.
         "bond/msg/Status",
+        # A recorder reports only when it closes a bag file.
+        "rosbag2_interfaces/msg/WriteSplitEvent",
     }
 )
 

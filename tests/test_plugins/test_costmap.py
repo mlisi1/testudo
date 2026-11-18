@@ -81,6 +81,14 @@ def test_lethal_share_counts_known_cells_only() -> None:
     assert _status_of(msg).metrics["lethal_ratio"] == 0.25
 
 
+def test_a_rolling_costmap_seeing_only_around_the_robot_is_fine() -> None:
+    plugin = CostmapPlugin()
+    grid = _grid(fill=-1)
+    grid.data = [0] * 9 + [-1] * 91  # 91% unknown
+    plugin.on_message("/global_costmap/costmap", grid)
+    assert "MAP-003" not in plugin.get_status().codes
+
+
 def test_a_building_surrounded_by_unknown_is_fine() -> None:
     msg = _grid()
     msg.data = [-1] * 85 + [0] * 15
@@ -88,8 +96,8 @@ def test_a_building_surrounded_by_unknown_is_fine() -> None:
 
 
 def test_a_nearly_blank_grid_warns_and_a_blank_one_errors() -> None:
-    msg = _grid()
-    msg.data = [-1] * 95 + [0] * 5
+    msg = _grid(100, 100)
+    msg.data = [-1] * 9950 + [0] * 50
     assert _status_of(msg).code_severities == {"MAP-003": Severity.WARN}
     assert _status_of(_grid(fill=-1)).code_severities == {"MAP-003": Severity.ERROR}
 

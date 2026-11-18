@@ -270,6 +270,7 @@ def test_paths_costmap_updates_and_action_feedback_are_event_driven_by_default()
     from testudo.core.topic_report import is_event_driven
 
     assert is_event_driven("/plan", "nav_msgs/msg/Path")
+    assert is_event_driven("/events/write_split", "rosbag2_interfaces/msg/WriteSplitEvent")
     assert is_event_driven("/global_costmap/costmap_updates", "map_msgs/msg/OccupancyGridUpdate")
     assert is_event_driven("/local_costmap/costmap_raw_updates", "nav2_msgs/msg/CostmapUpdate")
     assert is_event_driven("/navigate_to_pose/_action/feedback", "nav2_msgs/action/NavigateToPose_FeedbackMessage")

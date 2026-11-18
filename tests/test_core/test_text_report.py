@@ -15,6 +15,7 @@ def _fault(active: bool, times: int = 1) -> FaultEntry:
         code="GNSS-002",
         active=active,
         severity=Severity.ERROR,
+        current_severity=Severity.ERROR if active else Severity.OK,
         message="[red]position σ high[/red]",
         raised_at=12.0,
         cleared_at=None if active else 40.5,

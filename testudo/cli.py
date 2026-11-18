@@ -9,6 +9,7 @@ import argparse
 import contextlib
 import logging
 import os
+import signal
 import sys
 import threading
 import time
@@ -212,6 +213,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
             else:
                 _run_tui(node, data_source, on_snapshot, config.publish.rate_hz)
     finally:
+        _ignore_stop_signals()
         stop_spinning.set()
         if spin_thread is not None:
             spin_thread.join(timeout=2.0)
@@ -222,6 +224,12 @@ def cmd_watch(args: argparse.Namespace) -> int:
         rclpy.try_shutdown()
 
     return 0
+
+
+def _ignore_stop_signals() -> None:
+    """Let shutdown finish: a launch file and a terminal can each send their own SIGINT."""
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
 
 
 def _terminal_logging(headless: bool) -> contextlib.AbstractContextManager:

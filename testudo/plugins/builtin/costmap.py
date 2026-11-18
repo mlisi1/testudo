@@ -78,10 +78,12 @@ class CostmapPlugin(CheckPlugin):
 
     @classmethod
     def default_levels(cls) -> dict[str, SeverityLevels]:
-        # A static map is mostly unknown around the building, so only a nearly blank one counts.
+        # A static map is mostly unknown around the building, and a rolling
+        # costmap without a map around what the sensors reach, so only a
+        # nearly blank grid counts.
         return {
             "lethal_ratio": SeverityLevels(warn=0.6, error=0.9),
-            "unknown_ratio": SeverityLevels(warn=0.9, error=0.999),
+            "unknown_ratio": SeverityLevels(warn=0.99, error=0.999),
         }
 
     @classmethod

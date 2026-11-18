@@ -48,23 +48,26 @@ class ClearedFault:
 @dataclass
 class _ActiveFault:
     raised_at: float
-    severity: int
+    severity: int  # the worst it reached
     message: str
+    current_severity: int
 
 
 @dataclass(frozen=True)
 class FaultEntry:
     """One (topic, code) fault as published: active now, or its latest occurrence once cleared.
 
-    `cleared_at` is None while active; `duration_s` is how long it has been
-    (or was) active; `times_raised` counts its occurrences this session
-    (under `recent` retention, since it last aged out).
+    `severity` is the worst it reached and `current_severity` what it is now
+    (OK once cleared). `cleared_at` is None while active; `duration_s` is how
+    long it has been (or was) active; `times_raised` counts its occurrences
+    this session (under `recent` retention, since it last aged out).
     """
 
     topic: str
     code: str
     active: bool
     severity: int
+    current_severity: int
     message: str
     raised_at: float
     cleared_at: float | None
@@ -119,10 +122,11 @@ class FaultHistory:
         for key, (severity, message) in current.items():
             fault = self._active.get(key)
             if fault is None:
-                self._active[key] = _ActiveFault(now, severity, message)
+                self._active[key] = _ActiveFault(now, severity, message, severity)
                 self._times_raised[key] = self._times_raised.get(key, 0) + 1
             else:
                 fault.severity = max(fault.severity, severity)
+                fault.current_severity = severity
                 fault.message = message
         self._prune(now)
 
@@ -151,6 +155,7 @@ class FaultHistory:
                 code=key[1],
                 active=True,
                 severity=fault.severity,
+                current_severity=fault.current_severity,
                 message=fault.message,
                 raised_at=fault.raised_at,
                 cleared_at=None,
@@ -165,6 +170,7 @@ class FaultHistory:
                     code=fault.code,
                     active=False,
                     severity=fault.severity,
+                    current_severity=Severity.OK,
                     message=fault.message,
                     raised_at=fault.raised_at,
                     cleared_at=fault.cleared_at,

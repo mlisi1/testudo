@@ -4,8 +4,9 @@ Republished every poll, so a plotting tool (PlotJuggler, Foxglove) gets
 one series per fault, named `testudo: <topic> <CODE>`, and a bag records
 exactly when each was active:
 
-- `level` is the fault's severity while it's active and OK once it
-  cleared, so plotting it shows the active periods directly;
+- `level` is the fault's severity right now, OK once it cleared, so
+  plotting it shows the active periods directly (the `severity` value is
+  the worst it reached);
 - `message` is the code's last message, plain text;
 - `values` hold the same facts as numbers (`active` 1/0, `severity`,
   `raised_at_s`/`cleared_at_s` as Unix seconds, `duration_s`,
@@ -22,7 +23,6 @@ from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from testudo.core.fault_history import FaultEntry
 from testudo.core.plain_values import format_metric, strip_markup
 from testudo.core.publisher import NAME_PREFIX
-from testudo.plugins.base import Severity
 
 #: The faults topic's key layout (see the module docstring).
 FAULTS_SCHEMA_VERSION = 1
@@ -32,7 +32,7 @@ def fault_status(entry: FaultEntry) -> DiagnosticStatus:
     """One fault as a DiagnosticStatus (see the module docstring for its layout)."""
     status = DiagnosticStatus()
     status.name = f"{NAME_PREFIX}: {entry.topic} {entry.code}"
-    status.level = bytes([entry.severity if entry.active else Severity.OK])
+    status.level = bytes([entry.current_severity])
     status.message = strip_markup(entry.message)
     status.hardware_id = NAME_PREFIX
     values: dict[str, str | float] = {

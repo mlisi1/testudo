@@ -20,6 +20,14 @@ def test_a_fault_that_goes_away_is_recorded_with_its_worst_severity_and_last_mes
     assert history.cleared()[0].lasted_s == 5.0
 
 
+def test_an_active_fault_reports_its_current_severity_beside_the_worst_it_reached() -> None:
+    history = FaultHistory()
+    history.update([_report("/map", Severity.ERROR, {"MAP-003": "blank"})], now=1.0)
+    history.update([_report("/map", Severity.WARN, {"MAP-003": "mostly blank"})], now=2.0)
+    entry = history.entries(now=2.0)[0]
+    assert (entry.severity, entry.current_severity) == (Severity.ERROR, Severity.WARN)
+
+
 def test_codes_on_an_ok_report_are_not_faults() -> None:
     history = FaultHistory()
     history.update([_report("/imu", Severity.OK, {"X-001": "info"})], now=1.0)

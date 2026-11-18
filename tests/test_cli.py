@@ -7,6 +7,7 @@ environment, since the latter wouldn't be re-read after import anyway.
 """
 from __future__ import annotations
 
+import signal
 import threading
 from pathlib import Path
 
@@ -14,6 +15,16 @@ import pytest
 
 from testudo import cli
 from testudo.core.config import TestudoConfig
+
+
+def test_a_second_stop_signal_cannot_interrupt_shutdown() -> None:
+    previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
+    try:
+        cli._ignore_stop_signals()
+        assert all(signal.getsignal(sig) == signal.SIG_IGN for sig in previous)
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
 
 
 def test_load_config_or_exit_explicit_path_that_is_missing_exits(tmp_path: Path) -> None:

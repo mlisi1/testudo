@@ -925,6 +925,40 @@ def test_a_plugin_needing_every_message_sees_them_all_but_is_evaluated_at_the_de
     assert _EveryMessagePlugin.status_calls == 2
 
 
+def test_an_aborted_goal_is_reported_though_no_message_follows_it() -> None:
+    from action_msgs.msg import GoalStatus, GoalStatusArray
+
+    from testudo.plugins.builtin.actions import ActionsPlugin
+
+    topic = "/navigate_to_pose/_action/status"
+    node = _FakeNode(
+        topics=[(topic, ["action_msgs/msg/GoalStatusArray"])],
+        publishers_by_topic={topic: [_FakeEndpointInfo(qos_profile=_qos())]},
+    )
+    discovered = [DiscoveredPlugin(name="actions", plugin_class=ActionsPlugin, source="packaged")]
+
+    class _Clock:
+        def now(self):
+            class _T:
+                nanoseconds = 0
+
+            return _T()
+
+    manager = SubscriptionManager(
+        node, _config(), discovered, clock=TestudoClock(_Clock(), sim_time_query=lambda: False),
+        hysteresis_required_consecutive=3, **_FAST_SETTLE
+    )
+    manager.start()
+
+    # Both inside one check interval: the abort is the last message there is.
+    for status in (GoalStatus.STATUS_EXECUTING, GoalStatus.STATUS_ABORTED):
+        node.subscriptions[0].callback(GoalStatusArray(status_list=[GoalStatus(status=status)]))
+    for _ in range(3):
+        manager.tick()
+
+    assert "ACT-001" in manager.reports()[0].status.codes
+
+
 def test_tf_watch_needs_every_message() -> None:
     from testudo.plugins.builtin.tf_watch import TFWatchPlugin
 

@@ -1,6 +1,8 @@
 """The faults topic's DiagnosticStatus layout: synthetic entries, no ROS graph."""
 from __future__ import annotations
 
+from dataclasses import replace
+
 from testudo.core.fault_history import FaultEntry
 from testudo.core.fault_output import FAULTS_SCHEMA_VERSION, build_faults_array, fault_status
 from testudo.plugins.base import Severity
@@ -12,6 +14,7 @@ def _entry(active: bool) -> FaultEntry:
         code="GNSS-002",
         active=active,
         severity=Severity.ERROR,
+        current_severity=Severity.ERROR if active else Severity.OK,
         message="[red]position σ high[/red]",
         raised_at=1763394767.25,
         cleared_at=None if active else 1763394779.65,
@@ -44,6 +47,13 @@ def test_a_cleared_fault_is_ok_but_keeps_the_severity_it_reached() -> None:
     values = {kv.key: kv.value for kv in status.values}
     assert status.level == bytes([Severity.OK])
     assert (values["active"], values["severity"], values["cleared_at_s"]) == ("0", "2", "1763394779.650")
+
+
+def test_an_active_fault_that_eased_has_its_current_level_and_keeps_the_worst_as_a_value() -> None:
+    status = fault_status(replace(_entry(active=True), current_severity=Severity.WARN))
+    values = {kv.key: kv.value for kv in status.values}
+    assert status.level == bytes([Severity.WARN])
+    assert values["severity"] == str(int(Severity.ERROR))
 
 
 def test_array_holds_every_entry_and_can_be_empty() -> None:

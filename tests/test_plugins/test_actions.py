@@ -68,6 +68,50 @@ def test_succeeded_goal_counts_toward_success_rate() -> None:
     assert _plain(status.topic_panel_value) == "✓"
 
 
+def test_a_goal_aborted_by_a_newer_goal_is_a_preemption_not_a_failure() -> None:
+    plugin = ActionsPlugin()
+    plugin.on_tick(0.0)
+    plugin.on_message("/x", _status_array(_goal_status(1, GoalStatus.STATUS_EXECUTING, accepted_sec=1)))
+    plugin.on_message(
+        "/x",
+        _status_array(
+            _goal_status(1, GoalStatus.STATUS_ABORTED, accepted_sec=1),
+            _goal_status(2, GoalStatus.STATUS_EXECUTING, accepted_sec=2),
+        ),
+    )
+    plugin.on_message(
+        "/x",
+        _status_array(
+            _goal_status(1, GoalStatus.STATUS_ABORTED, accepted_sec=1),
+            _goal_status(2, GoalStatus.STATUS_SUCCEEDED, accepted_sec=2),
+        ),
+    )
+    status = plugin.get_status()
+    assert status.severity == Severity.OK
+    assert (status.metrics["succeeded"], status.metrics["aborted"], status.metrics["canceled"]) == (1, 0, 1)
+
+
+def test_an_aborted_goal_with_nothing_newer_running_is_a_failure() -> None:
+    plugin = ActionsPlugin()
+    plugin.on_tick(0.0)
+    plugin.on_message("/x", _status_array(_goal_status(1, GoalStatus.STATUS_EXECUTING, accepted_sec=2)))
+    plugin.on_message(
+        "/x",
+        _status_array(
+            _goal_status(1, GoalStatus.STATUS_ABORTED, accepted_sec=2),
+            _goal_status(2, GoalStatus.STATUS_SUCCEEDED, accepted_sec=3),
+        ),
+    )
+    status = plugin.get_status()
+    assert status.metrics["aborted"] == 1
+    assert "ACT-001" in status.codes
+
+
+def test_every_status_message_counts_and_silence_after_a_goal_is_expected() -> None:
+    assert ActionsPlugin.needs_every_message()
+    assert ActionsPlugin().silence_expected("action_msgs/msg/GoalStatusArray")
+
+
 def test_low_success_rate_is_flagged() -> None:
     plugin = ActionsPlugin()
     plugin.on_tick(0.0)

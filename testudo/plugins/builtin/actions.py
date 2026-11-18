@@ -71,6 +71,23 @@ _ACTIVE_CHIPS = {
 _IDLE_CHIP = "[dim]◌ idle[/dim]"
 
 
+def _stamp(status: GoalStatus) -> tuple[int, int]:
+    """When a goal was accepted, comparable."""
+    return (status.goal_info.stamp.sec, status.goal_info.stamp.nanosec)
+
+
+def _preempted(status: GoalStatus, status_list: Any) -> bool:
+    """True for an aborted goal that a newer goal of the same server replaced.
+
+    Nav2's servers report a preempted goal as ABORTED (`SimpleActionServer::
+    accept_pending_goal`), and its behavior trees preempt `follow_path` on
+    every replan, so these say nothing about the goal having failed.
+    """
+    return status.status == GoalStatus.STATUS_ABORTED and any(
+        other.status in _ACTIVE_STATUSES and _stamp(other) > _stamp(status) for other in status_list
+    )
+
+
 def _failure_zone(success_zone: ThresholdZone | None) -> ThresholdZone | None:
     """A higher-is-better success-rate zone as the equivalent higher-is-worse failure-rate zone (for `meter`)."""
     if success_zone is None:
@@ -136,6 +153,17 @@ class ActionsPlugin(CheckPlugin):
             "frequency_per_min": SeverityLevels(),
         }
 
+    @classmethod
+    def needs_every_message(cls) -> bool:
+        # Status only changes on a transition: a skipped message can be the
+        # only report of how a goal ended.
+        return True
+
+    def silence_expected(self, msg_type: str) -> bool:
+        # The last message of a goal is followed by silence, so the verdict
+        # on how it ended has to be reached without further messages.
+        return True
+
     def on_tick(self, now_seconds: float) -> None:
         self._now = now_seconds
 
@@ -168,12 +196,13 @@ class ActionsPlugin(CheckPlugin):
             if newly_terminal:
                 duration = max(0.0, self._now - record.accepted_stamp)
                 self._durations.append(duration)
-                self._outcomes.append((_OUTCOME_SEVERITIES[status.status], duration))
-                if status.status == GoalStatus.STATUS_SUCCEEDED:
+                outcome = GoalStatus.STATUS_CANCELED if _preempted(status, msg.status_list) else status.status
+                self._outcomes.append((_OUTCOME_SEVERITIES[outcome], duration))
+                if outcome == GoalStatus.STATUS_SUCCEEDED:
                     self._succeeded += 1
-                elif status.status == GoalStatus.STATUS_ABORTED:
+                elif outcome == GoalStatus.STATUS_ABORTED:
                     self._aborted += 1
-                elif status.status == GoalStatus.STATUS_CANCELED:
+                elif outcome == GoalStatus.STATUS_CANCELED:
                     self._canceled += 1
 
         # The server stops reporting a goal once it's garbage-collected it; forget it too.
