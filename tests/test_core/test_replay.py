@@ -144,8 +144,9 @@ def test_replay_tf_static_routes_to_same_instance_as_tf(tmp_path: Path, ros_node
 
     reports, overall = replay_bag(str(bag_path), _config(), _plugins(), ros_node)
 
-    # /tf_static never gets its own report row -- it fed the /tf plugin instance.
-    assert [r.topic for r in reports] == ["/tf"]
+    # /tf_static never gets its own report row -- it fed the /tf plugin instance,
+    # whose map -> odom edge shows up as the Localization category's derived row.
+    assert [r.topic for r in reports] == ["/tf", "map → odom"]
     assert reports[0].status.severity == Severity.ERROR
     assert "multi-parent" in reports[0].status.message
     # 3 unique edges (map->odom, odom->base_link, map->base_link), one of

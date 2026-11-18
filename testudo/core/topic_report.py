@@ -28,13 +28,17 @@ class TopicReport:
 
     topic: str
     msg_type: str
-    tier: str  # "vitals", "full", "presence", or "excluded"
+    tier: str  # "vitals", "full", "presence", "excluded", or "derived"
     status: CheckStatus
     rate_hz: float | None = None
     #: Each publisher as seen when the topic was discovered
     #: (`discovery.describe_publisher`); empty when unknown (replay, an
     #: excluded topic, a topic with none).
     publishers: tuple[str, ...] = ()
+    #: For a "derived" row (worked out from another topic): the plugin output
+    #: it's published with, and the topic whose config (`codes:`) applies to it.
+    plugin_group: str | None = None
+    source_topic: str | None = None
 
 
 #: Message types whose publishers only speak when something changes -- a

@@ -176,10 +176,12 @@ def _mostly_dead(manager: "SubscriptionManager", reports: list[TopicReport]) -> 
     deliberately excluded -- that's a topic actively receiving data and
     complaining about it, not a dead one.
     """
+    # A derived row has no liveness of its own: it outlives the topic it's worked out from.
+    reports = [report for report in reports if report.tier != "derived"]
     dead_count = sum(
         1 for report in reports if report.status.label == "liveness" and report.status.severity >= Severity.ERROR
     )
-    return (dead_count / len(reports)) >= manager._stale_stack_fraction
+    return bool(reports) and (dead_count / len(reports)) >= manager._stale_stack_fraction
 
 
 def _clear_all_topics(manager: "SubscriptionManager") -> None:

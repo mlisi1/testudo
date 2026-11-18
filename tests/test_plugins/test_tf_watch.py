@@ -1,12 +1,15 @@
 """Unit tests for TFWatchPlugin -- synthetic tf2_msgs/TFMessage, no live ROS graph."""
 from __future__ import annotations
 
+import math
+
+import pytest
 from geometry_msgs.msg import TransformStamped
 from tf2_msgs.msg import TFMessage
 
 from rich.text import Text
 
-from testudo.plugins.base import Severity
+from testudo.plugins.base import Severity, SeverityLevels
 from testudo.plugins.builtin.tf_watch import TFWatchPlugin
 
 
@@ -163,3 +166,69 @@ def test_metrics_publish_counts_chain_flags_and_dynamic_edge_ages() -> None:
     assert metrics["chain_connected_map_to_base_link"] is True
     assert metrics["chain_connected_base_link_to_gps"] is False
     assert metrics["edge_age_s_odom_to_base_link"] == 0.5
+
+
+def _map_odom(x: float = 0.0, yaw: float = 0.0, parent: str = "map", child: str = "odom") -> TFMessage:
+    transform = TransformStamped()
+    transform.header.frame_id = parent
+    transform.child_frame_id = child
+    transform.transform.translation.x = x
+    transform.transform.rotation.z = math.sin(yaw / 2.0)
+    transform.transform.rotation.w = math.cos(yaw / 2.0)
+    return TFMessage(transforms=[transform])
+
+
+def _map_odom_plugin(*messages: TFMessage, now: float = 100.0) -> TFWatchPlugin:
+    plugin = TFWatchPlugin()
+    plugin.on_tick(now)
+    for message in messages:
+        plugin.on_message("/tf", message)
+    return plugin
+
+
+def test_no_map_odom_means_no_row() -> None:
+    assert _map_odom_plugin(_map_odom(parent="odom", child="base_link")).derived_rows() == []
+
+
+def test_map_odom_row_belongs_to_localization() -> None:
+    row = _map_odom_plugin(_map_odom()).derived_rows()[0]
+    assert row.name == "map → odom"
+    assert row.plugin_group == "localization"
+    assert row.status.severity == Severity.OK
+
+
+def test_small_corrections_are_normal() -> None:
+    row = _map_odom_plugin(_map_odom(0.0), _map_odom(0.05), _map_odom(0.1)).derived_rows()[0]
+    assert row.status.codes == {}
+    assert row.status.metrics["last_correction_m"] == pytest.approx(0.05)
+
+
+def test_a_map_odom_jump_warns_then_errors_when_large() -> None:
+    assert _map_odom_plugin(_map_odom(0.0), _map_odom(1.0)).derived_rows()[0].status.code_severities == {"LOC-009": Severity.WARN}
+    assert _map_odom_plugin(_map_odom(0.0), _map_odom(6.0)).derived_rows()[0].status.code_severities == {"LOC-009": Severity.ERROR}
+
+
+def test_a_map_odom_heading_jump_counts() -> None:
+    assert "LOC-009" in _map_odom_plugin(_map_odom(yaw=0.0), _map_odom(yaw=1.0)).derived_rows()[0].status.codes
+
+
+def test_a_map_odom_jump_clears_after_it_has_been_held() -> None:
+    plugin = _map_odom_plugin(_map_odom(0.0), _map_odom(1.0))
+    plugin.on_tick(110.0)
+    status = plugin.derived_rows()[0].status
+    assert status.codes == {}
+    assert status.metrics["jumps"] == 1
+
+
+def test_each_robot_namespace_gets_its_own_row() -> None:
+    plugin = _map_odom_plugin(_map_odom(parent="a/map", child="a/odom"), _map_odom(parent="b/map", child="b/odom"))
+    assert [row.name for row in plugin.derived_rows()] == ["a/map → a/odom", "b/map → b/odom"]
+
+
+def test_map_odom_levels_come_from_the_tf_topics_config() -> None:
+    plugin = TFWatchPlugin()
+    plugin.levels = {**plugin.levels, "map_odom_jump_m": SeverityLevels(warn=2.0)}
+    plugin.on_tick(100.0)
+    plugin.on_message("/tf", _map_odom(0.0))
+    plugin.on_message("/tf", _map_odom(1.0))
+    assert plugin.derived_rows()[0].status.codes == {}

@@ -27,6 +27,7 @@ from testudo.plugins.base import (
     ThresholdZone,
     colorize,
 )
+from testudo.plugins.builtin.map_odom_watch import DEFAULT_MAP_ODOM_LEVELS, DerivedRow, MapOdomWatch
 from testudo.plugins.builtin.tf_tree_layout import tree_lines
 
 #: tf2's default transform buffer duration; used here only as the
@@ -69,6 +70,7 @@ class TFWatchPlugin(CheckPlugin):
         self._static_edges: set[tuple[str, str]] = set()
         self._now = 0.0
         self._edge_count = 0
+        self._map_odom = MapOdomWatch()
 
     @classmethod
     def msg_types(cls) -> tuple[str, ...]:
@@ -84,6 +86,18 @@ class TFWatchPlugin(CheckPlugin):
     @classmethod
     def default_thresholds(cls) -> dict[str, ThresholdZone]:
         return {}
+
+    @classmethod
+    def default_levels(cls) -> dict[str, SeverityLevels]:
+        return dict(DEFAULT_MAP_ODOM_LEVELS)
+
+    def derived_rows(self) -> list[DerivedRow]:
+        """Rows worked out from `/tf` that belong elsewhere: `map → odom`, in the Localization category.
+
+        An optional, duck-typed hook (read by `report_builder`), like
+        `set_watched_pairs`: only this plugin has a use for it so far.
+        """
+        return self._map_odom.rows(self._now)
 
     def set_watched_pairs(self, pairs: list[tuple[str, str]]) -> None:
         """Declare which (parent, child) pairs to check for a connected chain.
@@ -122,6 +136,7 @@ class TFWatchPlugin(CheckPlugin):
                 self._static_edges.add((parent, child))
             else:
                 self._static_edges.discard((parent, child))
+            self._map_odom.observe(transform, self._now, self.levels)
 
     def _multi_parent_children(self) -> dict[str, set[str]]:
         return {child: parents for child, parents in self._parents_by_child.items() if len(parents) > 1}

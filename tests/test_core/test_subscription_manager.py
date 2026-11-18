@@ -26,6 +26,7 @@ from testudo.core.config import (
 )
 from testudo.core.report_builder import build_reports
 from testudo.core.subscription_manager import SubscriptionManager
+from testudo.core.topic_report import TopicReport
 from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, ThresholdZone
 from testudo.plugins.registry import DiscoveredPlugin
 
@@ -1203,6 +1204,61 @@ def test_an_old_stamp_on_a_sparse_pose_is_not_flagged() -> None:
     node, manager, _time_source = _sparse_pose_manager()
     node.subscriptions[0].callback(_stamped_pose(0.0))  # an /initialpose sent by hand: stamp left at zero
     assert not any(code.startswith("STAMP-") for code in manager.reports()[0].status.codes)
+
+
+def _map_odom_message(x: float) -> Any:
+    from geometry_msgs.msg import TransformStamped
+    from tf2_msgs.msg import TFMessage
+
+    transform = TransformStamped()
+    transform.header.frame_id = "map"
+    transform.child_frame_id = "odom"
+    transform.transform.translation.x = x
+    transform.transform.rotation.w = 1.0
+    return TFMessage(transforms=[transform])
+
+
+def _tf_manager(**config: Any) -> tuple[_FakeNode, SubscriptionManager]:
+    from testudo.plugins.builtin.tf_watch import TFWatchPlugin
+
+    node = _FakeNode(
+        topics=[("/tf", ["tf2_msgs/msg/TFMessage"])], publishers_by_topic={"/tf": [_FakeEndpointInfo(qos_profile=_qos())]}
+    )
+    discovered = [DiscoveredPlugin(name="tf_watch", plugin_class=TFWatchPlugin, source="packaged")]
+    manager = SubscriptionManager(node, TestudoConfig(**config), discovered, clock=_fixed_clock(1000.0), **_FAST_SETTLE)
+    manager.start()
+    return node, manager
+
+
+def test_map_odom_jump_is_reported_as_its_own_row() -> None:
+    node, manager = _tf_manager()
+    node.subscriptions[0].callback(_map_odom_message(0.0))
+    node.subscriptions[0].callback(_map_odom_message(1.0))
+
+    row = next(report for report in manager.reports() if report.topic == "map → odom")
+    assert row.tier == "derived"
+    assert row.plugin_group == "localization"
+    assert "LOC-009" in row.status.codes
+
+
+def test_a_derived_row_does_not_keep_a_dead_stack_looking_alive() -> None:
+    from testudo.core.maintenance import _mostly_dead
+
+    _node, manager = _tf_manager()
+    dead = TopicReport("/tf", "tf2_msgs/msg/TFMessage", "full", CheckStatus(Severity.ERROR, "liveness", "no messages"))
+    row = TopicReport("map → odom", "geometry_msgs/msg/TransformStamped", "derived", CheckStatus(Severity.OK, "l", "m"))
+    assert _mostly_dead(manager, [dead, row])
+
+
+def test_map_odom_code_takes_the_overrides_of_the_tf_topic() -> None:
+    tf_type = "tf2_msgs/msg/TFMessage"
+    node, manager = _tf_manager(topics={tf_type: [TopicConfig(name="/tf", msg_type=tf_type, codes={"LOC-009": Severity.OK})]})
+    node.subscriptions[0].callback(_map_odom_message(0.0))
+    node.subscriptions[0].callback(_map_odom_message(1.0))
+
+    row = next(report for report in manager.reports() if report.topic == "map → odom")
+    assert row.status.codes == {}
+    assert row.status.severity == Severity.OK
 
 
 def test_tf_watch_routes_tf_and_tf_static_to_one_instance() -> None:

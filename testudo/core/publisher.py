@@ -71,7 +71,7 @@ def group_by_plugin(reports: list[TopicReport], plugin_names: dict[str, str]) ->
     """`reports` keyed by the plugin checking each one, or `VITALS_GROUP` when none does."""
     groups: dict[str, list[TopicReport]] = {}
     for report in reports:
-        name = plugin_names.get(report.msg_type) if report.tier in _PLUGIN_TIERS else None
+        name = report.plugin_group or (plugin_names.get(report.msg_type) if report.tier in _PLUGIN_TIERS else None)
         groups.setdefault(name or VITALS_GROUP, []).append(report)
     return groups
 

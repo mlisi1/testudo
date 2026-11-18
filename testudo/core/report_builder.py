@@ -31,6 +31,7 @@ from testudo.plugins.base import SeverityLevels
 
 if TYPE_CHECKING:
     from testudo.core.subscription_manager import SubscriptionManager
+    from testudo.core.tier_subscription import FullTierState
 
 
 def build_reports(manager: "SubscriptionManager", *, code_overrides: bool = True) -> list[TopicReport]:
@@ -92,19 +93,39 @@ def build_reports(manager: "SubscriptionManager", *, code_overrides: bool = True
             rate_levels=_rate_levels(manager, topic_name),
         )
         reports.append(_suppress(manager, topic_name, report))
+        reports.extend(_derived_reports(topic_name, state))
 
     if code_overrides:
         reports = [_override_codes(manager, report) for report in reports]
     return sorted(reports, key=lambda report: report.topic)
 
 
+def _derived_reports(topic_name: str, state: "FullTierState") -> list[TopicReport]:
+    """The extra rows a plugin works out from its topic (`derived_rows`, an optional hook)."""
+    derived_rows = getattr(state.plugin, "derived_rows", None)
+    if derived_rows is None:
+        return []
+    return [
+        TopicReport(
+            topic=row.name,
+            msg_type=row.msg_type,
+            tier="derived",
+            status=row.status,
+            plugin_group=row.plugin_group,
+            source_topic=topic_name,
+        )
+        for row in derived_rows()
+    ]
+
+
 def _override_codes(manager: "SubscriptionManager", report: TopicReport) -> TopicReport:
     """`report` with its topic's `codes:` overrides applied (topic entry, then its action's)."""
     overrides: dict[str, int] = {}
-    topic_config = manager._topic_config_by_name.get(report.topic)
+    topic_name = report.source_topic or report.topic
+    topic_config = manager._topic_config_by_name.get(topic_name)
     if topic_config is not None:
         overrides.update(topic_config.codes)
-    action_config = manager._action_config_by_status_topic.get(report.topic)
+    action_config = manager._action_config_by_status_topic.get(topic_name)
     if action_config is not None:
         overrides.update(action_config.codes)
     if not overrides:

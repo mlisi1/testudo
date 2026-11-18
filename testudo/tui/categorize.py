@@ -13,6 +13,8 @@ from testudo.core.topic_report import TopicReport
 _FRIENDLY_NAMES = {
     "nav_msgs/msg/Odometry": "Localization",
     "geometry_msgs/msg/PoseWithCovarianceStamped": "Localization",
+    # The `map → odom` row (plugins/builtin/map_odom_watch.py).
+    "geometry_msgs/msg/TransformStamped": "Localization",
     "action_msgs/msg/GoalStatusArray": "Actions",
     "nav2_msgs/msg/BehaviorTreeLog": "BT Navigator",
     "tf2_msgs/msg/TFMessage": "TF",
@@ -69,7 +71,7 @@ def category_for(report: TopicReport) -> str:
         return EXCLUDED_CATEGORY
     if report.tier == "node":
         return NODES_CATEGORY
-    if report.tier not in ("full", "presence"):
+    if report.tier not in ("full", "presence", "derived"):
         return OTHER_CATEGORY
     if report.msg_type in _FRIENDLY_NAMES:
         return _FRIENDLY_NAMES[report.msg_type]

@@ -50,7 +50,14 @@ topics:
   # The checks follow the role of the frame: `odom` is continuous (covariance
   # may grow, any jump is a bug), `map`/`earth` are global (relocalizing is
   # normal, growing covariance is not). `frame_role: continuous` or `global`
-  # sets it for a topic whose frame says neither.
+  # sets it for a topic whose frame says neither. Jumps beyond what the
+  # reported motion explains are LOC-007 (pose_jump_m/_rad on a continuous
+  # topic, global_pose_jump_m/_rad on a global one), repeated relocalizations
+  # LOC-008 (relocalizations_per_min). A PoseWithCovarianceStamped may go
+  # silent at rest (AMCL only updates on motion); give it a `cmd_vel` related
+  # topic and silence while the robot is told to move becomes stale. A
+  # `map -> odom` jump on /tf is its own row in this category (LOC-009), tuned
+  # under a `/tf` entry with map_odom_jump_m and map_odom_jump_rad.
   nav_msgs/msg/Odometry:
     - name: /odom
       weight: 2

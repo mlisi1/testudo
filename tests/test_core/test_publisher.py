@@ -11,6 +11,15 @@ from testudo.core.topic_report import TopicReport
 from testudo.plugins.base import CheckStatus, Severity
 
 
+def test_a_derived_row_is_published_with_its_plugin_group() -> None:
+    from testudo.core.publisher import group_by_plugin
+
+    row = TopicReport(
+        "map → odom", "geometry_msgs/msg/TransformStamped", "derived", CheckStatus(Severity.OK, "l", "m"), plugin_group="localization"
+    )
+    assert group_by_plugin([row], {}) == {"localization": [row]}
+
+
 def test_to_diagnostic_status_maps_fields() -> None:
     status = CheckStatus(severity=Severity.WARN, label="liveness", message="stale", values={"age_s": "5.0"})
     diag = to_diagnostic_status("/odom", status)
