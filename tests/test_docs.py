@@ -73,5 +73,17 @@ def test_every_mark_on_the_dashboard_page_stays_on_screen_and_links_to_a_real_pa
                     assert target is None or (DOCS / target.partition("#")[0]).is_file(), target
 
 
+def test_every_code_in_the_explore_pages_sample_data_is_documented() -> None:
+    sample = (DOCS / "assets" / "js" / "explorer-data.js").read_text(encoding="utf-8")
+    documented = {code for code, _page, _anchor in _documented()}
+    assert set(SOURCE_CODE.findall(sample)) <= documented
+
+
+def test_every_page_the_explore_page_links_to_exists() -> None:
+    sample = (DOCS / "assets" / "js" / "explorer-data.js").read_text(encoding="utf-8")
+    for page in re.findall(r'page: "([^"#]+?)/?(?:#[^"]*)?"', sample):
+        assert (DOCS / f"{page}.md").is_file() or (DOCS / page / "index.md").is_file(), page
+
+
 def test_example_config_is_valid_yaml() -> None:
     assert yaml.safe_load((ROOT / "config" / "example_config.yaml").read_text(encoding="utf-8"))

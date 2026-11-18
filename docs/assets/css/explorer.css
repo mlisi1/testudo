@@ -1,0 +1,150 @@
+/* The Explore page's model of the dashboard. Colors follow testudo/tui/theme.py. */
+#tx-explorer {
+  container-type: inline-size;
+  margin: 1.2rem 0;
+  position: relative;
+}
+.tx-term {
+  background: #14161c;
+  border: 1px solid #4b556366;
+  border-radius: 0.45rem;
+  box-shadow: 0 0.4rem 1.4rem #0000002e;
+  color: #e5e7eb;
+  cursor: default;
+  display: flex;
+  flex-direction: column;
+  font-family: "DejaVu Sans Mono", "Noto Sans Mono", Menlo, Consolas, monospace;
+  font-size: min(13px, calc(100cqw / 102 / 0.61));
+  height: 54em;
+  line-height: 1.45;
+  overflow: hidden;
+  position: relative;
+  white-space: pre;
+}
+.tx-term:focus {
+  outline: 2px solid #22d3ee;
+  outline-offset: 2px;
+}
+.tx-term i {
+  color: #9ca3af;
+  font-style: normal;
+}
+.tx-term span[style*="width"] {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: top;
+}
+.tx-term [data-tip]:hover {
+  background: #22d3ee33;
+  box-shadow: inset 0 0 0 1px #22d3ee;
+}
+.tx-bar {
+  background: #971b2f;
+  display: flex;
+  flex: none;
+  justify-content: space-between;
+  padding: 0 1ch;
+}
+.tx-bar i {
+  color: #e8c3c9;
+}
+.tx-chip { padding: 0; }
+.tx-chip-0 { background: #22c55e; color: #000; }
+.tx-chip-1 { background: #facc15; color: #000; }
+.tx-chip-2 { background: #ff1a1a; color: #fff; }
+.tx-chip-3 { background: #d946ef; color: #000; }
+.tx-paused { background: #e5e7eb; color: #14161c; }
+.tx-panes {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.tx-left {
+  background: #262a33;
+  flex: none;
+  overflow: hidden;
+  width: 34ch;
+}
+.tx-right {
+  background: #1b1d24;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.tx-head {
+  background: #4b5563;
+  font-weight: 700;
+}
+.tx-row {
+  cursor: pointer;
+  min-height: 1.45em;
+}
+.tx-row:hover {
+  background: #ffffff0f;
+}
+.tx-on-cat, .tx-on-cat:hover {
+  background: #971b2f;
+  font-weight: 700;
+}
+.tx-on-topic, .tx-on-topic:hover {
+  background: #ffb500;
+  color: #1b1b1b;
+  font-weight: 700;
+}
+.tx-on-topic span, .tx-on-topic i { color: #1b1b1b !important; }
+.tx-on-cat span, .tx-on-cat i { color: #fff !important; }
+.tx-on-topic.tx-dim-sel { background: #c98f00; }
+.tx-on-cat.tx-dim-sel { background: #6d1422; }
+.tx-faded { color: #6b7280; }
+.tx-faded span, .tx-faded b { color: #6b7280; }
+.tx-mute { color: #9ca3af; }
+.tx-s0 { color: #84cc16; }
+.tx-s1 { color: #f59e0b; }
+.tx-s2 { color: #ff2d55; font-weight: 700; }
+.tx-s3 { color: #e879f9; font-weight: 700; }
+.tx-detail {
+  border-top: 1px solid #ffb500;
+  flex: 0 0 11.5em;
+  overflow: hidden;
+  padding: 0 1ch;
+}
+.tx-detail .tx-row { cursor: default; }
+.tx-hint, .tx-search, .tx-actions {
+  flex: none;
+  padding: 0 1ch;
+}
+.tx-hint { background: #ffb500; color: #5a3f06; }
+.tx-search { background: #262a33; }
+.tx-actions { background: #971b2f; }
+.tx-caret { animation: tx-blink 1s steps(2) infinite; }
+@keyframes tx-blink { 50% { opacity: 0; } }
+.tx-help {
+  background: #14161c;
+  border: 1px solid #971b2f;
+  border-radius: 0.3rem;
+  left: 50%;
+  padding: 1em 2ch;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+.tx-float {
+  background: #111827;
+  border: 1px solid #22d3ee;
+  border-radius: 0.2rem;
+  color: #f9fafb;
+  font-size: 0.62rem;
+  padding: 0.1rem 0.4rem;
+  pointer-events: none;
+  position: absolute;
+  z-index: 3;
+}
+.tx-inspect {
+  background: var(--md-code-bg-color);
+  border-left: 3px solid #22d3ee;
+  border-radius: 0 0.25rem 0.25rem 0;
+  font-size: 0.74rem;
+  margin-top: 0.7rem;
+  min-height: 3.4rem;
+  padding: 0.5rem 0.8rem;
+}

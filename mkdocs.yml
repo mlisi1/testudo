@@ -47,9 +47,12 @@ theme:
 
 extra_css:
   - assets/css/extra.css
+  - assets/css/explorer.css
 
 extra_javascript:
   - assets/js/loop-video.js
+  - assets/js/explorer-data.js
+  - assets/js/explorer.js
 
 plugins:
   - search
@@ -102,6 +105,7 @@ nav:
       - Run headless: getting-started/headless.md
   - Dashboard:
       - tui/index.md
+      - Explore it: tui/explore.md
       - Keys: tui/keys.md
       - Quick actions: tui/quick-actions.md
       - Options: tui/options.md
