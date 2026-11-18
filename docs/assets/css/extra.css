@@ -8,6 +8,8 @@
   --testudo-maroon-dark: #74101f;
   --testudo-gold: #ffb500;
   --testudo-slate: #4b5563;
+  /* Marks areas of a screenshot: unlike the brand and severity colors, it appears nowhere in the dashboard. */
+  --testudo-callout: #22d3ee;
   --md-primary-fg-color: var(--testudo-maroon);
   --md-primary-fg-color--light: #b23347;
   --md-primary-fg-color--dark: var(--testudo-maroon-dark);
@@ -320,14 +322,14 @@
   width: 100%;
 }
 .tx-zone {
-  border: 2px solid var(--testudo-gold);
+  border: 2px solid var(--testudo-callout);
   border-radius: 0.2rem;
   box-sizing: border-box;
   position: absolute;
 }
 .tx-zone b,
 .md-typeset .tx-legend li::before {
-  background: var(--testudo-gold);
+  background: var(--testudo-callout);
   border-radius: 50%;
   color: #1f2937;
   display: inline-block;
