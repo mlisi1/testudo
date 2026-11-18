@@ -13,13 +13,11 @@ from typing import TYPE_CHECKING
 from testudo.core.code_overrides import apply_code_overrides
 from testudo.core.exclusion import matching_rule
 from testudo.core.global_watches import TF_TOPIC
+from testudo.core.passive_reports import excluded_report, no_publishers_report, presence_report
 from testudo.core.topic_report import (
     TopicReport,
-    excluded_report,
     full_tier_report,
     is_event_driven,
-    no_publishers_report,
-    presence_report,
     suppress_if_inactive,
     vitals_report,
 )

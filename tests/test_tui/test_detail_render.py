@@ -123,7 +123,7 @@ def test_overflowing_layout_stays_a_plain_grid_when_moving_values_out_would_not_
 def test_publishers_lead_a_presence_report_but_trail_a_full_one_only_when_tall() -> None:
     from dataclasses import replace
 
-    from testudo.core.topic_report import presence_report
+    from testudo.core.passive_reports import presence_report
 
     presence = replace(presence_report("/cam/image_raw", "sensor_msgs/msg/Image"), publishers=("/cam (reliable, volatile)",))
     lines = _plain(render_detail(presence, width=100, height=6))
