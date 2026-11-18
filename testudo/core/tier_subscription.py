@@ -51,6 +51,21 @@ class FullTierState:
     last_checked_seconds: float | None = field(default=None)
 
 
+def _warn_unresolved(topic_name: str, msg_type_str: str) -> None:
+    """Log a topic whose message type can't be imported here.
+
+    Routine (a bag or robot using a package not installed here, such as
+    nav2_msgs on a stack without Nav2): one line, not a traceback per topic;
+    `-v` still shows the traceback.
+    """
+    _logger.warning(
+        "could not resolve message class for '%s' (%s): its interface package isn't installed",
+        topic_name,
+        msg_type_str,
+        exc_info=_logger.isEnabledFor(logging.DEBUG),
+    )
+
+
 def subscribe_topic(
     manager: SubscriptionManager, topic_name: str, msg_type_str: str, topics_by_name: dict[str, TopicInfo]
 ) -> None:
@@ -89,14 +104,7 @@ def subscribe_topic(
     try:
         msg_class = get_message(msg_type_str)
     except Exception:
-        # Routine (a bag or robot using a package not installed here): one
-        # line, not a traceback per topic; `-v` still shows the traceback.
-        _logger.warning(
-            "could not resolve message class for '%s' (%s): its interface package isn't installed",
-            topic_name,
-            msg_type_str,
-            exc_info=_logger.isEnabledFor(logging.DEBUG),
-        )
+        _warn_unresolved(topic_name, msg_type_str)
         return
 
     plugin_class = manager._plugin_class_by_msg_type.get(msg_type_str)
@@ -206,7 +214,7 @@ def subscribe_related_topic(
     try:
         msg_class = get_message(topic_info.msg_types[0])
     except Exception:
-        _logger.exception("could not resolve message class for related topic '%s'", related_topic_name)
+        _warn_unresolved(related_topic_name, topic_info.msg_types[0])
         return
 
     def _on_related_message(msg: object) -> None:

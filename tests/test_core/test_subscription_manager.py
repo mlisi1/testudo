@@ -6,6 +6,7 @@ exclusion, and report generation are all testable without a live ROS graph.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -1022,7 +1023,7 @@ def test_action_related_topic_is_routed_to_same_plugin_instance() -> None:
     node = _FakeNode(
         topics=[
             ("/navigate_to_pose/_action/status", ["action_msgs/msg/GoalStatusArray"]),
-            ("/navigate_to_pose/_action/feedback", ["nav2_msgs/action/NavigateToPose_FeedbackMessage"]),
+            ("/navigate_to_pose/_action/feedback", ["action_msgs/msg/GoalInfo"]),  # any installed type
         ],
         publishers_by_topic={
             "/navigate_to_pose/_action/status": [_FakeEndpointInfo(qos_profile=_qos())],
@@ -1051,6 +1052,44 @@ def test_action_related_topic_is_routed_to_same_plugin_instance() -> None:
     sentinel = object()
     feedback_sub.callback(sentinel)
     assert plugin.calls == [("/navigate_to_pose/_action/feedback", sentinel)]
+
+
+def test_related_topic_of_an_uninstalled_type_is_one_warning_and_keeps_the_primary_topic() -> None:
+    node = _FakeNode(
+        topics=[
+            ("/navigate_to_pose/_action/status", ["action_msgs/msg/GoalStatusArray"]),
+            ("/navigate_to_pose/_action/feedback", ["nonexistent_testudo_pkg/action/Nope_FeedbackMessage"]),
+        ],
+        publishers_by_topic={
+            "/navigate_to_pose/_action/status": [_FakeEndpointInfo(qos_profile=_qos())],
+            "/navigate_to_pose/_action/feedback": [_FakeEndpointInfo(qos_profile=_qos())],
+        },
+    )
+    discovered = [DiscoveredPlugin(name="action", plugin_class=_ActionPlugin, source="packaged")]
+    config = TestudoConfig(
+        actions=[
+            ActionConfig(
+                name="navigate_to_pose",
+                action_type="nonexistent_testudo_pkg/action/Nope",
+                related_topics={"feedback": "/navigate_to_pose/_action/feedback"},
+            )
+        ]
+    )
+    manager = SubscriptionManager(node, config, discovered, clock=_fixed_clock(0.0), **_FAST_SETTLE)
+
+    records: list[logging.LogRecord] = []
+    handler = logging.Handler()
+    handler.emit = records.append  # type: ignore[method-assign]
+    tier_logger = logging.getLogger("testudo.core.tier_subscription")
+    tier_logger.addHandler(handler)
+    try:
+        manager.start()
+    finally:
+        tier_logger.removeHandler(handler)
+
+    assert {sub.topic for sub in node.subscriptions} == {"/navigate_to_pose/_action/status"}
+    assert "/navigate_to_pose/_action/status" in manager._full_tier
+    assert records and all(record.levelname == "WARNING" and not record.exc_info for record in records)
 
 
 def test_tf_watch_routes_tf_and_tf_static_to_one_instance() -> None:
