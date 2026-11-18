@@ -80,7 +80,7 @@ def build_reports(manager: "SubscriptionManager", *, code_overrides: bool = True
             manager._stale_after_seconds,
             _rate_levels(manager, topic_name),
             manager._monitor_hz,
-            **_quiet_flags(manager, topic_name),
+            **_quiet_flags(manager, topic_name, vitals_only=True),
         )
         reports.append(_suppress(manager, topic_name, _with_nav2_rate(manager, report, vitals, now)))
     for topic_name, state in manager._full_tier.items():
@@ -166,7 +166,17 @@ def _rate_levels(manager: "SubscriptionManager", topic_name: str) -> SeverityLev
     return override.over(None) if override is not None else None
 
 
-def _quiet_flags(manager: "SubscriptionManager", topic_name: str) -> dict[str, bool]:
+def never_published_undeclared(manager: "SubscriptionManager", topic_name: str) -> bool:
+    """True for a vitals-tier topic nobody asked for that hasn't sent a message yet.
+
+    Nothing says it should have: debug and on-demand outputs are created at
+    startup and stay silent until needed. Declaring the topic makes silence an error.
+    """
+    vitals = manager._vitals.get(topic_name)
+    return vitals is not None and vitals.message_count == 0 and not is_declared(manager, topic_name)
+
+
+def _quiet_flags(manager: "SubscriptionManager", topic_name: str, *, vitals_only: bool = False) -> dict[str, bool]:
     """`latched`/`event_driven` kwargs for a topic's liveness verdict (see `liveness_status`)."""
     topic_config = manager._topic_config_by_name.get(topic_name)
     msg_type = manager._msg_type_by_topic.get(topic_name)
@@ -175,6 +185,7 @@ def _quiet_flags(manager: "SubscriptionManager", topic_name: str) -> dict[str, b
         is_event_driven(topic_name, msg_type)
         or (topic_config is not None and topic_config.event_driven)
         or (state is not None and state.plugin.silence_expected(msg_type or ""))
+        or (vitals_only and never_published_undeclared(manager, topic_name))
     )
     return {"latched": topic_name in manager._latched, "event_driven": event_driven}
 

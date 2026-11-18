@@ -12,6 +12,8 @@ from typing import Any, Callable
 
 from rclpy.qos import DurabilityPolicy, QoSProfile
 
+import pytest
+
 from testudo.core.clock import TestudoClock
 from testudo.core.config import (
     ActionConfig,
@@ -240,6 +242,14 @@ class _TFPlugin(CheckPlugin):
 
 def _config(publish_topic: str = "/diagnostics") -> TestudoConfig:
     return TestudoConfig(publish=PublishConfig(topic=publish_topic))
+
+
+def _declaring(*topics: tuple[str, str]) -> TestudoConfig:
+    """A config declaring each (topic, message type): their silence is an error."""
+    declared: dict[str, list[TopicConfig]] = {}
+    for name, msg_type in topics:
+        declared.setdefault(msg_type, []).append(TopicConfig(name=name, msg_type=msg_type))
+    return TestudoConfig(topics=declared, publish=PublishConfig(topic="/diagnostics"))
 
 
 def _qos() -> QoSProfile:
@@ -1066,17 +1076,72 @@ def test_a_topic_that_lost_its_publisher_is_an_error_not_an_idle_input() -> None
     assert manager.reports()[0].status.severity == Severity.ERROR
 
 
-def test_vitals_topic_with_no_messages_received_is_error() -> None:
+def test_declared_vitals_topic_with_no_messages_received_is_error() -> None:
     node = _FakeNode(
         topics=[("/odom", ["nav_msgs/msg/Odometry"])],
         publishers_by_topic={"/odom": [_FakeEndpointInfo(qos_profile=_qos())]},
     )
-    manager = SubscriptionManager(node, _config(), [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    config = _declaring(("/odom", "nav_msgs/msg/Odometry"))
+    manager = SubscriptionManager(node, config, [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
     manager.start()
 
     reports = manager.reports()
     assert reports[0].status.severity == Severity.ERROR
     assert "no messages received" in reports[0].status.message
+
+
+def test_undeclared_vitals_topic_that_never_published_is_idle() -> None:
+    node = _FakeNode(
+        topics=[("/evaluation", ["std_msgs/msg/String"])],
+        publishers_by_topic={"/evaluation": [_FakeEndpointInfo(qos_profile=_qos())]},
+    )
+    manager = SubscriptionManager(node, _config(), [], clock=_fixed_clock(100.0), **_FAST_SETTLE)
+    manager.start()
+
+    status = manager.reports()[0].status
+    assert (status.severity, status.label, status.codes) == (Severity.OK, "idle", {})
+
+
+def test_undeclared_vitals_topic_that_stopped_publishing_still_goes_stale() -> None:
+    node = _FakeNode(
+        topics=[("/battery", ["sensor_msgs/msg/BatteryState"])],
+        publishers_by_topic={"/battery": [_FakeEndpointInfo(qos_profile=_qos())]},
+    )
+    clock_seconds = [0.0]
+    manager = SubscriptionManager(
+        node, _config(), [], clock=_mutable_clock(clock_seconds), stale_after_seconds=2.0, **_FAST_SETTLE
+    )
+    manager.start()
+    node.subscriptions[0].callback(b"")
+
+    clock_seconds[0] = 10.0
+    assert manager.reports()[0].status.severity == Severity.STALE
+
+
+@pytest.mark.parametrize(
+    "msg_type",
+    [
+        "visualization_msgs/msg/Marker",
+        "visualization_msgs/msg/MarkerArray",
+        "dwb_msgs/msg/LocalPlanEvaluation",
+        "bond/msg/Status",
+    ],
+)
+def test_on_demand_outputs_may_stop_publishing(msg_type: str) -> None:
+    node = _FakeNode(
+        topics=[("/output", [msg_type])],
+        publishers_by_topic={"/output": [_FakeEndpointInfo(qos_profile=_qos())]},
+    )
+    clock_seconds = [0.0]
+    manager = SubscriptionManager(
+        node, _config(), [], clock=_mutable_clock(clock_seconds), stale_after_seconds=2.0, **_FAST_SETTLE
+    )
+    manager.start()
+    node.subscriptions[0].callback(b"")
+
+    clock_seconds[0] = 10.0
+    status = manager.reports()[0].status
+    assert (status.severity, status.label) == (Severity.OK, "idle")
 
 
 def test_vitals_topic_recent_message_is_ok() -> None:
@@ -1550,7 +1615,8 @@ def test_lifecycle_tracking_subscribes_transition_event_without_its_own_report_r
             ],
         },
     )
-    manager = SubscriptionManager(node, _config(), [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    config = _declaring(("/controller_server/some_topic", "std_msgs/msg/Empty"))
+    manager = SubscriptionManager(node, config, [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
     manager.start()
 
     reports = manager.reports()
@@ -1707,7 +1773,8 @@ def test_overall_status_weighted_mode_differs_from_worst() -> None:
             "/scan": [_FakeEndpointInfo(qos_profile=_qos())],
         },
     )
-    manager = SubscriptionManager(node, _config(), [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    config = _declaring(("/odom", "nav_msgs/msg/Odometry"), ("/scan", "sensor_msgs/msg/LaserScan"))
+    manager = SubscriptionManager(node, config, [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
     manager.start()
     # Both topics report ERROR (no messages received) -- worst == weighted here,
     # but confirm both modes at least run without differing unexpectedly.
@@ -1853,7 +1920,7 @@ def test_maintain_clears_when_some_topics_are_stale_and_others_never_received_a_
     clock_seconds = [0.0]
     manager = SubscriptionManager(
         node,
-        _config(),
+        _declaring(("/odom", "nav_msgs/msg/Odometry"), ("/scan", "sensor_msgs/msg/LaserScan")),
         [],
         clock=_mutable_clock(clock_seconds),
         stale_after_seconds=2.0,
@@ -1884,6 +1951,35 @@ def test_maintain_clears_when_some_topics_are_stale_and_others_never_received_a_
     assert manager.reports() == []
 
 
+def test_maintain_clears_a_dead_stack_whatever_its_never_published_topics() -> None:
+    """An undeclared topic that never published is no evidence either way, so it can't hold the clear back."""
+    topics = [("/odom", ["nav_msgs/msg/Odometry"]), ("/marker", ["std_msgs/msg/String"])]
+    publishers: dict[str, list[object]] = {name: [_FakeEndpointInfo(qos_profile=_qos())] for name, _ in topics}
+    node = _FakeNode(topics=topics, publishers_by_topic=publishers)
+    clock_seconds = [0.0]
+    manager = SubscriptionManager(
+        node,
+        _config(),
+        [],
+        clock=_mutable_clock(clock_seconds),
+        stale_after_seconds=2.0,
+        rediscovery_interval_seconds=0.0,
+        stale_stack_fraction=0.9,
+        stale_stack_grace_seconds=0.0,
+        stale_check_interval_seconds=0.0,
+        **_FAST_SETTLE,
+    )
+    manager.start()
+    next(sub for sub in node.subscriptions if sub.topic == "/odom").callback(b"")
+
+    clock_seconds[0] = 10.0
+    manager.maintain()
+    topics.clear()
+    publishers.clear()
+    manager.maintain()
+    assert manager.reports() == []
+
+
 def test_maintain_does_not_clear_for_a_content_check_error_on_an_actively_received_topic() -> None:
     """A plugin's own content-check ERROR (bad covariance, NaN, etc.) on a topic that's
     actively receiving messages must not count toward "the stack looks
@@ -1902,7 +1998,7 @@ def test_maintain_does_not_clear_for_a_content_check_error_on_an_actively_receiv
     discovered = [DiscoveredPlugin(name="recording", plugin_class=_RecordingPlugin, source="packaged")]
     manager = SubscriptionManager(
         node,
-        _config(),
+        _declaring(("/scan", "sensor_msgs/msg/LaserScan")),
         discovered,
         clock=_mutable_clock(clock_seconds),
         stale_after_seconds=2.0,

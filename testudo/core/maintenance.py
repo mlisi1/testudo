@@ -32,7 +32,7 @@ from testudo.core.exclusion import sweep_excluded_topics
 from testudo.core.global_watches import subscribe_lifecycle_tracking, subscribe_tf_watch
 from testudo.core.lifecycle import LifecycleTracker
 from testudo.core.tier_subscription import subscribe_topic
-from testudo.core.report_builder import build_reports
+from testudo.core.report_builder import build_reports, never_published_undeclared
 from testudo.core.topic_report import TopicReport
 from testudo.plugins.base import Severity
 
@@ -178,7 +178,12 @@ def _mostly_dead(manager: "SubscriptionManager", reports: list[TopicReport]) -> 
     complaining about it, not a dead one.
     """
     # A derived row has no liveness of its own: it outlives the topic it's worked out from.
-    reports = [report for report in reports if report.tier != "derived"]
+    # A topic that never published says nothing about whether the stack is still up.
+    reports = [
+        report
+        for report in reports
+        if report.tier != "derived" and not never_published_undeclared(manager, report.topic)
+    ]
     dead_count = sum(
         1 for report in reports if report.status.label == "liveness" and report.status.severity >= Severity.ERROR
     )

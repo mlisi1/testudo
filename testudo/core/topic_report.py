@@ -54,6 +54,12 @@ EVENT_DRIVEN_MSG_TYPES = frozenset(
         "nav_msgs/msg/Path",
         "map_msgs/msg/OccupancyGridUpdate",
         "nav2_msgs/msg/CostmapUpdate",
+        # What a node draws or explains only while it has something to show.
+        "visualization_msgs/msg/Marker",
+        "visualization_msgs/msg/MarkerArray",
+        "dwb_msgs/msg/LocalPlanEvaluation",
+        # A bond's heartbeat only flows while the bond is up.
+        "bond/msg/Status",
     }
 )
 
