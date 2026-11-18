@@ -11,4 +11,5 @@ bags/
 # Markdown stays local, except the README and the documentation.
 *.md
 !/README.md
+!/CHANGELOG.md
 !/docs/**/*.md
