@@ -30,7 +30,11 @@ Only the keys you write change. For most metrics higher is worse. A few are the 
 `green`, `orange` and `red` under the same metric set where the Detail Panel's meters change color. They never change a severity.
 
 ```yaml
-position_covariance_trace: {warn: 0.02, green: 0.02, orange: 0.2}
+topics:
+  nav_msgs/msg/Odometry:
+    - name: /odom
+      thresholds:
+        position_covariance_trace: {warn: 0.02, green: 0.02, orange: 0.2}
 ```
 
 ## Overriding one code

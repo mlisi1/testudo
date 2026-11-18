@@ -2,8 +2,6 @@
 
 Checks 2D and 3D range sensors: whether their readings are valid, changing and well formed.
 
-![Dashboard with SENS-001 active on /scan, with four readings in ten invalid](../assets/media/plugins/point-stream.png)
-
 ## What it covers
 
 | | |

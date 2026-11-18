@@ -4,7 +4,7 @@ Testudo gives each topic the cheapest monitoring that can still judge it.
 
 | Tier | What it does | Which topics |
 |---|---|---|
-| **Full** | Deserializes messages and runs a plugin's content checks | Any topic a plugin covers |
+| **Full** | Deserializes messages and runs a plugin's content checks | Any topic a plugin covers, except undeclared cameras and point clouds |
 | **Vitals** | Raw subscription: rate, age and liveness, with no deserialization | Topics no plugin covers |
 | **Presence** | No subscription: only checks that a publisher exists | Undeclared cameras and point clouds |
 | **Excluded** | Nothing: a name-only row | Topics matching `exclude_topics` |

@@ -2,7 +2,7 @@
 
 Samples the CPU, memory and process state of every ROS node whose process can be found, plus Testudo itself. Results appear in the TUI's Nodes category and on `/testudo/nodes`.
 
-It only runs live, because a bag has no processes to sample. GPU memory needs an NVIDIA card and `pynvml`, and is skipped otherwise.
+It only runs live, because a bag has no processes to sample. GPU memory needs an NVIDIA card and `nvidia-ml-py`, and is skipped otherwise.
 
 A node is matched to its process through its `__node:=` remap, or else by executable name. A node that can't be matched either way isn't profiled.
 

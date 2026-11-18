@@ -98,7 +98,10 @@ def cli_reference() -> str:
     previous = os.environ.get("COLUMNS")
     os.environ["COLUMNS"] = "80"
     try:
-        commands = _command_help(cli._build_parser(), ["testudo"])
+        commands = [
+            (name, text.replace(cli.DEFAULT_CONFIG_PATH, "~/.config/testudo/config.yaml"))
+            for name, text in _command_help(cli._build_parser(), ["testudo"])
+        ]
     finally:
         if previous is None:
             del os.environ["COLUMNS"]

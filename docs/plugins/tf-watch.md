@@ -2,8 +2,6 @@
 
 Checks the transform tree: that it is valid, connected where you need it, and still being updated.
 
-![Dashboard with TF-001 and TF-002 active on /tf, with the frame tree in the Detail Panel](../assets/media/plugins/tf-watch.png)
-
 ## What it covers
 
 | | |

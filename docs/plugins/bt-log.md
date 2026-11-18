@@ -2,8 +2,6 @@
 
 Shows what Nav2's behavior tree is doing, and how often it falls back on recoveries.
 
-![Dashboard with BT-001 active on /behavior_tree_log, with frequent recoveries](../assets/media/plugins/bt-log.png)
-
 ## What it covers
 
 | | |

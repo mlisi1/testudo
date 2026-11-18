@@ -5,7 +5,7 @@ Everything is a standard `diagnostic_msgs/msg/DiagnosticArray`, so it works with
 | Topic | Content |
 |---|---|
 | `/testudo/<plugin>` | One status per topic that plugin checks, such as `/testudo/localization` |
-| `/testudo/vitals` | Topics no plugin checks |
+| `/testudo/vitals` | Topics no plugin checks. It appears once there is one |
 | `/testudo/overall` | The roll-up verdict |
 | `/testudo/faults` | One status per fault. See the [schema](faults-schema.md) |
 | `/testudo/nodes` | CPU, memory and GPU per node |
@@ -25,6 +25,6 @@ Node profiling then moves to `/diagnostics/nodes`, and faults to `/diagnostics/f
 
 ## Values
 
-Each status is named `testudo: <topic>`. Its values are plain numbers with the unit in the key, such as `rate_hz` and `age_s`. Ratios go from 0 to 1, and booleans are 1 or 0.
+Each status is named `testudo: <topic>`, or after what it describes, such as `testudo: overall`, `testudo: map → odom` or `testudo: /some_node`. Its values are mostly numbers with the unit in the key, such as `rate_hz` and `age_s`, plus a few short identifiers such as `frame_id`. Ratios go from 0 to 1, and booleans are 1 or 0.
 
 Testudo's own output topics are never monitored.

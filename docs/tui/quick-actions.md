@@ -2,7 +2,7 @@
 
 Press ++a++ on a topic in a live session. Its actions replace the hint bar for one keypress.
 
-![Quick actions on an IMU topic, shown in the hint bar](../assets/media/tui/quick-actions.png)
+<video class="tx-loop" src="../../assets/media/clips/quick-actions.mp4" autoplay loop muted playsinline disablepictureinpicture disableremoteplayback preload="auto" aria-label="Downgrading a GNSS code to WARN from the dashboard"></video>
 
 | Key | Action |
 |---|---|

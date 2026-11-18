@@ -20,6 +20,6 @@ To allow warnings and fail only on errors:
 testudo replay -c config.yaml run_bag/ || [ $? -eq 1 ]
 ```
 
-The exit code reflects the **end** of the bag. A fault that cleared before the end is listed in the report, but doesn't fail the run.
+The exit code reflects the **end** of the bag. A fault that cleared before the end is listed in the report, but doesn't fail the run. A fault shorter than the report's sampling, at least 1 s, can be missed altogether.
 
 Tune known conditions in the config you pass with `-c`, so a clean run ends OK.

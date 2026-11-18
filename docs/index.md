@@ -27,9 +27,7 @@ hide:
 
 </div>
 
-<video class="tx-video" src="assets/media/home/hero.mp4" poster="assets/media/tui/replay.png" autoplay loop muted playsinline controls aria-label="The Testudo dashboard replaying a field recording"></video>
-
-<p class="tx-caption">A real field run, replayed: recoveries, a localization jump and a broken transform chain, each with its own code.</p>
+<video class="tx-loop tx-video" src="assets/media/home/hero.mp4" poster="assets/media/home/hero.jpg" autoplay loop muted playsinline disablepictureinpicture disableremoteplayback preload="auto" aria-label="Short reels of the Testudo dashboard, each with a panel explaining it"></video>
 
 ## A navigation stack rarely fails loudly
 
@@ -90,7 +88,7 @@ testudo watch
 
 </div>
 
-[![The live dashboard listing active faults](assets/media/tui/dashboard.png)](assets/media/tui/dashboard.png)
+<video class="tx-loop" src="assets/media/clips/jump.mp4" autoplay loop muted playsinline disablepictureinpicture disableremoteplayback preload="auto" aria-label="Jumping between problems in the dashboard"></video>
 
 </div>
 
@@ -110,7 +108,7 @@ testudo replay --watch my_bag/
 
 </div>
 
-[![A field bag open in the dashboard](assets/media/tui/replay.png)](assets/media/tui/replay.png)
+<video class="tx-loop" src="assets/media/clips/scrub.mp4" autoplay loop muted playsinline disablepictureinpicture disableremoteplayback preload="auto" aria-label="Scrubbing through a recorded run"></video>
 
 </div>
 

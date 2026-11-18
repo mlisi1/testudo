@@ -2,7 +2,7 @@
 
 Checks occupancy grids, both static maps and costmaps, and draws them in the terminal.
 
-![Dashboard with MAP-002 active on a costmap, drawn in the Detail Panel](../assets/media/plugins/costmap.png)
+![A costmap drawn in the Detail Panel, with walls, furniture and inflation](../assets/media/plugins/costmap.png)
 
 ## What it covers
 

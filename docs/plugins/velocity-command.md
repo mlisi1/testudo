@@ -2,8 +2,6 @@
 
 Judges what a controller asks of the robot, and whether the robot responds.
 
-![Dashboard with VEL-002 active on /cmd_vel_nav, a robot commanded to move that stays still](../assets/media/plugins/velocity-command.png)
-
 ## What it covers
 
 | | |

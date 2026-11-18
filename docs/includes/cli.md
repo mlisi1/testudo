@@ -27,7 +27,7 @@ options:
   -h, --help            show this help message and exit
   -c CONFIG, --config CONFIG
                         path to the Testudo YAML config file (default:
-                        /home/elechim/.config/testudo/config.yaml)
+                        ~/.config/testudo/config.yaml)
   --no-hz               don't monitor or report topic publish rate (Hz)
   --headless            no TUI: keep monitoring and publishing diagnostics
                         until Ctrl-C (robots, launch files, CI)
@@ -45,7 +45,7 @@ options:
   -h, --help            show this help message and exit
   -c CONFIG, --config CONFIG
                         path to the Testudo YAML config file (default:
-                        /home/elechim/.config/testudo/config.yaml)
+                        ~/.config/testudo/config.yaml)
   --watch               scrub through the bag in the TUI
 ```
 
@@ -58,7 +58,7 @@ options:
   -h, --help            show this help message and exit
   -c CONFIG, --config CONFIG
                         path to the Testudo YAML config file (default:
-                        /home/elechim/.config/testudo/config.yaml)
+                        ~/.config/testudo/config.yaml)
 ```
 
 ## `testudo config`
@@ -83,6 +83,6 @@ options:
   -h, --help            show this help message and exit
   -c CONFIG, --config CONFIG
                         path to the Testudo YAML config file (default:
-                        /home/elechim/.config/testudo/config.yaml)
+                        ~/.config/testudo/config.yaml)
   --force               replace the file if it already exists
 ```

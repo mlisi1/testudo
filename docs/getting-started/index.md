@@ -7,14 +7,18 @@ Install Testudo, point it at a running stack, and read your first diagnosis. You
 Testudo is a colcon package for ROS 2 Jazzy.
 
 ```bash
-cd ~/your_ws/src
+source /opt/ros/jazzy/setup.bash
+mkdir -p ~/your_ws/src && cd ~/your_ws/src
 git clone https://github.com/mlisi1/testudo.git
 cd ~/your_ws
-rosdep install --from-paths src --ignore-src -r -y
-pip install textual   # rosdep's python3-textual is too old for the dashboard
+rosdep update
+rosdep install --from-paths src --ignore-src -r -y --skip-keys python3-textual
+python3 -m pip install --user --break-system-packages textual
 colcon build --packages-select testudo
 source install/setup.bash
 ```
+
+Ubuntu's own `python3-textual` is too old for the dashboard, so it is skipped and a newer one goes in your home directory. `--break-system-packages` is what Ubuntu 24.04 asks for to allow that, and `--user` leaves the system's packages untouched.
 
 Check that it works. This lists every check and the message types it covers:
 
@@ -23,7 +27,7 @@ testudo plugins
 ```
 
 ??? note "Optional packages"
-    `nav2_msgs` is needed only for the [behavior tree log](../plugins/bt-log.md). GPU memory readings need an NVIDIA card and `pynvml`.
+    `nav2_msgs` is needed only for the [behavior tree log](../plugins/bt-log.md). GPU memory readings need an NVIDIA card and `nvidia-ml-py`.
 
 ## 2. Watch your stack
 
@@ -53,18 +57,17 @@ With your stack running, in a terminal on the same `ROS_DOMAIN_ID`:
     testudo watch -c ~/your_ws/src/testudo/docs/gen/media/fault_config.yaml
     ```
 
-Every topic a plugin covers gets its content checks straight away.
+Every topic a plugin covers gets its content checks straight away. Cameras and point clouds are the exception: [declare them](config-init.md) to check their content.
 
 ## 3. Read the diagnosis
 
-![The dashboard with faults on several topics](../assets/media/tui/dashboard.png)
+There is a lot on screen, but you only need to read it in this order: the verdict (1), then what needs attention (3), then the details of that topic (5, 6).
 
-1. **Top bar:** the overall verdict, from `✓ NOMINAL` to `✗ FAULT`.
-2. **Left:** one row per category. Below them, **Needs attention** lists the active codes, worst first.
-3. **Right:** every topic in the highlighted category.
-4. **Bottom:** the highlighted topic's values, and what each active code means.
+--8<-- "anatomy.md"
 
 Press ++n++ to jump to the next problem, ++question++ for every key, and ++q++ to quit.
+
+<video class="tx-loop" src="../assets/media/clips/jump.mp4" autoplay loop muted playsinline disablepictureinpicture disableremoteplayback preload="auto" aria-label="Jumping between problems in the dashboard"></video>
 
 !!! tip "What does a code mean?"
     Each code, such as [`IMU-005`](../plugins/imu.md#imu-005), has an entry with its likely causes and what to do. [All codes](../reference/codes.md) lists them in one place.

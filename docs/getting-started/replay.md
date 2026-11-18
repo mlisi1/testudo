@@ -16,8 +16,6 @@ This prints each topic's final status and a **Faults during the bag** section. F
 testudo replay --watch my_bag/
 ```
 
-![A field bag open in the dashboard](../assets/media/tui/replay.png)
-
 The dashboard opens paused on the last frame.
 
 | Key | Action |
@@ -30,7 +28,7 @@ The dashboard opens paused on the last frame.
 Step to the time of the first fault, then use ++n++ to see what else was wrong at that moment.
 
 !!! note "Short faults"
-    The dashboard samples a bag at least 1 s apart, with at most 600 frames, so a very short fault can fall between two frames. The report from step 1 still lists it.
+    Testudo samples a bag at least 1 s apart, with at most 600 frames, so a fault shorter than that can fall between two frames and go unseen. The report from step 1 samples the bag the same way, so its times are rounded to a frame too.
 
 ## Use the robot's config
 

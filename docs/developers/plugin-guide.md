@@ -9,6 +9,7 @@ This guide builds a battery check for `sensor_msgs/msg/BatteryState`.
 Save this as `~/testudo_plugins/battery.py`:
 
 ```python
+import math
 from typing import Any
 
 from testudo.plugins.base import (
@@ -40,7 +41,8 @@ class BatteryPlugin(CheckPlugin):
         return {"charge_ratio": SeverityLevels(warn=0.3, error=0.1)}
 
     def on_message(self, topic: str, msg: Any) -> None:
-        self._charge = msg.percentage
+        # BatteryState reports NaN when the charge isn't measured.
+        self._charge = None if math.isnan(msg.percentage) else msg.percentage
 
     def get_status(self) -> CheckStatus:
         if self._charge is None:
@@ -95,7 +97,7 @@ topics:
 
 ## 3. Test it
 
-A plugin needs no running ROS graph to be tested. Feed it a synthetic message:
+A plugin needs no running ROS graph to be tested. Feed it a synthetic message. Keep the test out of `plugins_dir`, because Testudo runs every `.py` file there. Save this as `~/testudo_plugin_tests/test_battery.py`:
 
 ```python
 from types import SimpleNamespace
@@ -112,6 +114,12 @@ def test_low_battery_warns():
 
     assert status.severity == Severity.WARN
     assert "BAT-001" in status.codes
+```
+
+Run it from a sourced shell:
+
+```bash
+PYTHONPATH=~/testudo_plugins:$PYTHONPATH python3 -m pytest ~/testudo_plugin_tests
 ```
 
 ## 4. Package it

@@ -30,10 +30,10 @@ The level tables, the code index and the command-line reference are generated fr
 Every image and video comes from the real dashboard:
 
 ```bash
-python3 docs/gen/media/capture.py live
+python3 docs/gen/media/capture.py
 ```
 
-`fault_stack.py` publishes a misbehaving topic for each plugin, on a virtual display and a separate ROS domain. It needs Xvfb, Terminator and ffmpeg. The `replay` group also records a field bag, which isn't part of the repository.
+`fault_stack.py` publishes a misbehaving topic for each plugin, on a virtual display and a separate ROS domain. It needs Xvfb, Terminator, ffmpeg and a field bag, which isn't part of the repository.
 
 ## Code conventions
 

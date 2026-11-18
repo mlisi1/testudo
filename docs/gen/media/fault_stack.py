@@ -17,18 +17,45 @@ _GRID_WIDTH = 160
 _GRID_HEIGHT = 80
 _LETHAL = 100
 _FREE = 0
+_UNKNOWN = -1
+_INFLATION_CELLS = 7
 _SCAN_BEAMS = 360
 _PLACEHOLDER_VARIANCE = 1.0e6
 _KEPT_GOALS = 6
 
 
 def _grid_cells() -> list[int]:
-    """A cluttered room: free corridors between blocks of lethal cells."""
-    cells = []
-    for row in range(_GRID_HEIGHT):
-        for column in range(_GRID_WIDTH):
-            corridor = column % 32 < 6 or row % 20 < 3
-            cells.append(_FREE if corridor else _LETHAL)
+    """A healthy local costmap: a room with furniture, inflated, and unknown beyond its walls."""
+    def is_wall(column: int, row: int) -> bool:
+        outer = column in (12, 147) or row in (8, 71)
+        door = 62 <= column <= 74 and row == 71
+        partition = column == 92 and not 30 <= row <= 42
+        table = 30 <= column <= 48 and 24 <= row <= 34
+        shelf = 112 <= column <= 136 and 54 <= row <= 58
+        pillar = (column - 66) ** 2 + (row - 26) ** 2 <= 16
+        return (outer and not door) or partition or table or shelf or pillar
+
+    cells = [_UNKNOWN] * (_GRID_WIDTH * _GRID_HEIGHT)
+    nearest: dict[tuple[int, int], float] = {}
+    lethal = []
+    for column in range(12, 148):
+        for row in range(8, 72):
+            cells[row * _GRID_WIDTH + column] = _FREE
+            if is_wall(column, row):
+                lethal.append((column, row))
+    reach = range(-_INFLATION_CELLS, _INFLATION_CELLS + 1)
+    for column, row in lethal:
+        for x in reach:
+            for y in reach:
+                cell = (column + x, row + y)
+                distance = math.hypot(x, y)
+                if 12 <= cell[0] < 148 and 8 <= cell[1] < 72 and distance < nearest.get(cell, _INFLATION_CELLS + 1):
+                    nearest[cell] = distance
+    for (column, row), distance in nearest.items():
+        cost = int(90 * (1.0 - distance / (_INFLATION_CELLS + 1)) ** 2)
+        cells[row * _GRID_WIDTH + column] = cost
+    for column, row in lethal:
+        cells[row * _GRID_WIDTH + column] = _LETHAL
     return cells
 
 

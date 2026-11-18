@@ -2,14 +2,7 @@
 
 Four panes are visible at once. Moving the cursor updates the others, so nothing needs opening.
 
-![The dashboard: Status Bar, Plugin Panel, Topic Panel and Detail Panel](../assets/media/tui/dashboard.png)
-
-| Pane | Where | Shows |
-|---|---|---|
-| **Status Bar** | Top | Host, ROS distro, uptime, and the overall verdict |
-| **Plugin Panel** | Left | One row per category, with **Needs attention** and **Cleared** below |
-| **Topic Panel** | Right | Every topic in the highlighted category |
-| **Detail Panel** | Bottom | The highlighted topic's values, active codes and cleared faults |
+--8<-- "anatomy.md"
 
 ## Status Bar
 

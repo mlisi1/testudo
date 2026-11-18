@@ -2,8 +2,6 @@
 
 Tracks how the goals of any ROS 2 action server end, from its status topic.
 
-![Dashboard with ACT-001 active on navigate_to_pose, with most goals aborted](../assets/media/plugins/actions.png)
-
 ## What it covers
 
 | | |

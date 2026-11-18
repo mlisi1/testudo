@@ -117,11 +117,18 @@
 
 /* Screenshots read as terminal windows. */
 .md-typeset img[src*="assets/media"],
-.tx-video {
+.md-typeset video.tx-loop {
   border: 1px solid #4b556366;
   border-radius: 0.45rem;
   box-shadow: 0 0.4rem 1.4rem #0000002e;
   display: block;
+  max-width: 100%;
+}
+
+/* Videos behave like GIFs: nothing to click on. */
+.md-typeset video.tx-loop {
+  pointer-events: none;
+  width: 100%;
 }
 
 /* A two-column facts table has no header to show. */
@@ -235,9 +242,6 @@
   margin: 0;
   padding: 0.1rem 0.6rem;
 }
-.tx-video {
-  width: 100%;
-}
 .md-typeset .tx-caption {
   color: var(--md-default-fg-color--light);
   font-size: 0.68rem;
@@ -300,4 +304,77 @@
 /* The home page has nothing to edit-link from its hero. */
 .md-content__inner:has(.tx-hero) > .md-content__button {
   display: none;
+}
+
+/* The dashboard, its areas numbered, and the legend for those numbers. */
+.md-typeset figure.tx-anatomy {
+  display: block;
+  margin: 1.2rem 0;
+  max-width: none;
+  width: 100%;
+}
+.tx-anatomy__frame {
+  position: relative;
+}
+.md-typeset .tx-anatomy__frame img {
+  width: 100%;
+}
+.tx-zone {
+  border: 2px solid var(--testudo-gold);
+  border-radius: 0.2rem;
+  box-sizing: border-box;
+  position: absolute;
+}
+.tx-zone b,
+.md-typeset .tx-legend li::before {
+  background: var(--testudo-gold);
+  border-radius: 50%;
+  color: #1f2937;
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  height: 1.15rem;
+  line-height: 1.15rem;
+  text-align: center;
+  width: 1.15rem;
+}
+.tx-zone b {
+  position: absolute;
+  right: 0.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.md-typeset figure.tx-anatomy figcaption {
+  font-style: normal;
+  max-width: none;
+  text-align: left;
+}
+.md-typeset ol.tx-legend {
+  counter-reset: zone;
+  display: grid;
+  gap: 0.45rem 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+}
+.md-typeset ol.tx-legend li {
+  counter-increment: zone;
+  font-size: 0.72rem;
+  margin: 0;
+  padding-left: 1.6rem;
+  position: relative;
+}
+.md-typeset .tx-legend li::before {
+  content: counter(zone);
+  left: 0;
+  position: absolute;
+  top: 0.05rem;
+}
+
+/* A cropped picture keeps its own size instead of stretching across the page. */
+.md-typeset img[src*="plugins/costmap"] {
+  margin: 0 auto;
+  max-width: 34rem;
+  width: 100%;
 }

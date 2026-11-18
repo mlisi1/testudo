@@ -2,8 +2,6 @@
 
 Checks that a camera is delivering real frames, without decoding them.
 
-![Dashboard with IMG-002 active on a camera whose payload is not the JPEG it declares](../assets/media/plugins/image-stream.png)
-
 ## What it covers
 
 | | |

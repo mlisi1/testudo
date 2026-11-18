@@ -86,4 +86,4 @@ Each plugin understands one kind of topic and judges its content. They turn on b
 
 </div>
 
-Run `testudo plugins` to list what's installed, including your own. To add a check, see [Write a plugin](../developers/plugin-guide.md).
+Run `testudo plugins` to list what's installed, including your own. The list also shows `dummy`, a minimal example that checks nothing. To add a check, see [Write a plugin](../developers/plugin-guide.md).
