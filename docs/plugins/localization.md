@@ -2,6 +2,9 @@
 
 Judges a pose estimate by what its frame says about it: odometry may drift but must never jump, and a global pose may jump but must not lose confidence.
 
+<video class="tx-loop" src="../../assets/media/plugins/localization.mp4" autoplay loop muted playsinline disablepictureinpicture disableremoteplayback preload="metadata" aria-label="Odometry whose position covariance becomes a placeholder"></video>
+<p class="tx-caption" markdown="span">The position variance jumps to a placeholder value, and [`LOC-001`](#loc-001) fires until the estimate recovers.</p>
+
 ## What it covers
 
 | | |
@@ -144,6 +147,8 @@ A metric left at its default follows the role instead:
 The `map → odom` levels are listed on the [TF watch page](tf-watch.md#settings). Anything you write in the config wins over both tables.
 
 ## In the TUI
+
+![Odometry whose position covariance becomes a placeholder, in the dashboard](../assets/media/plugins/localization.png)
 
 The Topic Panel adds a `σxy` column. The Detail Panel shows the pose, per-axis σ meters, and actual against commanded velocity.
 

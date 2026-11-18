@@ -2,6 +2,9 @@
 
 Checks 2D and 3D range sensors: whether their readings are valid, changing and well formed.
 
+<video class="tx-loop" src="../../assets/media/plugins/point-stream.mp4" autoplay loop muted playsinline disablepictureinpicture disableremoteplayback preload="metadata" aria-label="A laser scan whose readings turn invalid"></video>
+<p class="tx-caption" markdown="span">Most of the scan turns to NaN, and [`SENS-001`](#sens-001) fires.</p>
+
 ## What it covers
 
 | | |
@@ -84,6 +87,8 @@ topics:
 --8<-- "levels/point-stream.md"
 
 ## In the TUI
+
+![A laser scan whose readings turn invalid, in the dashboard](../assets/media/plugins/point-stream.png)
 
 The Topic Panel adds a `Points` column. The Detail Panel shows the share of valid, no-return and invalid readings, plus a scan profile for a `LaserScan`.
 

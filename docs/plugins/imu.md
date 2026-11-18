@@ -2,6 +2,9 @@
 
 Checks that an IMU's readings are valid, alive and physically sensible, with no setting for how it is mounted or whether it removes gravity.
 
+<video class="tx-loop" src="../../assets/media/plugins/imu.mp4" autoplay loop muted playsinline disablepictureinpicture disableremoteplayback preload="metadata" aria-label="An IMU whose acceleration at rest stops matching gravity"></video>
+<p class="tx-caption" markdown="span">The acceleration at rest stops looking like gravity, and [`IMU-005`](#imu-005) fires.</p>
+
 ## What it covers
 
 | | |
@@ -122,6 +125,8 @@ topics:
 --8<-- "levels/imu.md"
 
 ## In the TUI
+
+![An IMU whose acceleration at rest stops matching gravity, in the dashboard](../assets/media/plugins/imu.png)
 
 The Topic Panel adds an `|a|` column. The Detail Panel shows acceleration, angular velocity and a recent gyro trend.
 

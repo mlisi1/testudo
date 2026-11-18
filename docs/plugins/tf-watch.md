@@ -2,6 +2,9 @@
 
 Checks the transform tree: that it is valid, connected where you need it, and still being updated.
 
+<video class="tx-loop" src="../../assets/media/plugins/tf-watch.mp4" autoplay loop muted playsinline disablepictureinpicture disableremoteplayback preload="metadata" aria-label="A transform that stops being updated"></video>
+<p class="tx-caption" markdown="span">One transform stops being updated, and [`TF-003`](#tf-003) fires once it is older than tf2's buffer.</p>
+
 ## What it covers
 
 | | |
@@ -56,6 +59,8 @@ These levels belong to the [`LOC-009`](localization.md#loc-009) row:
 --8<-- "levels/tf-watch.md"
 
 ## In the TUI
+
+![A transform that stops being updated, in the dashboard](../assets/media/plugins/tf-watch.png)
 
 The Topic Panel adds a `Frames` column. The Detail Panel shows the frame tree and each watched chain.
 

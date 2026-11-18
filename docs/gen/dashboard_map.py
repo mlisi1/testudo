@@ -74,16 +74,17 @@ def _hint_items() -> tuple[Item, ...]:
     return tuple(items)
 
 
+#: The Plugin Panel's rows, top to bottom, as `dashboard.png` shows them: check them after re-recording it.
 _CATEGORIES = (
     ("plugins/image-stream.md", "Image stream"),
     ("plugins/gnss.md", "GNSS"),
-    ("plugins/localization.md", "Localization"),
-    ("plugins/costmap.md", "Costmap"),
     ("plugins/tf-watch.md", "TF watch"),
     ("plugins/imu.md", "IMU"),
-    ("plugins/point-stream.md", "Point stream"),
     ("plugins/actions.md", "Actions"),
     ("plugins/bt-log.md", "Behavior tree log"),
+    ("plugins/point-stream.md", "Point stream"),
+    ("plugins/localization.md", "Localization"),
+    ("plugins/costmap.md", "Costmap"),
     ("core-checks/node.md", "Node profiling"),
     ("plugins/velocity-command.md", "Velocity command"),
 )
@@ -108,17 +109,17 @@ STATUS_RIGHT = Crop(78, 0, 44, 1, (
          "concepts/severity.md#the-overall-verdict", "The overall verdict", (Spot(98, 0, 23),)),
 ))
 
-PLUGIN_PANEL = Crop(0, 1, 31, 20, (
+PLUGIN_PANEL = Crop(0, 1, 33, 20, (
     Item("Category",
          "Topics grouped by what they are. Click a row above to open its page: "
          + ", ".join(f"[{name}](../{target})" for target, name in _CATEGORIES) + ".",
          "plugins/index.md", "Plugins",
-         tuple(Spot(1, 2 + index, 16, target=target, badge="left" if index == 0 else None)
+         tuple(Spot(1, 2 + index, 18, target=target, badge="left" if index == 0 else None)
                for index, (target, _name) in enumerate(_CATEGORIES))),
     Item("Severity breakdown", "How many of the category's topics are at each severity, worst first.",
-         "concepts/severity.md", "Severity", (Spot(18, 2, 12, 11, badge="right"),)),
+         "concepts/severity.md", "Severity", (Spot(20, 2, 12, 11, badge="right"),)),
     Item("Sort marker", "`▼` sorts worst first. Press ++s++ to sort by name, and the marker moves to the name column as `▲`.",
-         "tui/keys.md", "Keys", (Spot(25, 1, 1, badge="right"),)),
+         "tui/keys.md", "Keys", (Spot(27, 1, 1, badge="right"),)),
     Item("Needs attention", "Up to five active codes across the whole stack, worst first.",
          "concepts/faults.md", "Faults", (Spot(1, 14, 15, badge="right"),)),
     Item("Code severity", "How serious this code is on its own. It can be lower than its topic's severity.",
@@ -131,9 +132,9 @@ PLUGIN_PANEL = Crop(0, 1, 31, 20, (
          "tui/keys.md", "Keys", (Spot(1, 20, 7, badge="left"),)),
 ))
 
-TOPIC_PANEL = Crop(31, 1, 91, 2, (
+TOPIC_PANEL = Crop(33, 1, 89, 2, (
     Item("Topic", "Every topic in the highlighted category, shown by the tier that monitors it.",
-         "concepts/tiers.md", "Monitoring tiers", (Spot(32, 2, 29, badge="bottom"),)),
+         "concepts/tiers.md", "Monitoring tiers", (Spot(34, 2, 29, badge="bottom"),)),
     Item("Status", "The topic's severity, or a label when it is quiet by design.",
          "concepts/liveness.md", "Liveness", (Spot(90, 2, 8, badge="bottom"),)),
     Item("Hz", "The publish rate over the last 20 messages, `-` until there is one.",
@@ -178,8 +179,8 @@ SECTIONS: dict[str, tuple[Crop, ...]] = {
 #: The whole screen: letter, pane, the page's section, its cells (col, row, width, height), badge position.
 OVERVIEW = (
     ("A", "Status Bar", "status-bar", (0, 0, 122, 1), "top"),
-    ("B", "Plugin Panel", "plugin-panel", (0, 1, 31, 22), "inside"),
-    ("C", "Topic Panel", "topic-panel", (31, 1, 91, 22), "inside"),
+    ("B", "Plugin Panel", "plugin-panel", (0, 1, 33, 22), "inside"),
+    ("C", "Topic Panel", "topic-panel", (33, 1, 89, 22), "inside"),
     ("D", "Detail Panel", "detail-panel", (0, 23, 122, 11), "inside"),
     ("E", "Hint bar", "hint-bar", (0, 34, 122, 1), "bottom"),
 )

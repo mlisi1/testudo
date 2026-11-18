@@ -1,0 +1,28 @@
+# What capture.py runs Testudo with against plugin_stack.py.
+topics:
+  nav_msgs/msg/Odometry:
+    - name: /odom
+  sensor_msgs/msg/Imu:
+    - name: /imu/data
+  sensor_msgs/msg/NavSatFix:
+    - name: /gps/fix
+  sensor_msgs/msg/CompressedImage:
+    - name: /camera/image_raw/compressed
+  sensor_msgs/msg/LaserScan:
+    - name: /scan
+  geometry_msgs/msg/Twist:
+    - name: /cmd_vel_nav
+      related_topics:
+        odom: /odom
+      thresholds:
+        stuck_s: {warn: 2.0, error: 6.0}
+  nav_msgs/msg/OccupancyGrid:
+    - name: /local_costmap/costmap
+  nav2_msgs/msg/BehaviorTreeLog:
+    - name: /behavior_tree_log
+      thresholds:
+        recovery_frequency_per_min: {warn: 10.0, error: 40.0}
+actions:
+  - name: navigate_to_pose
+tf:
+  - {parent: odom, child: laser}

@@ -2,6 +2,9 @@
 
 Checks a receiver's fix: whether it has one, how accurate it claims to be, and whether its positions are believable.
 
+<video class="tx-loop" src="../../assets/media/plugins/gnss.mp4" autoplay loop muted playsinline disablepictureinpicture disableremoteplayback preload="metadata" aria-label="A GNSS receiver losing its fix"></video>
+<p class="tx-caption" markdown="span">The receiver loses its fix and its claimed accuracy collapses: [`GNSS-001`](#gnss-001) and [`GNSS-002`](#gnss-002).</p>
+
 ## What it covers
 
 | | |
@@ -86,6 +89,8 @@ topics:
 --8<-- "levels/gnss.md"
 
 ## In the TUI
+
+![A GNSS receiver losing its fix, in the dashboard](../assets/media/plugins/gnss.png)
 
 The Topic Panel adds a `Fix` column. The Detail Panel shows the fix type, position, per-axis σ and recent trends.
 

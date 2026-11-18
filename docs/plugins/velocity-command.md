@@ -2,6 +2,9 @@
 
 Judges what a controller asks of the robot, and whether the robot responds.
 
+<video class="tx-loop" src="../../assets/media/plugins/velocity-command.mp4" autoplay loop muted playsinline disablepictureinpicture disableremoteplayback preload="metadata" aria-label="A robot that stops responding to velocity commands"></video>
+<p class="tx-caption" markdown="span">The controller keeps commanding motion while odometry reports none: [`VEL-002`](#vel-002).</p>
+
 ## What it covers
 
 | | |
@@ -68,6 +71,8 @@ topics:
 --8<-- "levels/velocity-command.md"
 
 ## In the TUI
+
+![A robot that stops responding to velocity commands, in the dashboard](../assets/media/plugins/velocity-command.png)
 
 The Topic Panel adds a `Cmd` column showing the linear and angular command.
 

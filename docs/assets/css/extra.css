@@ -450,10 +450,3 @@
 .md-typeset .tx-pane-link {
   font-size: 0.72rem;
 }
-
-/* A cropped picture keeps its own size instead of stretching across the page. */
-.md-typeset img[src*="plugins/costmap"] {
-  margin: 0 auto;
-  max-width: 34rem;
-  width: 100%;
-}

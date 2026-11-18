@@ -2,6 +2,9 @@
 
 Checks that a camera is delivering real frames, without decoding them.
 
+<video class="tx-loop" src="../../assets/media/plugins/image-stream.mp4" autoplay loop muted playsinline disablepictureinpicture disableremoteplayback preload="metadata" aria-label="A camera repeating the same frame"></video>
+<p class="tx-caption" markdown="span">The driver keeps sending the same frame. [`IMG-003`](#img-003) rises from warning to error as the count grows.</p>
+
 ## What it covers
 
 | | |
@@ -68,6 +71,8 @@ topics:
 --8<-- "levels/image-stream.md"
 
 ## In the TUI
+
+![A camera repeating the same frame, in the dashboard](../assets/media/plugins/image-stream.png)
 
 The Topic Panel adds a `Size` column. The Detail Panel shows the format, frame size and an estimated bandwidth.
 

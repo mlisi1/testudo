@@ -1,123 +1,33 @@
 """Record the docs' images and looping videos from the real dashboard, on a virtual display.
 
-Usage: `python3 docs/gen/media/capture.py`, from a sourced ROS 2 Jazzy shell.
+Usage: `python3 docs/gen/media/capture.py [replay] [live] [plugins]`, from a sourced ROS 2 Jazzy
+shell; everything when no part is named. The home page's reels need `replay` and `live` together.
 Needs Xvfb, Terminator, ffmpeg and the field bag in `bags/`. Runs on its own ROS domain.
 """
 import os
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
 
+from dashboard_session import DISPLAY, HEIGHT, HERE, OUTPUT, REPO, WIDTH, Session, record, still
+from plugin_scenes import capture_plugins, stack_process
 from reels import Reel, encode, join
 
-_HERE = Path(__file__).resolve().parent
-_REPO = _HERE.parents[2]
-_OUTPUT = _REPO / "docs" / "assets" / "media"
-_BAG = _REPO / "bags" / "20260722_093225_campo_ippodromo"
-_DISPLAY = ":178"
+_BAG = REPO / "bags" / "20260722_093225_campo_ippodromo"
 _ROS_DOMAIN = "178"
-_WIDTH = 1100
-_HEIGHT = 640
-_FPS = 15
-_READY_TIMEOUT_S = 900.0
 _SETTLE_S = 15.0
 _STACK_START_S = 5.0
-_KEY_PAUSE_S = 0.25
-
-_TERMINATOR_CONFIG = """[global_config]
-  suppress_multiple_term_dialog = True
-[profiles]
-  [[default]]
-    use_system_font = False
-    font = DejaVu Sans Mono 11
-    use_theme_colors = False
-    background_color = "#14161c"
-    foreground_color = "#e5e7eb"
-    show_titlebar = False
-    scrollbar_position = hidden
-    cursor_blink = False
-"""
-
-
-class Session:
-    """One dashboard running in Terminator on the virtual display."""
-
-    def __init__(self, workdir: Path, testudo_args: list[str]) -> None:
-        self._feed = workdir / "keys"
-        self._ready = workdir / "keys.ready"
-        self._ready.unlink(missing_ok=True)
-        config = workdir / "terminator.conf"
-        config.write_text(_TERMINATOR_CONFIG)
-        command = " ".join(["exec nice -n 19 python3", str(_HERE / "keyfeed.py"), *testudo_args])
-        self._process = subprocess.Popen(
-            [
-                "terminator", "--no-dbus", "-g", str(config), "-b",
-                f"--geometry={_WIDTH}x{_HEIGHT}+0+0", "-x", "bash", "-c", command,
-            ],
-            env={**os.environ, "KEYFEED": str(self._feed)},
-            start_new_session=True,
-        )
-
-    def wait_ready(self) -> None:
-        """Block until the dashboard has mounted."""
-        deadline = time.monotonic() + _READY_TIMEOUT_S
-        while not self._ready.exists():
-            if time.monotonic() > deadline or self._process.poll() is not None:
-                raise RuntimeError("the dashboard did not start")
-            time.sleep(0.5)
-
-    def press(self, *keys: str) -> None:
-        """Press `keys` in order, by Textual key name."""
-        for key in keys:
-            with self._feed.open("a") as feed:
-                feed.write(f"{key}\n")
-            time.sleep(_KEY_PAUSE_S)
-
-    def close(self) -> None:
-        """Quit the dashboard and its terminal."""
-        self.press("q")
-        time.sleep(1.0)
-        try:
-            os.killpg(self._process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        self._process.wait(timeout=10)
-
-
-def _grab_args() -> list[str]:
-    return [
-        "ffmpeg", "-y", "-loglevel", "error", "-f", "x11grab", "-draw_mouse", "0", "-framerate", str(_FPS),
-        "-video_size", f"{_WIDTH}x{_HEIGHT}", "-i", _DISPLAY,
-    ]
-
-
-def still(name: str, crop: str = "iw:ih:0:0") -> None:
-    """Save the part of the screen given by `crop` (w:h:x:y) as `<name>.png`."""
-    output = _OUTPUT / f"{name}.png"
-    output.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run([*_grab_args(), "-vf", f"crop={crop}", "-frames:v", "1", str(output)], check=True)
-
-
-def record(session: Session, output: Path, seconds: float, steps: list[tuple[float, list[str]]]) -> Path:
-    """Record `seconds` of the screen while pressing each step's keys after its pause."""
-    recorder = subprocess.Popen(
-        [*_grab_args(), "-t", str(seconds), "-c:v", "libx264", "-qp", "0", "-preset", "ultrafast", str(output)]
-    )
-    for pause, keys in steps:
-        time.sleep(pause)
-        session.press(*keys)
-    recorder.wait(timeout=seconds + 15.0)
-    return output
 
 
 def capture_live(workdir: Path) -> Reel:
     """The costmap, the panes and the quick actions, against `fault_stack.py`."""
     config = workdir / "fault_config.yaml"  # The quick action saves to it.
-    shutil.copy(_HERE / "fault_config.yaml", config)
-    stack = subprocess.Popen(["nice", "-n", "19", "python3", str(_HERE / "fault_stack.py")], start_new_session=True)
+    shutil.copy(HERE / "fault_config.yaml", config)
+    stack = stack_process("fault_stack.py")
     time.sleep(_STACK_START_S)
     session = Session(workdir, ["watch", "-c", str(config)])
     try:
@@ -133,7 +43,7 @@ def capture_live(workdir: Path) -> Reel:
         clip = record(
             session, workdir / "quick.mkv", seconds, [(1.5, ["a"]), (2.5, ["w"])],
         )
-        encode(clip, _OUTPUT / "clips" / "quick-actions.mp4")
+        encode(clip, OUTPUT / "clips" / "quick-actions.mp4")
         return Reel(
             clip, seconds, "Tune it on the spot",
             "Downgrade a code or set a level from the dashboard. It is saved to your config.",
@@ -146,7 +56,7 @@ def capture_live(workdir: Path) -> Reel:
 
 def capture_replay(workdir: Path) -> list[Reel]:
     """The field bag: browsing, jumping between problems, searching and scrubbing."""
-    session = Session(workdir, ["replay", "-c", str(_HERE / "field_config.yaml"), str(_BAG), "--watch"])
+    session = Session(workdir, ["replay", "-c", str(HERE / "field_config.yaml"), str(_BAG), "--watch"])
     try:
         session.wait_ready()
         time.sleep(3.0)
@@ -173,8 +83,8 @@ def capture_replay(workdir: Path) -> list[Reel]:
         )
     finally:
         session.close()
-    encode(jump, _OUTPUT / "clips" / "jump.mp4")
-    encode(scrub, _OUTPUT / "clips" / "scrub.mp4")
+    encode(jump, OUTPUT / "clips" / "jump.mp4")
+    encode(scrub, OUTPUT / "clips" / "scrub.mp4")
     return [
         Reel(browse, 8.0, "See the whole stack at once",
              "Every topic is judged and grouped by what it is. Move the cursor and the other panes follow."),
@@ -188,20 +98,25 @@ def capture_replay(workdir: Path) -> list[Reel]:
 
 
 def main() -> None:
-    """Record everything and assemble the home page's reels."""
+    """Record the parts named on the command line, or all of them."""
+    parts = set(sys.argv[1:]) or {"replay", "live", "plugins"}
     os.environ.update(
-        DISPLAY=_DISPLAY,
+        DISPLAY=DISPLAY,
         ROS_DOMAIN_ID=_ROS_DOMAIN,
         ROS_AUTOMATIC_DISCOVERY_RANGE="LOCALHOST",
-        PYTHONPATH=f"{_REPO}{os.pathsep}{os.environ.get('PYTHONPATH', '')}",
+        PYTHONPATH=f"{REPO}{os.pathsep}{os.environ.get('PYTHONPATH', '')}",
     )
-    display = subprocess.Popen(["Xvfb", _DISPLAY, "-screen", "0", f"{_WIDTH}x{_HEIGHT}x24", "-nolisten", "tcp"])
+    display = subprocess.Popen(["Xvfb", DISPLAY, "-screen", "0", f"{WIDTH}x{HEIGHT}x24", "-nolisten", "tcp"])
     time.sleep(1.0)
     workdir = Path(tempfile.mkdtemp(prefix="testudo_media_"))
     try:
-        reels = capture_replay(workdir)
-        reels.append(capture_live(workdir))
-        join(reels, _WIDTH, _OUTPUT / "home" / "hero.mp4", workdir)
+        reels = capture_replay(workdir) if "replay" in parts else []
+        if "live" in parts:
+            reels.append(capture_live(workdir))
+        if {"replay", "live"} <= parts:
+            join(reels, WIDTH, OUTPUT / "home" / "hero.mp4", workdir)
+        if "plugins" in parts:
+            capture_plugins(workdir)
     finally:
         display.terminate()
         display.wait(timeout=10)

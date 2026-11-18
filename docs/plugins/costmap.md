@@ -2,7 +2,8 @@
 
 Checks occupancy grids, both static maps and costmaps, and draws them in the terminal.
 
-![A costmap drawn in the Detail Panel, with walls, furniture and inflation](../assets/media/plugins/costmap.png)
+<video class="tx-loop" src="../../assets/media/plugins/costmap.mp4" autoplay loop muted playsinline disablepictureinpicture disableremoteplayback preload="metadata" aria-label="A costmap filling up with lethal cells"></video>
+<p class="tx-caption" markdown="span">Obstacles sweep across the grid until [`MAP-002`](#map-002) fires. The map is drawn in the Detail Panel.</p>
 
 ## What it covers
 
@@ -66,6 +67,8 @@ Obstacles that stay in a costmap are never a fault, because not clearing them ca
 --8<-- "levels/costmap.md"
 
 ## In the TUI
+
+![A costmap filling up with lethal cells, in the dashboard](../assets/media/plugins/costmap.png)
 
 The Topic Panel adds a `Lethal` column. The Detail Panel draws the grid in half blocks, keeping walls visible when it is scaled down.
 

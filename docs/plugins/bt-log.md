@@ -2,6 +2,9 @@
 
 Shows what Nav2's behavior tree is doing, and how often it falls back on recoveries.
 
+<video class="tx-loop" src="../../assets/media/plugins/bt-log.mp4" autoplay loop muted playsinline disablepictureinpicture disableremoteplayback preload="metadata" aria-label="A behavior tree repeatedly running recoveries"></video>
+<p class="tx-caption" markdown="span">The tree keeps falling back on recoveries, and [`BT-001`](#bt-001) tracks how often.</p>
+
 ## What it covers
 
 | | |
@@ -40,6 +43,8 @@ topics:
 --8<-- "levels/bt-log.md"
 
 ## In the TUI
+
+![A behavior tree repeatedly running recoveries, in the dashboard](../assets/media/plugins/bt-log.png)
 
 The Topic Panel adds a `Rec/m` column. The Detail Panel shows the running branch, recent recoveries and the last failure.
 

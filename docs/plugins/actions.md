@@ -2,6 +2,9 @@
 
 Tracks how the goals of any ROS 2 action server end, from its status topic.
 
+<video class="tx-loop" src="../../assets/media/plugins/actions.mp4" autoplay loop muted playsinline disablepictureinpicture disableremoteplayback preload="metadata" aria-label="An action server whose goals start aborting"></video>
+<p class="tx-caption" markdown="span">Goals start aborting, and [`ACT-001`](#act-001) follows the success rate down.</p>
+
 ## What it covers
 
 | | |
@@ -64,6 +67,8 @@ actions:
 --8<-- "levels/actions.md"
 
 ## In the TUI
+
+![An action server whose goals start aborting, in the dashboard](../assets/media/plugins/actions.png)
 
 The Topic Panel adds a `Last 5` column with the latest outcomes. The Detail Panel shows the current state, outcome history, success rate and durations.
 
