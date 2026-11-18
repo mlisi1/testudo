@@ -27,14 +27,14 @@ def _reports() -> list[TopicReport]:
             "full",
             CheckStatus(
                 Severity.ERROR,
-                "odometry",
+                "localization",
                 "covariance too high",
                 topic_panel_column="Cov",
                 topic_panel_value="[bold red]0.6[/bold red]",
             ),
         ),
         # "IMU", not "Lidar": needs a category name that sorts
-        # alphabetically *before* "Odometry" (the ERROR/worst one) so
+        # alphabetically *before* "Localization" (the ERROR/worst one) so
         # severity-order and name-order pick a different first row.
         TopicReport("/imu", "sensor_msgs/msg/Imu", "full", CheckStatus(Severity.OK, "sensor", "nominal")),
         TopicReport("/battery", "sensor_msgs/msg/BatteryState", "vitals", CheckStatus(Severity.OK, "liveness", "alive")),
@@ -58,9 +58,9 @@ def test_app_starts_with_all_three_panes_populated() -> None:
             assert isinstance(app.screen, DashboardScreen)
             categories = app.screen.query_one(CategorySummaryTable)
             topics = app.screen.query_one(TopicDetailTable)
-            # 3 reports across 3 categories: Odometry, IMU, Other Topics.
+            # 3 reports across 3 categories: Localization, IMU, Other Topics.
             assert categories.row_count == 3
-            # Severity sort puts "Odometry" (ERROR, worst) on top by default,
+            # Severity sort puts "Localization" (ERROR, worst) on top by default,
             # so its 1 topic should already be showing in the topics pane
             # without pressing anything.
             assert topics.row_count == 1
@@ -79,11 +79,11 @@ def test_moving_category_cursor_live_updates_topics_and_detail() -> None:
     async def body():
         app = _make_app()
         async with app.run_test() as pilot:
-            await pilot.press("j")  # move off "Odometry" onto the next category
+            await pilot.press("j")  # move off "Localization" onto the next category
             topics = app.screen.query_one(TopicDetailTable)
             categories = app.screen.query_one(CategorySummaryTable)
             new_category = categories.selected_category
-            assert new_category != "Odometry"
+            assert new_category != "Localization"
             assert all(t != "/odom" for t in topics._topic_order)
 
             detail = str(app.screen.query_one("#detail-pane").content)
@@ -262,7 +262,7 @@ def test_sort_toggle_changes_focused_table_row_order() -> None:
             severity_order_first = categories.get_row_at(0)[0]
             await pilot.press("s")
             name_order_first = categories.get_row_at(0)[0]
-            # Alphabetical first ("IMU") differs from severity-first ("Odometry", the ERROR one).
+            # Alphabetical first ("IMU") differs from severity-first ("Localization", the ERROR one).
             assert severity_order_first != name_order_first
 
     run(body())
@@ -334,10 +334,10 @@ def test_cursor_position_survives_a_data_refresh() -> None:
         app = _make_app()
         async with app.run_test():
             categories = app.screen.query_one(CategorySummaryTable)
-            assert categories.selected_category == "Odometry"
+            assert categories.selected_category == "Localization"
 
             app.screen.refresh_categories()  # simulate a poll-driven refresh with unchanged data
-            assert categories.selected_category == "Odometry"
+            assert categories.selected_category == "Localization"
             assert categories.cursor_row == 0
 
     run(body())
@@ -381,7 +381,7 @@ def test_other_topics_category_always_sorts_last() -> None:
     async def body():
         reports = [
             TopicReport("/battery", "sensor_msgs/msg/BatteryState", "vitals", CheckStatus(Severity.ERROR, "l", "dead")),
-            TopicReport("/odom", "nav_msgs/msg/Odometry", "full", CheckStatus(Severity.OK, "odometry", "nominal")),
+            TopicReport("/odom", "nav_msgs/msg/Odometry", "full", CheckStatus(Severity.OK, "localization", "nominal")),
             TopicReport("/scan", "sensor_msgs/msg/LaserScan", "full", CheckStatus(Severity.OK, "sensor", "nominal")),
         ]
         overall = CheckStatus(Severity.ERROR, "overall", "3 topic(s)")
@@ -404,7 +404,7 @@ def test_excluded_topics_category_sorts_last_and_shows_name_only() -> None:
     async def body():
         reports = [
             TopicReport("/battery", "sensor_msgs/msg/BatteryState", "vitals", CheckStatus(Severity.ERROR, "l", "dead")),
-            TopicReport("/odom", "nav_msgs/msg/Odometry", "full", CheckStatus(Severity.OK, "odometry", "nominal")),
+            TopicReport("/odom", "nav_msgs/msg/Odometry", "full", CheckStatus(Severity.OK, "localization", "nominal")),
             TopicReport(
                 "/velodyne_pts",
                 "sensor_msgs/msg/PointCloud2",
@@ -434,11 +434,11 @@ def test_excluded_topics_category_sorts_last_and_shows_name_only() -> None:
     run(body())
 
 
-def test_odometry_category_shows_a_plugin_defined_extra_column() -> None:
+def test_localization_category_shows_a_plugin_defined_extra_column() -> None:
     async def body():
         app = _make_app()
         async with app.run_test():
-            # Odometry (ERROR, worst) is selected by default -- see _make_app.
+            # Localization (ERROR, worst) is selected by default -- see _make_app.
             topics = app.screen.query_one(TopicDetailTable)
             assert len(topics.ordered_columns) == 4
             assert str(topics.ordered_columns[-1].label) == "Cov"
@@ -451,10 +451,10 @@ def test_extra_column_disappears_for_a_category_without_one() -> None:
     async def body():
         app = _make_app()
         async with app.run_test() as pilot:
-            await pilot.press("j")  # move off "Odometry" onto the next category
+            await pilot.press("j")  # move off "Localization" onto the next category
             topics = app.screen.query_one(TopicDetailTable)
             categories = app.screen.query_one(CategorySummaryTable)
-            assert categories.selected_category != "Odometry"
+            assert categories.selected_category != "Localization"
             assert len(topics.ordered_columns) == 3
 
     run(body())
@@ -469,9 +469,9 @@ def test_detail_pane_shows_active_error_codes_not_the_free_text_message() -> Non
                 "full",
                 CheckStatus(
                     Severity.ERROR,
-                    "odometry",
+                    "localization",
                     "covariance too high",  # must NOT appear in the Detail Panel
-                    codes={"ODOM-001": "[bold red]position covariance trace 0.6 out of bounds[/bold red]"},
+                    codes={"LOC-001": "[bold red]position covariance trace 0.6 out of bounds[/bold red]"},
                 ),
             ),
         ]
@@ -479,7 +479,7 @@ def test_detail_pane_shows_active_error_codes_not_the_free_text_message() -> Non
         app = TestudoApp(StaticDataSource(reports, overall), ros_distro="jazzy", sim_time_active=False)
         async with app.run_test():
             detail = str(app.screen.query_one("#detail-pane").content)
-            assert "ODOM-001" in detail
+            assert "LOC-001" in detail
             assert "position covariance trace 0.6 out of bounds" in detail
             assert "covariance too high" not in detail
 
@@ -592,7 +592,7 @@ def _problem_app() -> TestudoApp:
         return TopicReport(topic, msg_type, "full", CheckStatus(severity, "x", "", codes=codes))
 
     reports = [
-        report("/odom", "nav_msgs/msg/Odometry", Severity.ERROR, "ODOM-001"),
+        report("/odom", "nav_msgs/msg/Odometry", Severity.ERROR, "LOC-001"),
         report("/odom_ok", "nav_msgs/msg/Odometry", Severity.OK, None),
         report("/imu", "sensor_msgs/msg/Imu", Severity.WARN, "SENS-001"),
         report("/battery", "sensor_msgs/msg/BatteryState", Severity.OK, None),
@@ -607,7 +607,7 @@ def test_n_and_shift_n_walk_the_problem_topics_across_categories() -> None:
         async with app.run_test() as pilot:
             topics = app.screen.query_one(TopicDetailTable)
             categories = app.screen.query_one(CategorySummaryTable)
-            # Odometry's first row is already /odom: n moves past it to /imu.
+            # Localization's first row is already /odom: n moves past it to /imu.
             await pilot.press("n")
             assert categories.selected_category == "IMU"
             assert topics.selected_topic == "/imu"

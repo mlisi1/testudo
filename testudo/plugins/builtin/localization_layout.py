@@ -1,6 +1,6 @@
-"""Detail Panel layout for `OdometryPlugin`: pure string builders, no state.
+"""Detail Panel layout for `LocalizationPlugin`: pure string builders, no state.
 
-Split out of odometry.py so the plugin module keeps to its checks. One
+Split out of localization.py so the plugin module keeps to its checks. One
 row per axis, three groups side by side -- position σ, orientation σ, and
 actual vs. commanded velocity -- so the cmd_vel cross-check reads as two
 numbers next to each other instead of a sentence:

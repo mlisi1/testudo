@@ -1,4 +1,4 @@
-"""Unit tests for OdometryPlugin -- synthetic nav_msgs/Odometry (+ Twist), no live ROS graph."""
+"""Unit tests for LocalizationPlugin -- synthetic nav_msgs/Odometry (+ Twist), no live ROS graph."""
 from __future__ import annotations
 
 import math
@@ -10,7 +10,7 @@ from nav_msgs.msg import Odometry
 from rich.text import Text
 
 from testudo.plugins.base import Severity
-from testudo.plugins.builtin.odometry import OdometryPlugin
+from testudo.plugins.builtin.localization import LocalizationPlugin
 
 
 def _plain(markup: str) -> str:
@@ -49,21 +49,21 @@ def _twist(linear_x: float = 0.0, angular_z: float = 0.0) -> Twist:
 
 
 def test_no_messages_yet_is_ok() -> None:
-    plugin = OdometryPlugin()
+    plugin = LocalizationPlugin()
     status = plugin.get_status()
     assert status.severity == Severity.OK
-    assert "no odometry received" in status.message
+    assert "no localization data received" in status.message
 
 
 def test_nominal_zero_covariance_is_ok() -> None:
-    plugin = OdometryPlugin()
+    plugin = LocalizationPlugin()
     plugin.on_message("/odom", _odometry())
     status = plugin.get_status()
     assert status.severity == Severity.OK
 
 
 def test_high_but_real_position_covariance_is_a_warning() -> None:
-    plugin = OdometryPlugin()
+    plugin = LocalizationPlugin()
     plugin.on_message("/odom", _odometry(xx=0.2, yy=0.2, zz=0.2))  # trace 0.6: degraded, not broken
     status = plugin.get_status()
     assert status.severity == Severity.WARN
@@ -71,15 +71,15 @@ def test_high_but_real_position_covariance_is_a_warning() -> None:
 
 
 def test_placeholder_position_covariance_is_an_error() -> None:
-    plugin = OdometryPlugin()
+    plugin = LocalizationPlugin()
     plugin.on_message("/odom", _odometry(xx=9999.0, yy=9999.0, zz=9999.0))  # "unknown" placeholders
     status = plugin.get_status()
     assert status.severity == Severity.ERROR
-    assert status.code_severities["ODOM-001"] == Severity.ERROR
+    assert status.code_severities["LOC-001"] == Severity.ERROR
 
 
 def test_yaw_variance_is_a_warning_until_the_heading_is_unknown() -> None:
-    plugin = OdometryPlugin()
+    plugin = LocalizationPlugin()
     plugin.on_message("/odom", _odometry(yaw_variance=0.5))
     status = plugin.get_status()
     assert status.severity == Severity.WARN
@@ -89,7 +89,7 @@ def test_yaw_variance_is_a_warning_until_the_heading_is_unknown() -> None:
 
 
 def test_negative_diagonal_covariance_fails_psd_check() -> None:
-    plugin = OdometryPlugin()
+    plugin = LocalizationPlugin()
     msg = _odometry()
     cov = list(msg.pose.covariance)
     cov[0] = -1.0  # a real covariance matrix can never have a negative variance
@@ -101,11 +101,11 @@ def test_negative_diagonal_covariance_fails_psd_check() -> None:
     axes = _plain(status.values["axes"])
     assert "✗ pose" in axes
     assert "✓ twist" in axes
-    assert set(status.codes) == {"ODOM-004"}  # twist covariance is untouched (all zero, valid PSD)
+    assert set(status.codes) == {"LOC-004"}  # twist covariance is untouched (all zero, valid PSD)
 
 
 def test_rapid_covariance_growth_is_flagged() -> None:
-    plugin = OdometryPlugin()
+    plugin = LocalizationPlugin()
     plugin.on_message("/odom", _odometry(stamp_sec=0, xx=0.0))
     plugin.on_message("/odom", _odometry(stamp_sec=0, stamp_nanosec=10_000_000, xx=0.05))  # +0.05 in 10ms = 5/s
     status = plugin.get_status()
@@ -115,7 +115,7 @@ def test_rapid_covariance_growth_is_flagged() -> None:
 
 
 def test_cmd_vel_cross_check_without_related_topic_configured_is_ok() -> None:
-    plugin = OdometryPlugin()
+    plugin = LocalizationPlugin()
     plugin.on_message("/odom", _odometry(linear_x=0.0))
     status = plugin.get_status()
     assert "cmd     – m/s" in _plain(status.values["axes"])
@@ -123,18 +123,18 @@ def test_cmd_vel_cross_check_without_related_topic_configured_is_ok() -> None:
 
 
 def test_cmd_vel_cross_check_flags_commanded_motion_with_no_odometry_movement() -> None:
-    plugin = OdometryPlugin(related_topics={"cmd_vel": "/cmd_vel"})
+    plugin = LocalizationPlugin(related_topics={"cmd_vel": "/cmd_vel"})
     plugin.on_message("/cmd_vel", _twist(linear_x=0.5))
     plugin.on_message("/odom", _odometry(linear_x=0.0, angular_z=0.0))
     status = plugin.get_status()
     assert status.severity == Severity.WARN
     assert "cmd_vel commands motion" in status.message
     assert "0.00  cmd  0.50 m/s" in _plain(status.values["axes"])
-    assert "ODOM-006" in status.codes
+    assert "LOC-006" in status.codes
 
 
 def test_cmd_vel_cross_check_passes_when_odometry_matches_commanded_motion() -> None:
-    plugin = OdometryPlugin(related_topics={"cmd_vel": "/cmd_vel"})
+    plugin = LocalizationPlugin(related_topics={"cmd_vel": "/cmd_vel"})
     plugin.on_message("/cmd_vel", _twist(linear_x=0.5))
     plugin.on_message("/odom", _odometry(linear_x=0.5))
     status = plugin.get_status()
@@ -142,28 +142,28 @@ def test_cmd_vel_cross_check_passes_when_odometry_matches_commanded_motion() -> 
 
 
 def test_cmd_vel_message_routes_by_topic_name_not_message_type() -> None:
-    plugin = OdometryPlugin(related_topics={"cmd_vel": "/cmd_vel"})
+    plugin = LocalizationPlugin(related_topics={"cmd_vel": "/cmd_vel"})
     plugin.on_message("/cmd_vel", _twist(linear_x=1.0))
     # No odometry message yet -- only the cmd_vel side has been seen.
-    assert plugin.get_status().message == "no odometry received yet"
+    assert plugin.get_status().message == "no localization data received yet"
 
 
-def test_default_thresholds_cover_all_odometry_metrics() -> None:
-    thresholds = OdometryPlugin.default_thresholds()
+def test_default_thresholds_cover_all_localization_metrics() -> None:
+    thresholds = LocalizationPlugin.default_thresholds()
     assert set(thresholds) == {"position_covariance_trace", "yaw_variance", "covariance_growth_rate"}
 
 
 def test_no_messages_yet_has_no_topic_panel_column() -> None:
     # Unreachable via the live TUI (liveness always pre-empts this status
     # first -- see TUI_DATA_DESIGN.md), but still correct in isolation.
-    plugin = OdometryPlugin()
+    plugin = LocalizationPlugin()
     status = plugin.get_status()
     assert status.topic_panel_column == ""
     assert status.topic_panel_value == ""
 
 
 def test_topic_panel_column_is_horizontal_sigma() -> None:
-    plugin = OdometryPlugin()
+    plugin = LocalizationPlugin()
     plugin.on_message("/odom", _odometry(xx=0.03, yy=0.0076))
     status = plugin.get_status()
     assert status.topic_panel_column == "σxy"
@@ -171,7 +171,7 @@ def test_topic_panel_column_is_horizontal_sigma() -> None:
 
 
 def test_topic_panel_value_is_colored_by_the_trace_severity_with_a_growth_arrow() -> None:
-    plugin = OdometryPlugin()
+    plugin = LocalizationPlugin()
     plugin.on_message("/odom", _odometry(stamp_sec=0, xx=0.0))
     plugin.on_message("/odom", _odometry(stamp_sec=1, xx=0.2, yy=0.2, zz=0.2))  # trace 0.6 past warn, growing
     status = plugin.get_status()
@@ -180,17 +180,17 @@ def test_topic_panel_value_is_colored_by_the_trace_severity_with_a_growth_arrow(
 
 
 def test_growth_rate_is_shown_with_a_meter_colored_by_its_zone() -> None:
-    plugin = OdometryPlugin()
+    plugin = LocalizationPlugin()
     plugin.on_message("/odom", _odometry(stamp_sec=0, xx=0.0))
     plugin.on_message("/odom", _odometry(stamp_sec=0, stamp_nanosec=10_000_000, xx=0.05))  # +0.05 in 10ms = 5/s -> ERROR
     status = plugin.get_status()
     assert "growth +5.000 m²/s" in _plain(status.values["σxy"])
     assert "[bold red]▮" in status.values["σxy"]
-    assert "ODOM-003" in status.codes
+    assert "LOC-003" in status.codes
 
 
 def test_axes_block_has_a_row_per_axis_with_sigma_and_motion_side_by_side() -> None:
-    plugin = OdometryPlugin()
+    plugin = LocalizationPlugin()
     plugin.on_message("/odom", _odometry(xx=0.0676, yaw_variance=0.0001))
     rows = _plain(plugin.get_status().values["axes"]).splitlines()
     assert len(rows) == 3
@@ -202,7 +202,7 @@ def test_axes_block_has_a_row_per_axis_with_sigma_and_motion_side_by_side() -> N
 
 
 def test_axes_compact_variant_stacks_motion_under_one_square_meters() -> None:
-    plugin = OdometryPlugin()
+    plugin = LocalizationPlugin()
     plugin.on_message("/odom", _odometry(xx=0.2))
     status = plugin.get_status()
     compact = _plain(status.values["axes_compact"]).splitlines()
@@ -211,7 +211,7 @@ def test_axes_compact_variant_stacks_motion_under_one_square_meters() -> None:
 
 
 def test_sigma_xy_trend_samples_once_a_second_on_tick() -> None:
-    plugin = OdometryPlugin()
+    plugin = LocalizationPlugin()
     plugin.on_tick(1.0)
     plugin.on_message("/odom", _odometry(xx=0.01))
     for t in (1.0, 1.5, 2.0, 3.0):
@@ -223,7 +223,7 @@ def test_sigma_xy_trend_samples_once_a_second_on_tick() -> None:
 
 
 def test_frame_pair_and_secondary_values() -> None:
-    plugin = OdometryPlugin()
+    plugin = LocalizationPlugin()
     msg = _odometry(stamp_sec=9)
     msg.header.frame_id = "odom"
     msg.child_frame_id = "base_link"
@@ -238,16 +238,16 @@ def test_frame_pair_and_secondary_values() -> None:
 
 
 def test_codes_go_in_the_generic_code_lines() -> None:
-    plugin = OdometryPlugin(related_topics={"cmd_vel": "/cmd_vel"})
+    plugin = LocalizationPlugin(related_topics={"cmd_vel": "/cmd_vel"})
     plugin.on_message("/cmd_vel", _twist(linear_x=0.5))
     plugin.on_message("/odom", _odometry(xx=0.2, yy=0.2, zz=0.2, linear_x=0.0))  # trace over + cmd_vel mismatch
     status = plugin.get_status()
-    assert set(status.codes) == {"ODOM-001", "ODOM-006"}
-    assert "[yellow]" in status.codes["ODOM-001"]
+    assert set(status.codes) == {"LOC-001", "LOC-006"}
+    assert "[yellow]" in status.codes["LOC-001"]
 
 
 def test_quaternion_to_euler_recovers_a_quarter_turn_yaw() -> None:
-    from testudo.plugins.builtin.odometry import _quaternion_to_euler
+    from testudo.plugins.builtin.localization import _quaternion_to_euler
 
     half_sqrt2 = 0.5**0.5
     roll, pitch, yaw = _quaternion_to_euler(x=0.0, y=0.0, z=half_sqrt2, w=half_sqrt2)  # 90 deg about Z
@@ -258,7 +258,7 @@ def test_quaternion_to_euler_recovers_a_quarter_turn_yaw() -> None:
 
 def test_split_zone_divides_every_configured_boundary() -> None:
     from testudo.plugins.base import ThresholdZone
-    from testudo.plugins.builtin.odometry import _split_zone
+    from testudo.plugins.builtin.localization import _split_zone
 
     zone = _split_zone(ThresholdZone(green=0.03, orange=0.3), 3)
     assert zone.green == pytest.approx(0.01)
@@ -268,7 +268,7 @@ def test_split_zone_divides_every_configured_boundary() -> None:
 
 
 def test_metrics_publish_raw_variances_speeds_and_frames() -> None:
-    plugin = OdometryPlugin()
+    plugin = LocalizationPlugin()
     plugin.on_message("/odom", _odometry(xx=0.04, yy=0.09, linear_x=0.5))
     metrics = plugin.get_status().metrics
     assert metrics["position_variance_x_m2"] == pytest.approx(0.04)

@@ -185,7 +185,7 @@ class PublishConfig:
     """DiagnosticArray publish settings, decoupled from each plugin's sampling rate.
 
     `per_plugin` (the default) publishes one DiagnosticArray topic per
-    plugin, `<namespace>/<plugin name>` (e.g. `/testudo/odometry`), plus
+    plugin, `<namespace>/<plugin name>` (e.g. `/testudo/localization`), plus
     `<namespace>/vitals` for topics no plugin checks and
     `<namespace>/overall` for the roll-up -- so a consumer subscribes to
     just the data it cares about. `per_plugin: false` publishes everything

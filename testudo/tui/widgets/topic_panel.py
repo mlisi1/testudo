@@ -85,7 +85,7 @@ class TopicDetailTable(NavDataTable):
     for the action, not its `/_action/status` topic (`display_name`).
 
     A 4th column appears when the visible category's reports carry a
-    `CheckStatus.topic_panel_column` (e.g. odometry's "Cov"), and disappears
+    `CheckStatus.topic_panel_column` (e.g. localization's "Cov"), and disappears
     again for a category that doesn't. "Other Topics" uses it for each
     topic's message type instead (`type_cell`) -- see
     `_extra_column_header_for`/`_fit_topic_column`. A topic currently

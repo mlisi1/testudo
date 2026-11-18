@@ -138,25 +138,25 @@ def test_publishers_lead_a_presence_report_but_trail_a_full_one_only_when_tall()
 def test_cleared_faults_come_last_one_dim_line_per_code() -> None:
     from testudo.core.fault_history import ClearedFault
 
-    report = _report(values={"a": "1"}, codes={"ODOM-001": "[red]now bad[/red]"})
+    report = _report(values={"a": "1"}, codes={"LOC-001": "[red]now bad[/red]"})
     cleared = [
-        ClearedFault("/odom", "ODOM-002", Severity.WARN, "[yellow]σ high[/yellow]", 80.0, 90.0),
-        ClearedFault("/odom", "ODOM-002", Severity.WARN, "older", 10.0, 20.0),
+        ClearedFault("/odom", "LOC-002", Severity.WARN, "[yellow]σ high[/yellow]", 80.0, 90.0),
+        ClearedFault("/odom", "LOC-002", Severity.WARN, "older", 10.0, 20.0),
     ]
     markup = render_detail(report, 80, 20, cleared, now=100.0)
     lines = _plain(markup)
-    assert lines[-1] == "▲ [ODOM-002] cleared 10s ago, lasted 10s ×2 · σ high"
+    assert lines[-1] == "▲ [LOC-002] cleared 10s ago, lasted 10s ×2 · σ high"
     # What the Detail Panel actually renders with: Textual's parser, which
-    # swallowed an unescaped "[ODOM-002]" as a style tag.
+    # swallowed an unescaped "[LOC-002]" as a style tag.
     from textual.content import Content
 
     assert Content.from_markup(markup).plain.splitlines()[-1] == lines[-1]
-    assert lines[-3].startswith("[ODOM-001]")
+    assert lines[-3].startswith("[LOC-001]")
 
 
 def test_cleared_faults_never_take_rows_the_codes_need() -> None:
     from testudo.core.fault_history import ClearedFault
 
-    report = _report(values={"a": "1"}, codes={"ODOM-001": "bad"})
-    cleared = [ClearedFault("/odom", "ODOM-002", Severity.WARN, "w", 80.0, 90.0)]
-    assert not any("ODOM-002" in line for line in _plain(render_detail(report, 80, 4, cleared, now=100.0)))
+    report = _report(values={"a": "1"}, codes={"LOC-001": "bad"})
+    cleared = [ClearedFault("/odom", "LOC-002", Severity.WARN, "w", 80.0, 90.0)]
+    assert not any("LOC-002" in line for line in _plain(render_detail(report, 80, 4, cleared, now=100.0)))

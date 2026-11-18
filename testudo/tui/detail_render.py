@@ -223,7 +223,7 @@ def _body_entries(report: TopicReport, values: dict[str, str], width: int, is_ta
 
 
 def cleared_fault_line(fault: ClearedFault, times: int, now: float, width: int) -> str:
-    """One dim row for a cleared code: `✗ [ODOM-001] cleared 2m ago, lasted 5s ×3 · message`.
+    """One dim row for a cleared code: `✗ [LOC-001] cleared 2m ago, lasted 5s ×3 · message`.
 
     The icon is the worst severity it reached; the message is the code's
     last, without its markup (it's history, not an alarm), cut to `width`.

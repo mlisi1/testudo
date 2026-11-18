@@ -16,7 +16,7 @@ def test_vitals_tier_always_goes_to_other_category() -> None:
 
 
 def test_full_tier_uses_message_type_short_name() -> None:
-    assert category_for(_report("nav_msgs/msg/Odometry", "full")) == "Odometry"
+    assert category_for(_report("nav_msgs/msg/Odometry", "full")) == "Localization"
     assert category_for(_report("sensor_msgs/msg/Imu", "full")) == "IMU"
 
 

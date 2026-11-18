@@ -9,7 +9,7 @@ last poll still gets republished with its last-known status, matching
 standard diagnostic_updater behavior.
 
 By default (`publish.per_plugin`) the reports are split by the plugin that
-checks them, one topic each (`/testudo/odometry`, ...), so a consumer
+checks them, one topic each (`/testudo/localization`, ...), so a consumer
 subscribes to only what it needs; `per_plugin: false` keeps everything on
 the single `publish.topic` that rqt_robot_monitor/diagnostic_aggregator
 read (see `DiagnosticOutput`).

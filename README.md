@@ -20,7 +20,7 @@ Foxglove.
 
 - **Every topic, cheaply.** Undeclared topics get liveness and rate
   checks from raw subscriptions; topics you declare get full content
-  checks from a plugin (odometry, IMU, GNSS, lidar, cameras, TF, Nav2
+  checks from a plugin (localization, IMU, GNSS, lidar, cameras, TF, Nav2
   actions, behavior tree).
 - **Quiet is not dead.** Latched topics, event-driven ones (paths, action
   feedback, costmap updates) and inputs nobody is driving right now are
@@ -95,7 +95,7 @@ commented reference.
 
 | Topic | What's on it |
 |---|---|
-| `/testudo/<plugin>` | one status per topic that plugin checks, e.g. `/testudo/odometry` |
+| `/testudo/<plugin>` | one status per topic that plugin checks, e.g. `/testudo/localization` |
 | `/testudo/vitals` | topics no plugin checks (rate, age, liveness) |
 | `/testudo/overall` | the roll-up verdict |
 | `/testudo/faults` | one status per fault, active or cleared: plot when each was active |

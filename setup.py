@@ -18,7 +18,7 @@ setup(
     # which colcon/rosdep-based installs satisfy for free -- but a plain
     # `pip install` (e.g. on a machine set up without colcon, or into a venv
     # without --system-site-packages) won't pull it in unless it's also
-    # listed here. It's a direct import (odometry.py) as well as a
+    # listed here. It's a direct import (localization.py) as well as a
     # transitive need of several rclpy message bindings.
     # psutil: node profiling's per-process CPU/memory/thread sampling
     # (core/node_profiling/sampler.py) -- a hard dependency, unlike the
@@ -37,7 +37,7 @@ setup(
         ],
         "testudo.checks": [
             "dummy = testudo.plugins.builtin.dummy:DummyPlugin",
-            "odometry = testudo.plugins.builtin.odometry:OdometryPlugin",
+            "localization = testudo.plugins.builtin.localization:LocalizationPlugin",
             "sensors_generic = testudo.plugins.builtin.sensors_generic:GenericSensorPlugin",
             "gnss = testudo.plugins.builtin.gnss:GnssPlugin",
             # Re-enabled now that undeclared Image/CompressedImage topics

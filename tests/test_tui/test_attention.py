@@ -20,7 +20,7 @@ def _plain(markup: str) -> str:
 
 def test_entries_are_worst_first_and_skip_ok_reports() -> None:
     reports = [
-        _report("/odom", Severity.WARN, {"ODOM-002": "w"}),
+        _report("/odom", Severity.WARN, {"LOC-002": "w"}),
         _report("/gps", Severity.ERROR, {"GNSS-001": "e", "GNSS-003": "e"}),
         _report("/fine", Severity.OK, {"X-001": "info"}),
         _report("/b", Severity.STALE, {"LIVE-003": "s"}),
@@ -30,13 +30,13 @@ def test_entries_are_worst_first_and_skip_ok_reports() -> None:
         (Severity.STALE, "LIVE-003", ["/a", "/b"]),
         (Severity.ERROR, "GNSS-001", ["/gps"]),
         (Severity.ERROR, "GNSS-003", ["/gps"]),
-        (Severity.WARN, "ODOM-002", ["/odom"]),
+        (Severity.WARN, "LOC-002", ["/odom"]),
     ]
 
 
 def test_line_keeps_the_topic_tail_within_width() -> None:
-    line = _plain(attention_line(Severity.ERROR, "ODOM-001", ["/robot/odometry/gps"], 22))
-    assert line == "✗ ODOM-001 …/gps"
+    line = _plain(attention_line(Severity.ERROR, "LOC-001", ["/robot/odometry/gps"], 22))
+    assert line == "✗ LOC-001 …/gps"
     assert len(line) <= 22
     assert _plain(attention_line(Severity.STALE, "LIVE-003", ["/a", "/b"], 22)) == "■ LIVE-003 2 topics"
 
@@ -58,7 +58,7 @@ def test_text_caps_entries_and_counts_the_rest() -> None:
 
 def test_problem_topics_follow_the_list_order_once_each() -> None:
     reports = [
-        _report("/odom", Severity.WARN, {"ODOM-002": "w"}),
+        _report("/odom", Severity.WARN, {"LOC-002": "w"}),
         _report("/gps", Severity.ERROR, {"GNSS-001": "e", "GNSS-003": "e"}),
         _report("/fine", Severity.OK, {"X-001": "info"}),
         _report("/b", Severity.STALE, {"LIVE-003": "s"}),
@@ -70,7 +70,7 @@ def test_problem_topics_follow_the_list_order_once_each() -> None:
 def test_cleared_codes_fill_the_rows_the_active_ones_leave() -> None:
     reports = [_report("/gps", Severity.ERROR, {"GNSS-001": "e"})]
     cleared = (
-        ClearedFault("/odom", "ODOM-002", Severity.WARN, "w", 50.0, 70.0),
+        ClearedFault("/odom", "LOC-002", Severity.WARN, "w", 50.0, 70.0),
         ClearedFault("/a", "LIVE-003", Severity.STALE, "s", 10.0, 40.0),
         ClearedFault("/b", "LIVE-003", Severity.STALE, "s", 10.0, 20.0),
     )
@@ -80,7 +80,7 @@ def test_cleared_codes_fill_the_rows_the_active_ones_leave() -> None:
         "✗ GNSS-001 /gps",
         "",
         "Cleared",
-        "▲ ODOM-002 30s /odom",
+        "▲ LOC-002 30s /odom",
         "■ LIVE-003 1m 2 topics",
     ]
     # No room for the blank line, the title and one entry: the cleared list is left out.
@@ -88,8 +88,8 @@ def test_cleared_codes_fill_the_rows_the_active_ones_leave() -> None:
 
 
 def test_cleared_codes_show_on_their_own_when_nothing_is_active() -> None:
-    cleared = (ClearedFault("/odom", "ODOM-002", Severity.WARN, "w", 50.0, 70.0),)
-    assert _plain(attention_text([], 30, 5, cleared, now=75.0)).splitlines() == ["Cleared", "▲ ODOM-002 5s /odom"]
+    cleared = (ClearedFault("/odom", "LOC-002", Severity.WARN, "w", 50.0, 70.0),)
+    assert _plain(attention_text([], 30, 5, cleared, now=75.0)).splitlines() == ["Cleared", "▲ LOC-002 5s /odom"]
 
 
 def test_a_warn_code_on_a_topic_in_error_is_listed_as_warn() -> None:

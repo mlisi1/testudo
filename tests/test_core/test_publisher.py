@@ -71,12 +71,12 @@ def test_combined_output_publishes_every_report_and_overall_on_one_topic() -> No
 
 
 def _plugins():
-    from testudo.plugins.builtin.odometry import OdometryPlugin
+    from testudo.plugins.builtin.localization import LocalizationPlugin
     from testudo.plugins.builtin.image_stream import ImageStreamPlugin
     from testudo.plugins.registry import DiscoveredPlugin
 
     return [
-        DiscoveredPlugin("odometry", OdometryPlugin, "packaged"),
+        DiscoveredPlugin("localization", LocalizationPlugin, "packaged"),
         DiscoveredPlugin("image_stream", ImageStreamPlugin, "packaged"),
     ]
 
@@ -99,8 +99,8 @@ def test_per_plugin_output_splits_reports_by_plugin_with_vitals_and_overall_topi
     def names(topic: str) -> list[str]:
         return [status.name for status in node.publishers[topic].published[-1].status]
 
-    assert set(node.publishers) == {"/testudo/odometry", "/testudo/image_stream", "/testudo/vitals", "/testudo/overall"}
-    assert names("/testudo/odometry") == ["testudo: /odom"]
+    assert set(node.publishers) == {"/testudo/localization", "/testudo/image_stream", "/testudo/vitals", "/testudo/overall"}
+    assert names("/testudo/localization") == ["testudo: /odom"]
     assert names("/testudo/image_stream") == ["testudo: /camera/image_raw"]
     assert names("/testudo/vitals") == ["testudo: /temp", "testudo: /odom_undeclared_vitals"]
     assert names("/testudo/overall") == ["testudo: overall"]
@@ -112,4 +112,4 @@ def test_per_plugin_output_keeps_publishing_an_empty_array_once_a_plugins_topics
     overall = CheckStatus(severity=Severity.OK, label="overall", message="ok")
     output.publish("stamp", [_ok("/odom", "nav_msgs/msg/Odometry", "full")], overall)
     output.publish("stamp", [], overall)
-    assert node.publishers["/robot/odometry"].published[-1].status == []
+    assert node.publishers["/robot/localization"].published[-1].status == []

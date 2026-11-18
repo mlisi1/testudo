@@ -14,7 +14,7 @@ def _status(severity: int, *codes: tuple[str, int]) -> CheckStatus:
 
 def test_no_applicable_override_leaves_the_status_untouched() -> None:
     status = _status(Severity.ERROR, ("GNSS-001", Severity.ERROR))
-    assert apply_code_overrides(status, {"ODOM-001": Severity.OK}) is status
+    assert apply_code_overrides(status, {"LOC-001": Severity.OK}) is status
 
 
 def test_a_code_lowered_to_warn_is_recolored_and_the_topic_follows() -> None:

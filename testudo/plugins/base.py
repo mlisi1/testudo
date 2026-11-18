@@ -127,7 +127,7 @@ class CheckStatus:
     plain Topic/Status/Hz layout for that category. `codes` is the
     TUI_DATA_DESIGN.md error-code proposal: every *currently active*
     problem this status represents, as {code: already-formatted message}
-    (e.g. `{"ODOM-001": "[bold red]position covariance trace ...[/bold red]"}`)
+    (e.g. `{"LOC-001": "[bold red]position covariance trace ...[/bold red]"}`)
     -- a topic can have several active at once, unlike `label`/`message`,
     which only ever describe one rolled-up state. Empty (the default) means
     no plugin-specific problem is currently active; a liveness problem
@@ -173,7 +173,7 @@ def code_severity(status: CheckStatus, code: str) -> int:
 class ActiveCodes:
     """Builds a `CheckStatus`'s `codes` and `code_severities` together.
 
-    `active.add("ODOM-001", "position covariance high", Severity.WARN)`
+    `active.add("LOC-001", "position covariance high", Severity.WARN)`
     colors the message by its severity and records both; then pass
     `codes=active.messages, code_severities=active.severities`.
     """
@@ -258,7 +258,7 @@ class CheckPlugin(abc.ABC):
     """Base contract for a Testudo check plugin.
 
     A plugin instance is bound to one primary topic (and optionally a small
-    set of related topics it also wants to see -- e.g. an odometry plugin
+    set of related topics it also wants to see -- e.g. a localization plugin
     reading `/cmd_vel` for a cross-check). It receives (decimated, on
     high-rate topics) typed messages via `on_message`, an independent
     periodic tick via `on_tick` for time-based stats that must advance even

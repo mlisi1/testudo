@@ -11,6 +11,7 @@ from testudo.core.topic_report import TopicReport
 #: as the message type's own short name (e.g. "GoalStatusArray" -> "Nav2
 #: Actions", "NavSatFix" -> "GNSS").
 _FRIENDLY_NAMES = {
+    "nav_msgs/msg/Odometry": "Localization",
     "action_msgs/msg/GoalStatusArray": "Nav2 Actions",
     "nav2_msgs/msg/BehaviorTreeLog": "BT Navigator",
     "tf2_msgs/msg/TFMessage": "TF",

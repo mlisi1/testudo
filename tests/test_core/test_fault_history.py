@@ -64,7 +64,7 @@ def test_entries_show_each_fault_once_active_or_as_its_latest_clearing() -> None
     history = FaultHistory()
     history.update([_report("/gps", Severity.WARN, {"GNSS-002": "a"})], now=10.0)
     history.update([_report("/gps")], now=12.0)
-    history.update([_report("/gps", Severity.ERROR, {"GNSS-002": "b"}), _report("/odom", Severity.WARN, {"ODOM-001": "c"})], now=20.0)
+    history.update([_report("/gps", Severity.ERROR, {"GNSS-002": "b"}), _report("/odom", Severity.WARN, {"LOC-001": "c"})], now=20.0)
     history.update([_report("/gps", Severity.ERROR, {"GNSS-002": "b"}), _report("/odom")], now=25.0)
 
     gps, odom = history.entries(now=30.0)

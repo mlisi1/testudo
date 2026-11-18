@@ -1,4 +1,4 @@
-"""Odometry/covariance content-check plugin.
+"""Localization/covariance content-check plugin.
 
 Checks a nav_msgs/msg/Odometry stream for: covariance magnitude against
 configured threshold zones, positive-semi-definiteness of the pose/twist
@@ -8,7 +8,7 @@ commanded velocity to catch a robot that isn't moving despite being told to.
 
 The Detail Panel's per-axis breakdown (position and orientation σ, each
 with a zone-colored meter, beside actual vs. commanded velocity) is laid
-out by `odometry_layout.py`. The pose orientation quaternion is converted
+out by `localization_layout.py`. The pose orientation quaternion is converted
 to roll/pitch/yaw via `_quaternion_to_euler` purely for display -- it plays
 no part in any of this plugin's actual checks.
 """
@@ -30,7 +30,7 @@ from testudo.plugins.base import (
     colorize,
     evaluate_levels,
 )
-from testudo.plugins.builtin.odometry_layout import (
+from testudo.plugins.builtin.localization_layout import (
     ORIENTATION_AXES,
     POSITION_AXES,
     motion_rows,
@@ -107,7 +107,7 @@ def _split_zone(zone: ThresholdZone | None, parts: int) -> ThresholdZone | None:
     )
 
 
-class OdometryPlugin(CheckPlugin):
+class LocalizationPlugin(CheckPlugin):
     """Covariance sanity, growth-rate, and (optional) cmd_vel cross-check for nav_msgs/Odometry."""
 
     def __init__(
@@ -243,7 +243,7 @@ class OdometryPlugin(CheckPlugin):
 
     def get_status(self) -> CheckStatus:
         if self._message_count == 0:
-            return CheckStatus(severity=Severity.OK, label="odometry", message="no odometry received yet")
+            return CheckStatus(severity=Severity.OK, label="localization", message="no localization data received yet")
 
         trace_severity = evaluate_levels(self._position_covariance_trace, self.levels.get("position_covariance_trace"))
         yaw_severity = evaluate_levels(self._yaw_variance, self.levels.get("yaw_variance"))
@@ -264,25 +264,25 @@ class OdometryPlugin(CheckPlugin):
             problems.append(f"covariance growing at {self._growth_rate:.4g}/s")
         if cmd_vel_severity != Severity.OK:
             problems.append(cmd_vel_message)
-        message = "; ".join(problems) if problems else "odometry nominal"
+        message = "; ".join(problems) if problems else "localization nominal"
 
         codes = ActiveCodes()
         if trace_severity != Severity.OK:
             codes.add(
-                "ODOM-001",
+                "LOC-001",
                 f"position covariance high (trace {self._position_covariance_trace:.3g} m²)",
                 trace_severity,
             )
         if yaw_severity != Severity.OK:
-            codes.add("ODOM-002", f"yaw variance high ({self._yaw_variance:.3g} rad²)", yaw_severity)
+            codes.add("LOC-002", f"yaw variance high ({self._yaw_variance:.3g} rad²)", yaw_severity)
         if growth_severity != Severity.OK:
-            codes.add("ODOM-003", f"covariance growing {self._growth_rate:+.3g} m²/s", growth_severity)
+            codes.add("LOC-003", f"covariance growing {self._growth_rate:+.3g} m²/s", growth_severity)
         if not self._pose_psd_ok:
-            codes.add("ODOM-004", "pose covariance not positive semi-definite", Severity.ERROR)
+            codes.add("LOC-004", "pose covariance not positive semi-definite", Severity.ERROR)
         if not self._twist_psd_ok:
-            codes.add("ODOM-005", "twist covariance not positive semi-definite", Severity.ERROR)
+            codes.add("LOC-005", "twist covariance not positive semi-definite", Severity.ERROR)
         if cmd_vel_severity != Severity.OK:
-            codes.add("ODOM-006", "cmd_vel commands motion, odometry reports none", cmd_vel_severity)
+            codes.add("LOC-006", "cmd_vel commands motion, odometry reports none", cmd_vel_severity)
 
         # Position axes are judged per axis, not against the trace (a sum of
         # three variances, so judging one axis by it reads every axis as
@@ -320,7 +320,7 @@ class OdometryPlugin(CheckPlugin):
 
         return CheckStatus(
             severity=worst,
-            label="odometry",
+            label="localization",
             message=message,
             values=values,
             topic_panel_column="σxy",

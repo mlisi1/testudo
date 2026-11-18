@@ -32,7 +32,7 @@ severity_mode: worst  # worst | weighted | both
 
 publish:
   rate_hz: 5.0
-  # One DiagnosticArray topic per plugin: /testudo/odometry, /testudo/gnss,
+  # One DiagnosticArray topic per plugin: /testudo/localization, /testudo/gnss,
   # ..., /testudo/vitals (topics no plugin checks), /testudo/overall (the
   # roll-up). Set false to publish everything as one array on `topic`
   # instead -- what rqt_robot_monitor / diagnostic_aggregator listen to.
@@ -49,7 +49,7 @@ topics:
   nav_msgs/msg/Odometry:
     - name: /odom
       weight: 2
-      # cmd_vel cross-check: OdometryPlugin looks this up by the logical
+      # cmd_vel cross-check: LocalizationPlugin looks this up by the logical
       # name "cmd_vel" to compare commanded vs. reported motion.
       related_topics:
         cmd_vel: /cmd_vel

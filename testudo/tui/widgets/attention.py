@@ -1,7 +1,7 @@
 """Plugin Panel's "Needs attention" list: the active codes to look at first, worst first.
 
 Fills the rows a short category list leaves empty under it, one line per
-active code across every topic, like `✗ ODOM-001 …/gps` or
+active code across every topic, like `✗ LOC-001 …/gps` or
 `■ LIVE-003 6 topics`. Part of the Plugin Panel, not a pane of its own,
 and hidden when there's no room.
 
