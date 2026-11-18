@@ -308,7 +308,7 @@ def full_tier_report(
         status = replace(content, metrics=metrics) if metrics else content
         slow = rate_problem(reported_rate, rate_levels, latched=latched, event_driven=event_driven)
         if slow is not None:
-            status = _with_code(status, "LIVE-004", *slow)
+            status = with_code(status, "LIVE-004", *slow)
     elif liveness.label in QUIET_LABELS:
         quiet = {f"{liveness.label}_for_s": f"{age:.1f}"} if age is not None else {}
         quiet_metrics = {f"{liveness.label}_for_s": age} if metrics and age is not None else {}
@@ -324,7 +324,7 @@ def full_tier_report(
     return TopicReport(topic=topic_name, msg_type=msg_type, tier="full", status=status, rate_hz=reported_rate)
 
 
-def _with_code(status: CheckStatus, code: str, severity: int, message: str) -> CheckStatus:
+def with_code(status: CheckStatus, code: str, severity: int, message: str) -> CheckStatus:
     """`status` with one more active `code`; its severity becomes the worse of the two."""
     codes = ActiveCodes(dict(status.codes), {c: code_severity(status, c) for c in status.codes})
     codes.add(code, message, severity)

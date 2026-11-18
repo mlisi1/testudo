@@ -37,6 +37,7 @@ from testudo.core.global_watches import TF_STATIC_TOPIC, TF_TOPIC, TF_TYPE
 from testudo.core.exclusion import maybe_record_excluded
 from testudo.core.plugin_settings import build_plugin
 from testudo.core.subscription_manager import SubscriptionManager
+from testudo.core.stamp_check import stamp_check_for
 from testudo.core.tier_subscription import FullTierState, process_full_tier_message
 from testudo.core.topic_report import TopicReport
 from testudo.core.vitals import TopicVitals
@@ -124,6 +125,7 @@ def _track_for_replay(manager: SubscriptionManager, topic_name: str, msg_type_st
         plugin=plugin,
         vitals=TopicVitals(topic=topic_name),
         debouncer=HysteresisDebouncer(manager._hysteresis_required_consecutive),
+        stamps=stamp_check_for(topic_config, judge_other_time_base=False),
     )
     manager._full_tier[topic_name] = state
     for related_topic_name in related_topics.values():

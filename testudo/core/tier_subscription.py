@@ -31,6 +31,7 @@ from testudo.core.discovery import (
     subscription_qos,
 )
 from testudo.core.exclusion import maybe_record_excluded
+from testudo.core.stamp_check import StampCheck, stamp_check_for
 from testudo.core.vitals import TopicVitals
 from testudo.core.plugin_settings import build_plugin
 from testudo.plugins.base import CheckPlugin
@@ -48,6 +49,7 @@ class FullTierState:
     plugin: CheckPlugin
     vitals: TopicVitals
     debouncer: HysteresisDebouncer
+    stamps: StampCheck = field(default_factory=StampCheck)
     last_checked_seconds: float | None = field(default=None)
 
 
@@ -153,6 +155,7 @@ def subscribe_full_tier(
         plugin=plugin,
         vitals=TopicVitals(topic=topic_name),
         debouncer=HysteresisDebouncer(manager._hysteresis_required_consecutive),
+        stamps=stamp_check_for(manager._topic_config_by_name.get(topic_name)),
     )
     manager._full_tier[topic_name] = state
 
@@ -191,7 +194,8 @@ def process_full_tier_message(
         # Status (and hysteresis) at the decimated rate either way: a
         # plugin that needs every message still isn't re-evaluated per message.
         state.last_checked_seconds = now
-        state.debouncer.update(state.plugin.get_status())
+        state.stamps.observe(msg, now, latched=topic_name in manager._latched)
+        state.debouncer.update(state.stamps.applied_to(state.plugin.get_status()))
 
 
 def subscribe_related_topic(

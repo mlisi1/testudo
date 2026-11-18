@@ -80,6 +80,12 @@ topics:
         rate_hz:
           warn: 9.0
           error: 5.0
+        # Every topic a plugin checks also gets its header stamp judged:
+        # STAMP-001 zero (error), STAMP-002 ahead of the clock (stamp_future_s,
+        # default warn 0.1 s, error 1 s), STAMP-003 behind it (stamp_lag_s,
+        # default warn 0.5 s, error 5 s). This driver stamps late by design.
+        stamp_lag_s:
+          warn: 1.0
 
   sensor_msgs/msg/Imu:
     - name: /imu/data

@@ -226,6 +226,51 @@ def test_replay_declared_topic_of_an_uninstalled_type_is_an_error(tmp_path: Path
     assert overall.severity == Severity.ERROR
 
 
+def _stamped_odom_bag(bag_path: Path, stamp_of) -> None:
+    """Twenty Odometry messages, 0.2 s apart in bag time from t=1000 s, stamped by `stamp_of(receive_s)`."""
+    entries = []
+    for index in range(20):
+        receive_s = 1000.0 + index * 0.2
+        odom = Odometry()
+        stamp_s = stamp_of(receive_s)
+        odom.header.stamp.sec = int(stamp_s)
+        odom.header.stamp.nanosec = int((stamp_s % 1) * 1e9)
+        odom.pose.pose.orientation.w = 1.0
+        entries.append(("/odom", "nav_msgs/msg/Odometry", odom, int(receive_s * 1e9)))
+    _write_bag(bag_path, entries)
+
+
+def _declared_odom() -> TestudoConfig:
+    return _config(topics={"nav_msgs/msg/Odometry": [TopicConfig(name="/odom", msg_type="nav_msgs/msg/Odometry")]})
+
+
+def test_replay_flags_a_stamp_far_behind_the_recording_clock(tmp_path: Path, ros_node) -> None:
+    _stamped_odom_bag(tmp_path / "bag", lambda receive_s: receive_s - 6.0)
+    reports, _overall = replay_bag(str(tmp_path / "bag"), _declared_odom(), _plugins(), ros_node)
+    assert reports[0].status.code_severities["STAMP-003"] == Severity.ERROR
+
+
+def test_replay_flags_a_zero_stamp(tmp_path: Path, ros_node) -> None:
+    _stamped_odom_bag(tmp_path / "bag", lambda _receive_s: 0.0)
+    reports, _overall = replay_bag(str(tmp_path / "bag"), _declared_odom(), _plugins(), ros_node)
+    assert "STAMP-001" in reports[0].status.codes
+
+
+def test_replay_of_a_sim_bag_does_not_compare_sim_stamps_with_wall_receive_times(tmp_path: Path, ros_node) -> None:
+    entries_start = 1_700_000_000.0
+    entries = []
+    for index in range(20):
+        odom = Odometry()
+        odom.header.stamp.sec = 100 + index
+        odom.pose.pose.orientation.w = 1.0
+        entries.append(("/odom", "nav_msgs/msg/Odometry", odom, int((entries_start + index * 0.2) * 1e9)))
+    _write_bag(tmp_path / "bag", entries)
+
+    reports, _overall = replay_bag(str(tmp_path / "bag"), _declared_odom(), _plugins(), ros_node)
+
+    assert not any(code.startswith("STAMP-") for code in reports[0].status.codes)
+
+
 def test_replay_transient_local_topic_reads_as_latched(tmp_path: Path, ros_node) -> None:
     bag_path = tmp_path / "bag_latched"
     writer = rosbag2_py.SequentialWriter()
