@@ -180,9 +180,19 @@ topics:
   # action goal statuses are treated this way already, and a latched
   # (transient_local) publisher like /robot_description is detected from
   # its QoS, so neither needs this flag.
+  #
+  # VelocityCommandPlugin needs no such flag on a Twist: a command topic may
+  # always go quiet. `odom` lets it report a robot that doesn't move when
+  # told to (VEL-002); `goal_status` limits that, and the pinned turn rate
+  # check (VEL-004), to the time a goal is executing, leaving teleop alone.
   geometry_msgs/msg/Twist:
     - name: /cmd_vel_nav
-      event_driven: true
+      related_topics:
+        odom: /odom
+        goal_status: /navigate_to_pose/_action/status
+      thresholds:
+        stuck_seconds:
+          warn: 5.0
 
 actions:
   - name: navigate_to_pose

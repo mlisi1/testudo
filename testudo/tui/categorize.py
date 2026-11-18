@@ -15,6 +15,8 @@ _FRIENDLY_NAMES = {
     "geometry_msgs/msg/PoseWithCovarianceStamped": "Localization",
     # The `map → odom` row (plugins/builtin/map_odom_watch.py).
     "geometry_msgs/msg/TransformStamped": "Localization",
+    "geometry_msgs/msg/Twist": "Velocity Commands",
+    "geometry_msgs/msg/TwistStamped": "Velocity Commands",
     "action_msgs/msg/GoalStatusArray": "Actions",
     "nav2_msgs/msg/BehaviorTreeLog": "BT Navigator",
     "tf2_msgs/msg/TFMessage": "TF",
