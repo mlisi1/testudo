@@ -20,6 +20,7 @@ from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.utilities import remove_ros_args
 
 from testudo.core.clock import TestudoClock
+from testudo.core.config_check import warn_unknown_metrics
 from testudo.core.config import ConfigError, TestudoConfig, default_config_path
 from testudo.core.config_loader import load_config
 from testudo.core.node_profiling.profiler import NodeProfiler
@@ -138,6 +139,7 @@ def _load_config_or_exit(path: str | None) -> tuple[TestudoConfig, str]:
 def cmd_watch(args: argparse.Namespace) -> int:
     config, config_path = _load_config_or_exit(args.config)
     plugins = discover_all_plugins(config.plugins_dir)
+    warn_unknown_metrics(config, plugins, config_path)
     _logger.info(
         "loaded config from %s (%d declared topic type(s)); %d plugin(s) discovered",
         config_path,
@@ -328,6 +330,7 @@ def _spin_until_stopped(
 def cmd_replay(args: argparse.Namespace) -> int:
     config, config_path = _load_config_or_exit(args.config)
     plugins = discover_all_plugins(config.plugins_dir)
+    warn_unknown_metrics(config, plugins, config_path)
     _logger.info(
         "loaded config from %s (%d declared topic type(s)); %d plugin(s) discovered",
         config_path,

@@ -59,7 +59,6 @@ def test_topic_then_action_config_merge_over_defaults_key_by_key() -> None:
     )
     action = ActionConfig(
         name="/x",
-        action_type="nav2_msgs/action/Spin",
         levels={"c": LevelsOverride(error=7.0, given=frozenset({"error"}))},
     )
     thresholds, levels = plugin_settings(_Defaults, topic, action)

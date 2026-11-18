@@ -282,7 +282,7 @@ def test_starving_node_flagged_via_involuntary_ctx_switches(monkeypatch: pytest.
     monkeypatch.setattr(sampler_module.time, "monotonic", lambda: fake_time["now"])
     node = _FakeNode(node_names=[])
     profiler = NodeProfiler(
-        node, _config(ctx_switches_per_sec=SeverityLevels(warn=10.0, error=50.0)), hysteresis_required_consecutive=1
+        node, _config(ctx_switches_per_s=SeverityLevels(warn=10.0, error=50.0)), hysteresis_required_consecutive=1
     )
     profiler.start()
     profiler.tick()  # warming up -- seeds both cpu and ctx-switch baselines

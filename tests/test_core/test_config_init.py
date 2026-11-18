@@ -48,7 +48,7 @@ _GRAPH = GraphSummary(
         "/heartbeat": ("std_msgs/msg/Empty",),
         "/navigate_to_pose/_action/status": ("action_msgs/msg/GoalStatusArray",),
     },
-    actions={"navigate_to_pose": "nav2_msgs/action/NavigateToPose"},
+    actions=("navigate_to_pose",),
 )
 
 #: A commented line that is config rather than prose.
@@ -66,7 +66,6 @@ def test_the_output_loads(tmp_path: Path) -> None:
     assert [entry.name for entry in config.topics[_IMU]] == ["/imu", "/imu2"]
     assert config.topics[_ODOM][0].name == "/odom"
     assert config.actions[0].name == "navigate_to_pose"
-    assert config.actions[0].action_type == "nav2_msgs/action/NavigateToPose"
 
 
 def test_nothing_is_tuned_until_a_line_is_uncommented(tmp_path: Path) -> None:
@@ -105,7 +104,7 @@ def test_every_installed_plugin_writes_a_config_that_loads_uncommented(tmp_path:
         f"/topic_{index}": (msg_type,)
         for index, msg_type in enumerate(sorted({kind for item in plugins for kind in item.plugin_class.msg_types()}))
     }
-    text = render_config(GraphSummary(topics, {"spin": "nav2_msgs/action/Spin"}), plugins).text
+    text = render_config(GraphSummary(topics, ("spin",)), plugins).text
     uncommented = "".join(_COMMENTED_CONFIG.sub(r"\1\2", line) + "\n" for line in text.splitlines())
     assert load_config(_write(tmp_path, uncommented)).actions[0].levels
 
@@ -115,12 +114,12 @@ def test_a_very_small_default_stays_a_number() -> None:
 
 
 def test_a_graph_with_nothing_covered_still_loads(tmp_path: Path) -> None:
-    graph = GraphSummary({"/battery": ("sensor_msgs/msg/BatteryState",)}, {})
+    graph = GraphSummary({"/battery": ("sensor_msgs/msg/BatteryState",)}, ())
     assert load_config(_write(tmp_path, render_config(graph, _PLUGINS).text)).topics == {}
 
 
 def test_a_graph_with_only_a_camera_still_loads(tmp_path: Path) -> None:
-    graph = GraphSummary({"/camera": (_IMAGE,)}, {})
+    graph = GraphSummary({"/camera": (_IMAGE,)}, ())
     assert load_config(_write(tmp_path, render_config(graph, _PLUGINS).text)).topics == {}
 
 
@@ -133,14 +132,12 @@ def test_read_graph_keeps_what_has_a_publisher(monkeypatch: pytest.MonkeyPatch) 
         "/tf_static": ("tf2_msgs/msg/TFMessage", 1),
         "/testudo/imu": ("diagnostic_msgs/msg/DiagnosticArray", 1),
         "/spin/_action/status": ("action_msgs/msg/GoalStatusArray", 1),
-        "/spin/_action/feedback": ("nav2_msgs/action/Spin_FeedbackMessage", 1),
-        "/orphan/_action/status": ("action_msgs/msg/GoalStatusArray", 1),
     }
     monkeypatch.setattr(config_init, "list_topics", lambda _node: [TopicInfo(name, (kind,)) for name, (kind, _n) in infos.items()])
     graph = read_graph(SimpleNamespace(count_publishers=lambda name: infos[name][1]))
     assert "/imu" in graph.topics
     assert not {"/goal_pose", "/rosout", "/parameter_events", "/tf_static", "/testudo/imu"} & set(graph.topics)
-    assert graph.actions == {"spin": "nav2_msgs/action/Spin"}
+    assert graph.actions == ("spin",)
 
 
 def _args(path: Path, *, force: bool = False) -> SimpleNamespace:
@@ -178,7 +175,7 @@ def test_the_file_and_its_directory_are_created(tmp_path: Path, monkeypatch: pyt
 
 
 def test_an_empty_graph_writes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _fake_ros(monkeypatch, GraphSummary({}, {}))
+    _fake_ros(monkeypatch, GraphSummary({}, ()))
     path = tmp_path / "config.yaml"
     assert cli.cmd_config_init(_args(path)) == 1
     assert not path.exists()

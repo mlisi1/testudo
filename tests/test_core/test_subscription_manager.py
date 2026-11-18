@@ -709,7 +709,7 @@ def test_a_declared_action_status_stays_monitored_when_a_topic_also_reads_it() -
     discovered = [DiscoveredPlugin(name="recording", plugin_class=_RecordingPlugin, source="packaged")]
     config = TestudoConfig(
         topics={"nav_msgs/msg/Odometry": [_odom_config("/odom_a", {"goal_status": status_topic})]},
-        actions=[ActionConfig(name="navigate_to_pose", action_type="nav2_msgs/action/NavigateToPose")],
+        actions=[ActionConfig(name="navigate_to_pose")],
     )
     manager = SubscriptionManager(node, config, discovered, clock=_fixed_clock(0.0), **_FAST_SETTLE)
     manager.start()
@@ -1201,7 +1201,6 @@ def test_action_thresholds_merge_via_derived_status_topic() -> None:
         actions=[
             ActionConfig(
                 name="navigate_to_pose",
-                action_type="nav2_msgs/action/NavigateToPose",
                 thresholds={"success_rate": ThresholdZone(green=0.5)},
             )
         ]
@@ -1229,7 +1228,6 @@ def test_action_related_topic_is_routed_to_same_plugin_instance() -> None:
         actions=[
             ActionConfig(
                 name="navigate_to_pose",
-                action_type="nav2_msgs/action/NavigateToPose",
                 related_topics={"feedback": "/navigate_to_pose/_action/feedback"},
             )
         ]
@@ -1264,7 +1262,6 @@ def test_related_topic_of_an_uninstalled_type_is_one_warning_and_keeps_the_prima
         actions=[
             ActionConfig(
                 name="navigate_to_pose",
-                action_type="nonexistent_testudo_pkg/action/Nope",
                 related_topics={"feedback": "/navigate_to_pose/_action/feedback"},
             )
         ]
@@ -1679,7 +1676,7 @@ def test_weight_for_topic_uses_declared_topic_weight() -> None:
 def test_weight_for_topic_uses_declared_action_weight() -> None:
     node = _FakeNode(topics=[], publishers_by_topic={})
     config = TestudoConfig(
-        actions=[ActionConfig(name="navigate_to_pose", action_type="nav2_msgs/action/NavigateToPose", weight=3.0)]
+        actions=[ActionConfig(name="navigate_to_pose", weight=3.0)]
     )
     manager = SubscriptionManager(node, config, [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
     assert manager._weight_for_topic("/navigate_to_pose/_action/status") == 3.0

@@ -82,7 +82,6 @@ topics:
 
 actions:
   - name: navigate_to_pose
-    action_type: nav2_msgs/action/NavigateToPose
 
 tf:
   - {parent: map, child: base_link}

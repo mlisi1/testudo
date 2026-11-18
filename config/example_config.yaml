@@ -212,12 +212,11 @@ topics:
         odom: /odom
         goal_status: /navigate_to_pose/_action/status
       thresholds:
-        stuck_seconds:
+        stuck_s:
           warn: 5.0
 
 actions:
   - name: navigate_to_pose
-    action_type: nav2_msgs/action/NavigateToPose
     weight: 3
     # NavigateToPose's Feedback carries distance_remaining and
     # estimated_time_remaining; ActionsPlugin reads them off this topic on
@@ -236,7 +235,6 @@ actions:
   # covers recovery behaviors that are their own action server -- see
   # BehaviorTreeLogPlugin above for recovery nodes that aren't.
   - name: spin
-    action_type: nav2_msgs/action/Spin
     weight: 1
     thresholds:
       frequency_per_min:
@@ -262,27 +260,25 @@ tf:
 #   poll_interval_seconds: 2.0   # how often `watch` samples each process
 #   gpu_enabled: true   # NVIDIA + pynvml only; silently unavailable otherwise
 #   publish_topic: /testudo/nodes   # default; /diagnostics/nodes with publish.per_plugin: false
+#   rediscovery_interval_seconds: 5.0   # how often nodes are matched to processes again
 #   # warn/error only (no meters here). The defaults have no `error`: a busy
 #   # or leaking node is degraded; a dead or zombie process is the ERROR.
-#   cpu_percent:
+#   thresholds:
 #     # psutil's cpu_percent can exceed 100% for a multi-threaded process
 #     # (matches top/htop) -- generous on purpose.
-#     warn: 150
-#   memory_mb:
-#     warn: 500
-#   ctx_switches_per_sec:
+#     cpu_percent: {warn: 150}
+#     memory_mb: {warn: 500}
 #     # The *involuntary* context-switch rate -- the OS scheduler preempting
 #     # a process against its will -- is the direct "is this node being
 #     # starved of CPU time" signal, distinct from cpu_percent: a starved
 #     # node's CPU% can look normal (it isn't getting time to *use* the
 #     # CPU). A *voluntary* switch (blocking on IPC, most of a healthy
 #     # node's switches) isn't counted, so this can stay conservative.
-#     warn: 50
-#   memory_slope_mb_per_min:
+#     ctx_switches_per_s: {warn: 50}
 #     # Leak detection: RSS growth over the last ~2 minutes of samples,
 #     # judged once the window spans a minute and the process has been up
 #     # 5 minutes (startup allocation isn't a leak).
-#     warn: 10
+#     memory_slope_mb_per_min: {warn: 10}
 #   exclude_nodes:
 #     - /some_noisy_diagnostic_only_node
 
@@ -312,8 +308,5 @@ tf:
 #   - /velodyne_packets
 #   - pattern: "_debug$"
 #     type: regex
-#   - /rtabmap/**
-
-exclude_topics:
-- pattern: ^/filter
-  type: regex
+#   - pattern: "^/rtabmap/"
+#     type: regex

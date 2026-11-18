@@ -128,7 +128,7 @@ class NodeProfiler:
                 resolved.process_name,
                 self._config.cpu_percent,
                 self._config.memory_mb,
-                self._config.ctx_switches_per_sec,
+                self._config.ctx_switches_per_s,
                 gpu_mb,
                 resolved.num_children,
                 history.memory_slope_mb_per_min(),

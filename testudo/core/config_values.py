@@ -119,9 +119,23 @@ def _to_float(value: Any) -> float | None:
 
 
 def parse_positive_number(value: Any, context: str, source: str) -> float:
-    if not isinstance(value, (int, float)) or value <= 0:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
         raise ConfigError(f"{source}: {context} must be a positive number")
     return float(value)
+
+
+def parse_weight(value: Any, context: str, source: str) -> float:
+    """A topic's share of the weighted score: 0 leaves it out, negative makes no sense."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        raise ConfigError(f"{source}: {context}.weight must be a number of at least 0")
+    return float(value)
+
+
+def parse_topic_name(value: Any, context: str, source: str) -> str:
+    """An absolute topic name: the graph only has those, so `odom` would silently match nothing."""
+    if not isinstance(value, str) or not value.startswith("/") or value == "/":
+        raise ConfigError(f"{source}: {context} must be an absolute topic name like /odom, got {value!r}")
+    return value
 
 
 def parse_non_empty_string(value: Any, context: str, source: str) -> str:

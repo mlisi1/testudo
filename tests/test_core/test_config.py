@@ -181,7 +181,6 @@ def test_full_valid_config_parses(tmp_path: Path) -> None:
                   red: 5.0
         actions:
           - name: navigate_to_pose
-            action_type: nav2_msgs/action/NavigateToPose
             weight: 3
         tf:
           - parent: map
@@ -206,7 +205,6 @@ def test_full_valid_config_parses(tmp_path: Path) -> None:
     assert len(config.actions) == 1
     action = config.actions[0]
     assert action.name == "navigate_to_pose"
-    assert action.action_type == "nav2_msgs/action/NavigateToPose"
     assert action.weight == 3.0
 
     tf_pair = config.tf[0]
@@ -255,7 +253,7 @@ def test_topic_weight_must_be_numeric(tmp_path: Path) -> None:
               weight: "heavy"
         """,
     )
-    with pytest.raises(ConfigError, match="weight must be numeric"):
+    with pytest.raises(ConfigError, match="weight must be a number of at least 0"):
         load_config(path)
 
 
@@ -276,10 +274,89 @@ def test_threshold_unknown_key_raises(tmp_path: Path) -> None:
         load_config(path)
 
 
-def test_action_requires_action_type(tmp_path: Path) -> None:
+def test_an_action_needs_only_its_name(tmp_path: Path) -> None:
     path = _write(tmp_path, "actions:\n  - name: navigate_to_pose\n")
-    with pytest.raises(ConfigError, match="missing required string 'action_type'"):
+    assert load_config(path).actions[0].name == "navigate_to_pose"
+
+
+def test_action_type_is_no_longer_a_key(tmp_path: Path) -> None:
+    path = _write(tmp_path, "actions:\n  - name: spin\n    action_type: nav2_msgs/action/Spin\n")
+    with pytest.raises(ConfigError, match="unknown key.*action_type"):
         load_config(path)
+
+
+@pytest.mark.parametrize("weight", ["true", "-1"])
+def test_a_weight_must_make_sense(tmp_path: Path, weight: str) -> None:
+    path = _write(tmp_path, f"topics:\n  nav_msgs/msg/Odometry:\n    - name: /odom\n      weight: {weight}\n")
+    with pytest.raises(ConfigError, match="weight must be a number of at least 0"):
+        load_config(path)
+
+
+def test_a_weight_of_zero_leaves_a_topic_out(tmp_path: Path) -> None:
+    path = _write(tmp_path, "topics:\n  nav_msgs/msg/Odometry:\n    - name: /odom\n      weight: 0\n")
+    assert load_config(path).topics["nav_msgs/msg/Odometry"][0].weight == 0.0
+
+
+def test_a_relative_topic_name_is_refused(tmp_path: Path) -> None:
+    path = _write(tmp_path, "topics:\n  nav_msgs/msg/Odometry:\n    - name: odom\n")
+    with pytest.raises(ConfigError, match="absolute topic name like /odom, got 'odom'"):
+        load_config(path)
+
+
+def test_a_relative_related_topic_is_refused(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        "topics:\n  nav_msgs/msg/Odometry:\n    - name: /odom\n      related_topics:\n        cmd_vel: cmd_vel\n",
+    )
+    with pytest.raises(ConfigError, match="related_topics.cmd_vel must be an absolute topic name"):
+        load_config(path)
+
+
+def test_a_topic_declared_twice_is_refused_even_under_two_types(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        "topics:\n  nav_msgs/msg/Odometry:\n    - name: /odom\n"
+        "  geometry_msgs/msg/PoseWithCovarianceStamped:\n    - name: /odom\n",
+    )
+    with pytest.raises(ConfigError, match="topics declares more than once: /odom"):
+        load_config(path)
+
+
+def test_an_action_declared_twice_is_refused_however_it_is_written(tmp_path: Path) -> None:
+    path = _write(tmp_path, "actions:\n  - name: spin\n  - name: /spin\n")
+    with pytest.raises(ConfigError, match="actions declares more than once: spin"):
+        load_config(path)
+
+
+def test_a_tf_pair_declared_twice_is_refused(tmp_path: Path) -> None:
+    path = _write(tmp_path, "tf:\n  - {parent: map, child: odom}\n  - {parent: map, child: odom}\n")
+    with pytest.raises(ConfigError, match="tf declares more than once: map -> odom"):
+        load_config(path)
+
+
+@pytest.mark.parametrize("key", ["weight: 2", "chlid: odom"])
+def test_a_tf_pair_refuses_unknown_keys(tmp_path: Path, key: str) -> None:
+    path = _write(tmp_path, f"tf:\n  - parent: map\n    child: odom\n    {key}\n")
+    with pytest.raises(ConfigError, match="tf entry has unknown key"):
+        load_config(path)
+
+
+def test_a_frame_role_that_is_not_text_fails_loudly(tmp_path: Path) -> None:
+    path = _write(tmp_path, "topics:\n  nav_msgs/msg/Odometry:\n    - name: /odom\n      frame_role: [global]\n")
+    with pytest.raises(ConfigError, match="frame_role must be one of"):
+        load_config(path)
+
+
+def test_a_boolean_is_not_a_rate(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="publish.rate_hz must be a positive number"):
+        load_config(_write(tmp_path, "publish:\n  rate_hz: true\n"))
+    with pytest.raises(ConfigError, match="max_check_rate_hz"):
+        load_config(_write(tmp_path, "max_check_rate_hz: true\n"))
+
+
+def test_the_example_config_loads_with_no_leftover_rules() -> None:
+    example = Path(__file__).parents[2] / "config" / "example_config.yaml"
+    assert load_config(example).exclude_topics == []
 
 
 def test_tf_requires_parent_and_child(tmp_path: Path) -> None:
@@ -294,7 +371,6 @@ def test_action_thresholds_parse(tmp_path: Path) -> None:
         """
         actions:
           - name: navigate_to_pose
-            action_type: nav2_msgs/action/NavigateToPose
             thresholds:
               success_rate:
                 green: 0.9
@@ -308,7 +384,7 @@ def test_action_thresholds_parse(tmp_path: Path) -> None:
 
 
 def test_action_thresholds_default_to_empty(tmp_path: Path) -> None:
-    path = _write(tmp_path, "actions:\n  - name: spin\n    action_type: nav2_msgs/action/Spin\n")
+    path = _write(tmp_path, "actions:\n  - name: spin\n")
     config = load_config(path)
     assert config.actions[0].thresholds == {}
 
@@ -319,7 +395,6 @@ def test_action_related_topics_parse(tmp_path: Path) -> None:
         """
         actions:
           - name: navigate_to_pose
-            action_type: nav2_msgs/action/NavigateToPose
             related_topics:
               feedback: /navigate_to_pose/_action/feedback
         """,
@@ -329,14 +404,14 @@ def test_action_related_topics_parse(tmp_path: Path) -> None:
 
 
 def test_action_related_topics_default_to_empty(tmp_path: Path) -> None:
-    path = _write(tmp_path, "actions:\n  - name: spin\n    action_type: nav2_msgs/action/Spin\n")
+    path = _write(tmp_path, "actions:\n  - name: spin\n")
     assert load_config(path).actions[0].related_topics == {}
 
 
 def test_action_entry_rejects_unknown_key(tmp_path: Path) -> None:
     path = _write(
         tmp_path,
-        "actions:\n  - name: spin\n    action_type: nav2_msgs/action/Spin\n    bogus: true\n",
+        "actions:\n  - name: spin\n    bogus: true\n",
     )
     with pytest.raises(ConfigError, match="unknown key"):
         load_config(path)
@@ -400,7 +475,7 @@ def test_related_topics_value_must_be_a_non_empty_string(tmp_path: Path) -> None
         tmp_path,
         "topics:\n  nav_msgs/msg/Odometry:\n    - name: /odom\n      related_topics:\n        cmd_vel: 5\n",
     )
-    with pytest.raises(ConfigError, match="must be a non-empty string"):
+    with pytest.raises(ConfigError, match="cmd_vel must be an absolute topic name"):
         load_config(path)
 
 
@@ -439,14 +514,15 @@ def test_node_profiling_full(tmp_path: Path) -> None:
           rediscovery_interval_seconds: 10
           gpu_enabled: false
           publish_topic: /diagnostics/my_nodes
-          cpu_percent:
-            warn: 50
-            error: 90
-          memory_mb:
-            warn: 200
-          memory_slope_mb_per_min:
-            warn: 5
-            error: 20
+          thresholds:
+            cpu_percent:
+              warn: 50
+              error: 90
+            memory_mb:
+              warn: 200
+            memory_slope_mb_per_min:
+              warn: 5
+              error: 20
           exclude_nodes:
             - /noisy_node
             - pattern: "_debug$"
@@ -495,7 +571,7 @@ def test_node_profiling_rejects_non_positive_poll_interval(tmp_path: Path) -> No
 
 def test_node_profiling_rejects_empty_publish_topic(tmp_path: Path) -> None:
     path = _write(tmp_path, "node_profiling:\n  publish_topic: ''\n")
-    with pytest.raises(ConfigError, match="publish_topic must be a non-empty string"):
+    with pytest.raises(ConfigError, match="publish_topic must be an absolute topic name"):
         load_config(path)
 
 
@@ -632,14 +708,20 @@ def test_threshold_values_must_be_numbers(tmp_path: Path) -> None:
 
 
 def test_node_profiling_refuses_zones_it_cannot_draw(tmp_path: Path) -> None:
-    path = _write(tmp_path, "node_profiling:\n  cpu_percent: {green: 50, orange: 90}\n")
-    with pytest.raises(ConfigError, match="node_profiling.cpu_percent takes warn/error"):
+    path = _write(tmp_path, "node_profiling:\n  thresholds:\n    cpu_percent: {green: 50, orange: 90}\n")
+    with pytest.raises(ConfigError, match="node_profiling.thresholds.cpu_percent takes warn/error"):
         load_config(path)
 
 
 def test_node_profiling_levels_override_key_by_key(tmp_path: Path) -> None:
-    path = _write(tmp_path, "node_profiling:\n  cpu_percent: {error: 400}\n")
+    path = _write(tmp_path, "node_profiling:\n  thresholds:\n    cpu_percent: {error: 400}\n")
     assert load_config(path).node_profiling.cpu_percent == SeverityLevels(warn=150.0, error=400.0)
+
+
+def test_node_profiling_refuses_an_unknown_metric(tmp_path: Path) -> None:
+    path = _write(tmp_path, "node_profiling:\n  thresholds:\n    cpu_precent: {warn: 50}\n")
+    with pytest.raises(ConfigError, match="unknown metric.*cpu_precent.*valid: cpu_percent"):
+        load_config(path)
 
 
 def test_levels_override_keeps_unwritten_keys() -> None:
@@ -658,7 +740,6 @@ def test_code_overrides_parse_on_topics_and_actions(tmp_path: Path) -> None:
               codes: {GNSS-001: warn, gnss-007: OK}
         actions:
           - name: spin
-            action_type: nav2_msgs/action/Spin
             codes: {ACT-003: error}
         """,
     )

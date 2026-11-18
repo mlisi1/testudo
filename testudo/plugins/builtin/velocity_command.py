@@ -64,9 +64,9 @@ class VelocityCommandPlugin(CheckPlugin):
     @classmethod
     def default_levels(cls) -> dict[str, SeverityLevels]:
         return {
-            "stuck_seconds": SeverityLevels(warn=3.0, error=10.0),
+            "stuck_s": SeverityLevels(warn=3.0, error=10.0),
             "reversals_per_s": SeverityLevels(warn=1.0),
-            "pinned_seconds": SeverityLevels(warn=5.0),
+            "pinned_s": SeverityLevels(warn=5.0),
         }
 
     @classmethod
@@ -121,13 +121,13 @@ class VelocityCommandPlugin(CheckPlugin):
         findings: list[tuple[str, int, str]] = []
         if self._invalid_at is not None and self._now - self._invalid_at < _INVALID_HOLD_SECONDS:
             findings.append(("VEL-001", Severity.ERROR, "NaN/Inf in a velocity command"))
-        severity = evaluate_levels(stuck, self.levels.get("stuck_seconds"))
+        severity = evaluate_levels(stuck, self.levels.get("stuck_s"))
         if severity != Severity.OK:
             findings.append(("VEL-002", severity, f"commanded to move for {stuck:.1f} s, odometry reports no motion"))
         severity = evaluate_levels(reversals, self.levels.get("reversals_per_s"))
         if severity != Severity.OK:
             findings.append(("VEL-003", severity, f"command reversing direction {reversals:.1f} times/s"))
-        severity = evaluate_levels(pinned, self.levels.get("pinned_seconds"))
+        severity = evaluate_levels(pinned, self.levels.get("pinned_s"))
         if severity != Severity.OK:
             findings.append(("VEL-004", severity, f"turn rate pinned at {self._pinned.value:.2f} rad/s for {pinned:.1f} s"))
         codes = ActiveCodes()
@@ -149,7 +149,7 @@ class VelocityCommandPlugin(CheckPlugin):
             topic_panel_value=f"{self._linear:.2f} {self._angular:+.2f}",
             codes=codes.messages,
             code_severities=codes.severities,
-            code_metrics={"VEL-002": CodeMetric("stuck_seconds", stuck), "VEL-003": CodeMetric("reversals_per_s", reversals), "VEL-004": CodeMetric("pinned_seconds", pinned)},
+            code_metrics={"VEL-002": CodeMetric("stuck_s", stuck), "VEL-003": CodeMetric("reversals_per_s", reversals), "VEL-004": CodeMetric("pinned_s", pinned)},
             metrics=self._metrics(stuck, reversals, pinned),
         )
 

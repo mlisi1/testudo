@@ -151,7 +151,6 @@ topics:
         stuck_count: {warn: 5, error: 50}
 actions:
   - name: navigate_to_pose
-    action_type: nav2_msgs/action/NavigateToPose
 """
 
 

@@ -26,8 +26,6 @@ if TYPE_CHECKING:
 GRAPH_WAIT_SECONDS = 2.0
 
 _ACTION_INFIX = "/_action/"
-_ACTION_FEEDBACK_SUFFIX = "/_action/feedback"
-_FEEDBACK_TYPE_SUFFIX = "_FeedbackMessage"
 _ACTION_STATUS_TYPE = "action_msgs/msg/GoalStatusArray"
 
 #: ROS graph bookkeeping, and what Testudo itself publishes.
@@ -57,10 +55,10 @@ _HEAVY_NOTE = """\
 
 @dataclass(frozen=True)
 class GraphSummary:
-    """What's running: each published topic's message types, and each action's type."""
+    """What's running: each published topic's message types, and the action servers' names."""
 
     topics: dict[str, tuple[str, ...]]
-    actions: dict[str, str]
+    actions: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -76,13 +74,9 @@ class RenderedConfig:
 def read_graph(node: "rclpy.node.Node") -> GraphSummary:
     """The topics with at least one publisher right now, and the action servers among them."""
     published = {info.name: info.msg_types for info in list_topics(node) if node.count_publishers(info.name) > 0}
-    actions = {}
-    for name in published:
-        if name.endswith(ACTION_STATUS_SUFFIX):
-            action = name[: -len(ACTION_STATUS_SUFFIX)]
-            feedback = published.get(f"{action}{_ACTION_FEEDBACK_SUFFIX}", ())
-            if feedback and feedback[0].endswith(_FEEDBACK_TYPE_SUFFIX):
-                actions[action.lstrip("/")] = feedback[0][: -len(_FEEDBACK_TYPE_SUFFIX)]
+    actions = tuple(
+        name[: -len(ACTION_STATUS_SUFFIX)].lstrip("/") for name in published if name.endswith(ACTION_STATUS_SUFFIX)
+    )
     topics = {name: types for name, types in published.items() if _can_be_declared(name)}
     return GraphSummary(topics, actions)
 
@@ -140,11 +134,11 @@ def render_config(graph: GraphSummary, plugins: list[DiscoveredPlugin]) -> Rende
         lines.extend(f"  #   - name: {topic}\n" for topic in topics)
 
     actions_plugin = plugin_by_type.get(_ACTION_STATUS_TYPE)
-    actions = graph.actions if actions_plugin is not None else {}
+    actions = graph.actions if actions_plugin is not None else ()
     if actions:
         lines.append("\nactions:\n")
-    for name, action_type in sorted(actions.items()):
-        lines.append(f"  - name: {name}\n    action_type: {action_type}\n")
+    for name in sorted(actions):
+        lines.append(f"  - name: {name}\n")
         lines.extend(_default_lines(actions_plugin, 4))
 
     return RenderedConfig(

@@ -101,6 +101,11 @@ class BehaviorTreeLogPlugin(CheckPlugin):
         return True
 
     @classmethod
+    def default_levels(cls) -> dict[str, SeverityLevels]:
+        # No default: how often recovery is normal depends on the site.
+        return {"recovery_frequency_per_min": SeverityLevels()}
+
+    @classmethod
     def default_thresholds(cls) -> dict[str, ThresholdZone]:
         # No sane universal default: how often recovery should legitimately
         # trigger depends entirely on the environment and BT design.

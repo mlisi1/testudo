@@ -130,7 +130,11 @@ class ActionsPlugin(CheckPlugin):
     def default_levels(cls) -> dict[str, SeverityLevels]:
         # Duration and frequency: user-configured only (see default_thresholds).
         # ERROR once most goals fail.
-        return {"success_rate": SeverityLevels(warn=0.95, error=0.5)}
+        return {
+            "success_rate": SeverityLevels(warn=0.95, error=0.5),
+            "avg_duration_s": SeverityLevels(),
+            "frequency_per_min": SeverityLevels(),
+        }
 
     def on_tick(self, now_seconds: float) -> None:
         self._now = now_seconds

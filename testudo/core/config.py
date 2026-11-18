@@ -170,10 +170,9 @@ class TopicConfig:
 
 @dataclass(frozen=True)
 class ActionConfig:
-    """A Nav2 action server to track goal lifecycle for."""
+    """An action server to track goal outcomes for."""
 
     name: str
-    action_type: str
     weight: float = 1.0
     thresholds: dict[str, ThresholdZone] = field(default_factory=dict)
     levels: dict[str, LevelsOverride] = field(default_factory=dict)
@@ -191,7 +190,6 @@ class TFPairConfig:
 
     parent: str
     child: str
-    weight: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -228,7 +226,7 @@ class NodeProfilingConfig:
     (warn past 150, not 80): `psutil`'s cpu_percent can legitimately exceed
     100% for a multi-threaded process (matches `top`/`htop`), so a
     single-core-normalized default would false-positive on any busy,
-    healthy multi-threaded Nav2 node. `ctx_switches_per_sec` judges the
+    healthy multi-threaded Nav2 node. `ctx_switches_per_s` judges the
     *involuntary* context-switch rate (the OS scheduler preempting a
     process against its will) -- the direct "is this node CPU-starved"
     signal, distinct from and complementary to `cpu_percent`: a starved
@@ -250,10 +248,10 @@ class NodeProfilingConfig:
     exclude_nodes: list[ExcludeRule] = field(default_factory=list)
     cpu_percent: SeverityLevels = SeverityLevels(warn=150.0)
     memory_mb: SeverityLevels = SeverityLevels(warn=500.0)
-    ctx_switches_per_sec: SeverityLevels = SeverityLevels(warn=50.0)
+    ctx_switches_per_s: SeverityLevels = SeverityLevels(warn=50.0)
     memory_slope_mb_per_min: SeverityLevels = SeverityLevels(warn=10.0)
     #: Defaults to `<publish.namespace>/nodes`, or `<publish.topic>/nodes` with
-    #: `publish.per_plugin: false` (see `config_loader.default_node_profiling_topic`).
+    #: `publish.per_plugin: false` (see `config_sections.default_node_profiling_topic`).
     publish_topic: str = "/testudo/nodes"
 
 
@@ -270,7 +268,7 @@ class FaultsConfig:
     retention: FaultRetention = FaultRetention.SESSION
     recent_window_seconds: float = 600.0
     #: Defaults to `<publish.namespace>/faults`, or `<publish.topic>/faults` with
-    #: `publish.per_plugin: false` (see `config_loader.default_faults_topic`).
+    #: `publish.per_plugin: false` (see `config_sections.default_faults_topic`).
     publish_topic: str = "/testudo/faults"
 
 
