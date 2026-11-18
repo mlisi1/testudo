@@ -31,6 +31,8 @@ from testudo.plugins.base import (
     colorize,
     evaluate_levels,
 )
+from testudo.plugins.builtin.localization_math import _is_positive_semidefinite, _quaternion_to_euler, _split_zone
+from testudo.plugins.builtin.localization_roles import GLOBAL_ROLE, ROLE_LEVELS, frame_role
 from testudo.plugins.builtin.localization_layout import (
     ORIENTATION_AXES,
     POSITION_AXES,
@@ -57,10 +59,6 @@ _ORIENTATION_VARIANCE_INDICES = (_ROLL_VARIANCE_INDEX, _PITCH_VARIANCE_INDEX, _Y
 _TWIST_LINEAR_X_VARIANCE_INDEX = 0
 _TWIST_ANGULAR_Z_VARIANCE_INDEX = 35
 
-#: Eigenvalues below this (not just < 0) count as a real PSD violation --
-#: allows for floating-point noise around zero.
-_PSD_EPSILON = -1e-6
-
 _GROWTH_WINDOW_SIZE = 10
 
 _CMD_MOVING_THRESHOLD_MPS = 0.05
@@ -77,38 +75,6 @@ _SIGMA_SAMPLE_SECONDS = 1.0
 _SIGMA_HISTORY_SIZE = 60
 #: Cells the σxy sparkline is averaged down to.
 _TREND_WIDTH = 20
-
-
-def _is_positive_semidefinite(matrix: np.ndarray) -> bool:
-    """True if the symmetric `matrix` has no eigenvalue meaningfully below zero."""
-    eigenvalues = np.linalg.eigvalsh(matrix)
-    return bool(np.all(eigenvalues >= _PSD_EPSILON))
-
-
-def _quaternion_to_euler(x: float, y: float, z: float, w: float) -> tuple[float, float, float]:
-    """(roll, pitch, yaw) in radians for the intrinsic X-Y-Z rotation `nav_msgs/Odometry`'s
-    orientation covariance is expressed against (REP 103), from a unit quaternion."""
-    sinr_cosp = 2.0 * (w * x + y * z)
-    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
-    roll = math.atan2(sinr_cosp, cosr_cosp)
-
-    sinp = 2.0 * (w * y - z * x)
-    pitch = math.copysign(math.pi / 2.0, sinp) if abs(sinp) >= 1.0 else math.asin(sinp)
-
-    siny_cosp = 2.0 * (w * z + x * y)
-    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
-    yaw = math.atan2(siny_cosp, cosy_cosp)
-
-    return roll, pitch, yaw
-
-
-def _split_zone(zone: ThresholdZone | None, parts: int) -> ThresholdZone | None:
-    """`zone` with every boundary divided by `parts` -- a sum's zone, shared out per summand."""
-    if zone is None:
-        return None
-    return ThresholdZone(
-        *(boundary / parts if boundary is not None else None for boundary in (zone.green, zone.orange, zone.red))
-    )
 
 
 class LocalizationPlugin(CheckPlugin):
@@ -140,6 +106,7 @@ class LocalizationPlugin(CheckPlugin):
         self._frames: tuple[str, str] = ("", "")
         self._now = 0.0
         self._has_twist = False
+        self._role_override: str | None = None
         self._sigma_xy_history: deque[float] = deque(maxlen=_SIGMA_HISTORY_SIZE)
         self._last_sigma_sample: float | None = None
 
@@ -165,6 +132,28 @@ class LocalizationPlugin(CheckPlugin):
             "yaw_variance": SeverityLevels(warn=0.01, error=10.0),
             "covariance_growth_rate": SeverityLevels(warn=0.01),
         }
+
+    def set_frame_role(self, role: str) -> None:
+        """Override the role `frame_role` reads off the frame (a topic's `frame_role:` in config)."""
+        self._role_override = role
+
+    def reset(self) -> None:
+        """Clear the accumulated state, keeping the configured frame role."""
+        role_override = self._role_override
+        super().reset()
+        self._role_override = role_override
+
+    def _role(self) -> str | None:
+        """This topic's role: the configured one, else what its frame implies, None when neither says."""
+        return self._role_override or frame_role(self._frames[0])
+
+    def _levels_for(self, metric: str) -> SeverityLevels | None:
+        """`metric`'s levels: anything written in config as is, else the default for this topic's role."""
+        configured = self.levels.get(metric)
+        role_levels = ROLE_LEVELS.get(self._role() or "", {})
+        if metric in role_levels and configured == self.default_levels().get(metric):
+            return role_levels[metric]
+        return configured
 
     def on_tick(self, now_seconds: float) -> None:
         self._now = now_seconds
@@ -235,8 +224,8 @@ class LocalizationPlugin(CheckPlugin):
         return (v1 - v0) / span
 
     def _cmd_vel_cross_check(self) -> tuple[int, str]:
-        if not self._has_twist:
-            return Severity.OK, "no velocity on this message type"
+        if not self._has_twist or self._role() == GLOBAL_ROLE:
+            return Severity.OK, "no velocity to cross-check on this topic"
         if self._last_cmd_vel is None:
             return Severity.OK, "no cmd_vel received yet"
         cmd_linear_x, cmd_angular_z = self._last_cmd_vel
@@ -255,9 +244,9 @@ class LocalizationPlugin(CheckPlugin):
         if self._message_count == 0:
             return CheckStatus(severity=Severity.OK, label="localization", message="no localization data received yet")
 
-        trace_severity = evaluate_levels(self._position_covariance_trace, self.levels.get("position_covariance_trace"))
-        yaw_severity = evaluate_levels(self._yaw_variance, self.levels.get("yaw_variance"))
-        growth_severity = evaluate_levels(abs(self._growth_rate), self.levels.get("covariance_growth_rate"))
+        trace_severity = evaluate_levels(self._position_covariance_trace, self._levels_for("position_covariance_trace"))
+        yaw_severity = evaluate_levels(self._yaw_variance, self._levels_for("yaw_variance"))
+        growth_severity = evaluate_levels(abs(self._growth_rate), self._levels_for("covariance_growth_rate"))
         psd_severity = Severity.OK if (self._pose_psd_ok and self._twist_psd_ok) else Severity.ERROR
         cmd_vel_severity, cmd_vel_message = self._cmd_vel_cross_check()
 
@@ -312,6 +301,7 @@ class LocalizationPlugin(CheckPlugin):
             return sigma_rows(self._position_variance, self._orientation_variance, position_zone, orientation_zone, segments)
 
         frame, child = self._frames
+        role = self._role()
         trend = sparkline(downsample(self._sigma_xy_history, _TREND_WIDTH), trace_severity, floor=0.0)
         values = {
             # Wide: σ and motion side by side, one row per axis. Narrow: the
@@ -321,7 +311,7 @@ class LocalizationPlugin(CheckPlugin):
             "σxy": (
                 f"{trend or '[dim]–[/dim]'} [dim]({len(self._sigma_xy_history)} s)[/dim]   "
                 f"growth {self._growth_rate:+.3f} m²/s {meter(abs(self._growth_rate), growth_zone, _METER_SEGMENTS)}   "
-                f"[dim]{frame or '?'} → {child or '?'}[/dim]"
+                f"[dim]{frame or '?'} → {child or '?'}{f' · {role}' if role else ''}[/dim]"
             ),
             "pose_more": pose_line(self._position, self._orientation_rpy[2]),
         }
@@ -358,6 +348,7 @@ class LocalizationPlugin(CheckPlugin):
                 "pose_psd_ok": self._pose_psd_ok,
                 "frame_id": frame,
                 "child_frame_id": child,
+                "frame_role": self._role() or "unknown",
             }
         )
         if self._has_twist:

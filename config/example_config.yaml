@@ -46,6 +46,11 @@ publish:
 # plugins_dir: ./my_plugins
 
 topics:
+  # Localization outputs (also geometry_msgs/msg/PoseWithCovarianceStamped).
+  # The checks follow the role of the frame: `odom` is continuous (covariance
+  # may grow, any jump is a bug), `map`/`earth` are global (relocalizing is
+  # normal, growing covariance is not). `frame_role: continuous` or `global`
+  # sets it for a topic whose frame says neither.
   nav_msgs/msg/Odometry:
     - name: /odom
       weight: 2

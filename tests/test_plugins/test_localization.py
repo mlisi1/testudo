@@ -9,8 +9,8 @@ from nav_msgs.msg import Odometry
 
 from rich.text import Text
 
-from testudo.plugins.base import Severity
-from testudo.plugins.builtin.localization import LocalizationPlugin
+from testudo.plugins.base import Severity, SeverityLevels
+from testudo.plugins.builtin.localization import LocalizationPlugin, frame_role
 
 
 def _plain(markup: str) -> str:
@@ -75,6 +75,72 @@ def test_stamped_cmd_vel_is_read_like_a_plain_one() -> None:
     plugin.on_message("/cmd_vel", stamped)
     plugin.on_message("/odom", _odometry(linear_x=0.0))
     assert "LOC-006" in plugin.get_status().codes
+
+
+def _framed_odometry(frame_id: str, **kwargs) -> Odometry:
+    msg = _odometry(**kwargs)
+    msg.header.frame_id = frame_id
+    return msg
+
+
+@pytest.mark.parametrize(
+    "frame_id, role",
+    [("odom", "continuous"), ("robot1/odom", "continuous"), ("map", "global"), ("earth", "global"), ("base_link", None), ("", None)],
+)
+def test_frame_role_comes_from_the_last_segment_of_the_frame(frame_id: str, role: str | None) -> None:
+    assert frame_role(frame_id) == role
+
+
+def test_continuous_frame_tolerates_covariance_growth_but_not_a_placeholder() -> None:
+    plugin = LocalizationPlugin()
+    plugin.on_message("/odom", _framed_odometry("odom", stamp_sec=0, xx=0.0))
+    plugin.on_message("/odom", _framed_odometry("odom", stamp_sec=1, xx=5.0))
+    assert plugin.get_status().codes == {}
+    plugin.on_message("/odom", _framed_odometry("odom", stamp_sec=2, xx=9999.0))
+    assert plugin.get_status().code_severities["LOC-001"] == Severity.ERROR
+
+
+def test_global_frame_flags_growing_covariance() -> None:
+    plugin = LocalizationPlugin()
+    plugin.on_message("/pose", _framed_odometry("map", stamp_sec=0, xx=0.0))
+    plugin.on_message("/pose", _framed_odometry("map", stamp_sec=1, xx=0.2))
+    assert set(plugin.get_status().codes) == {"LOC-003"}
+
+
+def test_global_frame_accepts_a_particle_filters_usual_covariance() -> None:
+    plugin = LocalizationPlugin()
+    plugin.on_message("/amcl_pose", _pose(xx=0.25))
+    assert plugin.get_status().codes == {}
+
+
+def test_an_unknown_frame_keeps_the_strict_defaults() -> None:
+    plugin = LocalizationPlugin()
+    plugin.on_message("/pose", _framed_odometry("base_link", xx=0.2))
+    assert "LOC-001" in plugin.get_status().codes
+
+
+def test_levels_written_in_config_win_over_the_role_defaults() -> None:
+    plugin = LocalizationPlugin()
+    plugin.levels = {**plugin.levels, "position_covariance_trace": SeverityLevels(warn=0.05, error=1000.0)}
+    plugin.on_message("/odom", _framed_odometry("odom", xx=0.2))
+    assert "LOC-001" in plugin.get_status().codes
+
+
+def test_configured_role_overrides_the_frame_and_survives_a_reset() -> None:
+    plugin = LocalizationPlugin()
+    plugin.set_frame_role("global")
+    plugin.reset()
+    plugin.on_message("/odom", _framed_odometry("odom", stamp_sec=0, xx=0.0))
+    plugin.on_message("/odom", _framed_odometry("odom", stamp_sec=1, xx=0.2))
+    assert plugin.get_status().metrics["frame_role"] == "global"
+    assert "LOC-003" in plugin.get_status().codes
+
+
+def test_global_frame_skips_the_cmd_vel_cross_check() -> None:
+    plugin = LocalizationPlugin(related_topics={"cmd_vel": "/cmd_vel"})
+    plugin.on_message("/cmd_vel", _twist(linear_x=0.5))
+    plugin.on_message("/pose", _framed_odometry("map", linear_x=0.0))
+    assert "LOC-006" not in plugin.get_status().codes
 
 
 def _twist(linear_x: float = 0.0, angular_z: float = 0.0) -> Twist:
@@ -267,7 +333,7 @@ def test_frame_pair_and_secondary_values() -> None:
     plugin.on_tick(9.012)
     plugin.on_message("/odom", msg)
     values = plugin.get_status().values
-    assert _plain(values["σxy"]).endswith("odom → base_link")
+    assert _plain(values["σxy"]).endswith("odom → base_link · continuous")
     assert "x 1.234" in _plain(values["pose_more"])
     assert "twist_σ_more" in values
 

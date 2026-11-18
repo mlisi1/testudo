@@ -35,6 +35,15 @@ class _OldStyleInit(_Defaults):
         super().__init__(thresholds, related_topics)
 
 
+def test_build_plugin_hands_a_configured_frame_role_to_the_plugin() -> None:
+    from testudo.plugins.builtin.localization import LocalizationPlugin
+
+    config = TopicConfig(name="/pose", msg_type="nav_msgs/msg/Odometry", frame_role="global")
+    plugin = build_plugin(LocalizationPlugin, {}, config)
+    assert plugin.get_status() is not None
+    assert plugin._role() == "global"
+
+
 def test_defaults_without_config() -> None:
     thresholds, levels = plugin_settings(_Defaults, None)
     assert thresholds == {"a": ThresholdZone(green=1.0, orange=2.0)}

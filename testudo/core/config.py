@@ -132,6 +132,11 @@ class LevelsOverride:
         )
 
 
+#: Valid `frame_role:` values, and the message types that setting applies to.
+FRAME_ROLES = frozenset({"continuous", "global"})
+FRAME_ROLE_MSG_TYPES = frozenset({"nav_msgs/msg/Odometry", "geometry_msgs/msg/PoseWithCovarianceStamped"})
+
+
 @dataclass(frozen=True)
 class TopicConfig:
     """One declared topic: gets the full (typed, content-checked) subscription tier.
@@ -152,6 +157,9 @@ class TopicConfig:
     # Publishes only when something happens (e.g. a controller's cmd_vel):
     # silence reads as "idle", never STALE.
     event_driven: bool = False
+    # Overrides the role the Localization plugin reads off the frame_id:
+    # "continuous" or "global" (FRAME_ROLES); None leaves it to the frame.
+    frame_role: str | None = None
 
 
 @dataclass(frozen=True)

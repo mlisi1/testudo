@@ -28,6 +28,23 @@ def _write(tmp_path: Path, text: str) -> Path:
     return path
 
 
+def test_frame_role_is_read_from_a_localization_topic(tmp_path) -> None:
+    path = _write(tmp_path, "topics:\n  nav_msgs/msg/Odometry:\n    - name: /pose\n      frame_role: global\n")
+    assert load_config(path).topics["nav_msgs/msg/Odometry"][0].frame_role == "global"
+
+
+def test_unknown_frame_role_fails_at_load(tmp_path) -> None:
+    path = _write(tmp_path, "topics:\n  nav_msgs/msg/Odometry:\n    - name: /pose\n      frame_role: sideways\n")
+    with pytest.raises(ConfigError, match="frame_role"):
+        load_config(path)
+
+
+def test_frame_role_on_another_message_type_fails_at_load(tmp_path) -> None:
+    path = _write(tmp_path, "topics:\n  sensor_msgs/msg/Imu:\n    - name: /imu\n      frame_role: global\n")
+    with pytest.raises(ConfigError, match="only applies"):
+        load_config(path)
+
+
 def test_missing_file_raises(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="not found"):
         load_config(tmp_path / "does_not_exist.yaml")

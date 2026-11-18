@@ -22,6 +22,11 @@ def build_plugin(
     thresholds, levels = plugin_settings(plugin_class, *configs)
     plugin = plugin_class(thresholds=thresholds, related_topics=related_topics)
     plugin.levels = levels
+    # An optional, duck-typed hook like TF's `set_watched_pairs`: a setting
+    # one plugin reads, which the plugin contract shouldn't have to carry.
+    frame_role = next((role for role in (getattr(config, "frame_role", None) for config in configs) if role), None)
+    if frame_role is not None and hasattr(plugin, "set_frame_role"):
+        plugin.set_frame_role(frame_role)
     return plugin
 
 

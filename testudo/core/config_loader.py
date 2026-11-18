@@ -16,6 +16,8 @@ from testudo.core.config import (
     ExcludeRule,
     FaultRetention,
     FaultsConfig,
+    FRAME_ROLE_MSG_TYPES,
+    FRAME_ROLES,
     LevelsOverride,
     NodeProfilingConfig,
     PublishConfig,
@@ -111,7 +113,7 @@ def _parse_topics(raw: Any, source: str) -> dict[str, list[TopicConfig]]:
     return result
 
 
-_TOPIC_ENTRY_KEYS = {"name", "weight", "thresholds", "codes", "related_topics", "event_driven"}
+_TOPIC_ENTRY_KEYS = {"name", "weight", "thresholds", "codes", "related_topics", "event_driven", "frame_role"}
 
 
 def _parse_topic_entry(entry: Any, msg_type: str, source: str) -> TopicConfig:
@@ -130,6 +132,11 @@ def _parse_topic_entry(entry: Any, msg_type: str, source: str) -> TopicConfig:
     event_driven = entry.get("event_driven", False)
     if not isinstance(event_driven, bool):
         raise ConfigError(f"{source}: topics.{msg_type}[{name}].event_driven must be true or false")
+    frame_role = entry.get("frame_role")
+    if frame_role is not None and frame_role not in FRAME_ROLES:
+        raise ConfigError(f"{source}: topics.{msg_type}[{name}].frame_role must be one of: {', '.join(sorted(FRAME_ROLES))}")
+    if frame_role is not None and msg_type not in FRAME_ROLE_MSG_TYPES:
+        raise ConfigError(f"{source}: topics.{msg_type}[{name}].frame_role only applies to: {', '.join(sorted(FRAME_ROLE_MSG_TYPES))}")
     return TopicConfig(
         name=name,
         msg_type=msg_type,
@@ -139,6 +146,7 @@ def _parse_topic_entry(entry: Any, msg_type: str, source: str) -> TopicConfig:
         codes=codes,
         related_topics=related_topics,
         event_driven=event_driven,
+        frame_role=frame_role,
     )
 
 
