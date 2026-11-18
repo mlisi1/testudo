@@ -537,3 +537,27 @@ def test_metrics_publish_raw_variances_speeds_and_frames() -> None:
     assert metrics["linear_x_m_per_s"] == 0.5
     assert metrics["pose_psd_ok"] is True
     assert "cmd_linear_x_m_per_s" not in metrics  # no cmd_vel seen
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf")])
+def test_a_non_finite_covariance_is_reported_not_raised(bad: float) -> None:
+    msg = _framed_odometry("odom")
+    msg.pose.covariance = [bad] * 36
+    plugin = LocalizationPlugin()
+    plugin.on_message("/odom", msg)
+    assert plugin.get_status().severity != Severity.OK
+
+
+def test_one_nan_on_the_diagonal_is_not_a_valid_covariance() -> None:
+    from testudo.plugins.builtin.localization_math import _is_positive_semidefinite
+    import numpy as np
+
+    matrix = np.eye(6)
+    matrix[0, 0] = float("nan")
+    assert not _is_positive_semidefinite(matrix)
+
+
+def test_a_frame_with_no_known_role_keeps_the_strict_jump_levels() -> None:
+    plugin = LocalizationPlugin()
+    _feed(plugin, _at("world", 1), _at("world", 2, x=1.5))
+    assert plugin.get_status().code_severities.get("LOC-007") == Severity.ERROR

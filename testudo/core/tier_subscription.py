@@ -14,8 +14,9 @@ replayed message get identical decimation, on_tick timing, and debouncing.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 from rclpy.qos import DurabilityPolicy
 from rosidl_runtime_py.utilities import get_message
@@ -45,6 +46,8 @@ TF_TOPIC = "/tf"
 #: Always a companion of /tf's plugin, never a topic of its own, even if declared.
 TF_STATIC_TOPIC = "/tf_static"
 
+_Result = TypeVar("_Result")
+
 
 @dataclass
 class FullTierState:
@@ -55,6 +58,19 @@ class FullTierState:
     debouncer: HysteresisDebouncer
     stamps: StampCheck = field(default_factory=StampCheck)
     last_checked_seconds: float | None = field(default=None)
+    #: What the plugin last raised, until stats are reset (CHECK-001).
+    check_failure: str | None = field(default=None)
+
+
+def run_check(state: FullTierState, topic_name: str, check: Callable[[], _Result]) -> _Result | None:
+    """`check()`, or None if the plugin raised: one bad message or plugin must never stop the monitoring."""
+    try:
+        return check()
+    except Exception as exc:
+        if state.check_failure is None:
+            _logger.exception("the %s check on '%s' failed", type(state.plugin).__name__, topic_name)
+        state.check_failure = f"{type(exc).__name__}: {exc}"
+        return None
 
 
 def has_own_subscription(manager: SubscriptionManager, topic_name: str) -> bool:
@@ -87,9 +103,29 @@ def feed_related_listeners(manager: SubscriptionManager, topic_name: str, msg: o
     Not decimated. `on_tick` first, because a plugin timestamps with it: a
     latched topic like /tf_static can arrive before the primary's first check.
     """
-    for plugin, _primary in manager._related_topic_targets.get(topic_name, ()):
-        plugin.on_tick(now)
-        plugin.on_message(topic_name, msg)
+    for plugin, primary in manager._related_topic_targets.get(topic_name, ()):
+        state = manager._full_tier.get(primary)
+        if state is not None:
+            run_check(state, primary, lambda: _deliver(plugin, topic_name, msg, now))
+
+
+def _deliver(plugin: CheckPlugin, topic_name: str, msg: object, now: float) -> None:
+    plugin.on_tick(now)
+    plugin.on_message(topic_name, msg)
+
+
+def _feeds_its_listeners(manager: SubscriptionManager, topic_name: str) -> bool:
+    """True when `topic_name`'s own subscription deserializes, so plugins reading it need no second one."""
+    return topic_name in manager._full_tier or (
+        topic_name in manager._vitals and topic_name in manager._related_topic_names()
+    )
+
+
+def _drop_companion(manager: SubscriptionManager, topic_name: str) -> None:
+    """`topic_name` now has a subscription of its own: a companion would deliver each message twice."""
+    companion = manager._related_subscriptions.pop(topic_name, None)
+    if companion is not None:
+        manager._node.destroy_subscription(companion)
 
 
 def _warn_unresolved(topic_name: str, msg_type_str: str) -> None:
@@ -175,17 +211,20 @@ def subscribe_vitals_tier(manager: SubscriptionManager, topic_name: str, msg_cla
     if topic_name in manager._related_topic_names():
         # A plugin reads this topic's content, so it has to be deserialized after all.
         def _on_message(msg: object) -> None:
-            now = manager._clock.now_seconds()
-            vitals.record_arrival(now)
-            feed_related_listeners(manager, topic_name, msg, now)
+            with manager._lock:
+                now = manager._clock.now_seconds()
+                vitals.record_arrival(now)
+                feed_related_listeners(manager, topic_name, msg, now)
 
+        _drop_companion(manager, topic_name)
         manager._subscriptions[topic_name] = manager._node.create_subscription(
             msg_class, topic_name, _on_message, qos_profile
         )
         return
 
     def _on_raw_message(_raw_bytes: bytes) -> None:
-        vitals.record_arrival(manager._clock.now_seconds())
+        with manager._lock:
+            vitals.record_arrival(manager._clock.now_seconds())
 
     # raw=True: the middleware still needs the real message type to match
     # publishers, but the callback receives serialized bytes and never
@@ -213,15 +252,17 @@ def subscribe_full_tier(
     manager._full_tier[topic_name] = state
 
     def _on_message(msg: object) -> None:
-        process_full_tier_message(manager, state, topic_name, msg, manager._clock.now_seconds())
+        with manager._lock:
+            process_full_tier_message(manager, state, topic_name, msg, manager._clock.now_seconds())
 
+    _drop_companion(manager, topic_name)
     manager._subscriptions[topic_name] = manager._node.create_subscription(
         msg_class, topic_name, _on_message, qos_profile
     )
 
     for related_topic_name in plugin.related_topics.values():
         add_related_listener(manager, related_topic_name, plugin, topic_name)
-        if not has_own_subscription(manager, related_topic_name):
+        if not has_own_subscription(manager, related_topic_name) and not _feeds_its_listeners(manager, related_topic_name):
             subscribe_related_topic(manager, related_topic_name, topics_by_name)
 
     return state
@@ -243,15 +284,16 @@ def process_full_tier_message(
     due = state.last_checked_seconds is None or (now - state.last_checked_seconds) >= min_check_interval
     if not due and not state.plugin.needs_every_message():
         return
-    state.plugin.on_tick(now)
-    state.plugin.on_message(topic_name, msg)
+    run_check(state, topic_name, lambda: _deliver(state.plugin, topic_name, msg, now))
     if due:
         # Status (and hysteresis) at the decimated rate either way: a
         # plugin that needs every message still isn't re-evaluated per message.
         state.last_checked_seconds = now
         quiet = topic_name in manager._latched or state.plugin.silence_expected(manager._msg_type_by_topic.get(topic_name, ""))
         state.stamps.observe(msg, now, latched=quiet)
-        state.debouncer.update(state.stamps.applied_to(state.plugin.get_status()))
+        status = run_check(state, topic_name, state.plugin.get_status)
+        if status is not None:
+            state.debouncer.update(state.stamps.applied_to(status))
 
 
 def subscribe_related_topic(
@@ -281,7 +323,8 @@ def subscribe_related_topic(
         return
 
     def _on_related_message(msg: object) -> None:
-        feed_related_listeners(manager, related_topic_name, msg, manager._clock.now_seconds())
+        with manager._lock:
+            feed_related_listeners(manager, related_topic_name, msg, manager._clock.now_seconds())
 
     manager._related_subscriptions[related_topic_name] = manager._node.create_subscription(
         msg_class, related_topic_name, _on_related_message, qos_profile

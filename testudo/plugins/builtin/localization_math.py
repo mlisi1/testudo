@@ -13,7 +13,10 @@ from testudo.plugins.base import ThresholdZone
 _PSD_EPSILON = -1e-6
 
 def _is_positive_semidefinite(matrix: np.ndarray) -> bool:
-    """True if the symmetric `matrix` has no eigenvalue meaningfully below zero."""
+    """True if the symmetric `matrix` is finite and has no eigenvalue meaningfully below zero."""
+    # eigvalsh raises on some non-finite input, and returns finite values for others.
+    if not np.all(np.isfinite(matrix)):
+        return False
     eigenvalues = np.linalg.eigvalsh(matrix)
     return bool(np.all(eigenvalues >= _PSD_EPSILON))
 

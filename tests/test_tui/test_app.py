@@ -633,3 +633,33 @@ def test_n_clears_a_filter_that_hides_the_next_problem() -> None:
             assert categories.row_count == 3
 
     run(body())
+
+
+class _LiveCountingSource(StaticDataSource):
+    """A live-looking source that counts its polls."""
+
+    polls = 0
+
+    def is_live(self) -> bool:
+        return True
+
+    def poll(self):
+        self.polls += 1
+        return super().poll()
+
+
+def test_pausing_freezes_the_display_but_keeps_publishing() -> None:
+    published = []
+
+    async def body() -> None:
+        source = _LiveCountingSource(_reports(), CheckStatus(Severity.OK, "overall", ""))
+        app = TestudoApp(source, ros_distro="jazzy", poll_rate_hz=50.0, on_snapshot=published.append)
+        async with app.run_test() as pilot:
+            await pilot.press("p")
+            frozen = app.latest_snapshot
+            before = len(published)
+            await pilot.pause(0.2)
+            assert app.paused and len(published) > before
+            assert app.latest_snapshot is frozen
+
+    run(body())

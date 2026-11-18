@@ -140,7 +140,7 @@ class PoseJumpCheck:
         distance, turned = self._tracker.step(position, quaternion_yaw(pose.orientation), *allowed)
         if dt <= 0:
             return
-        prefix = "" if role == CONTINUOUS_ROLE else "global_"
+        prefix = "global_" if role == GLOBAL_ROLE else ""
         severity = max(
             evaluate_levels(distance, levels.get(f"{prefix}pose_jump_m")),
             evaluate_levels(turned, levels.get(f"{prefix}pose_jump_rad")),

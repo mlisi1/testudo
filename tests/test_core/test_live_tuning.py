@@ -18,7 +18,7 @@ def _manager(levels: dict[str, SeverityLevels] | None = None) -> SimpleNamespace
     plugin = SimpleNamespace(levels=levels or {"stuck_count": SeverityLevels(warn=5.0, error=50.0)})
     return SimpleNamespace(
         _topic_config_by_name={"/gps": TopicConfig("/gps", "sensor_msgs/msg/NavSatFix", codes={"GNSS-007": Severity.OK})},
-        _action_config_by_status_topic={_STATUS_TOPIC: ActionConfig("navigate_to_pose", "nav2_msgs/action/NavigateToPose")},
+        _action_config_by_status_topic={_STATUS_TOPIC: ActionConfig("navigate_to_pose")},
         _msg_type_by_topic={"/gps": "sensor_msgs/msg/NavSatFix", "/imu": "sensor_msgs/msg/Imu", "/tf": "tf2_msgs/msg/TFMessage"},
         _full_tier={"/gps": SimpleNamespace(plugin=plugin, stamps=StampCheck())},
     )
@@ -112,3 +112,23 @@ def test_a_rate_warn_level_keeps_a_written_error() -> None:
     }
     live_tuning.set_warn_level(manager, "/gps", "rate_hz", 5.0)
     assert manager._topic_config_by_name["/gps"].levels["rate_hz"].over(None) == SeverityLevels(warn=5.0, error=2.0)
+
+
+def _nav2_manager(config: TopicConfig | None = None) -> SimpleNamespace:
+    return SimpleNamespace(
+        _topic_config_by_name={"/cmd_vel_nav": config} if config is not None else {},
+        _full_tier={},
+        _nav2_rates=SimpleNamespace(expected={"/cmd_vel_nav": object()}),
+    )
+
+
+def test_a_rate_judged_against_nav2_is_not_offered_a_warn_level() -> None:
+    metric = CodeMetric("rate_hz", 15.0, higher_is_worse=False)
+    assert live_tuning.warn_cut(_nav2_manager(), "/cmd_vel_nav", metric) is None
+
+
+def test_a_rate_the_config_already_sets_can_still_take_one() -> None:
+    written = LevelsOverride(warn=18.0, given=frozenset({"warn"}))
+    config = TopicConfig("/cmd_vel_nav", "geometry_msgs/msg/Twist", levels={"rate_hz": written})
+    metric = CodeMetric("rate_hz", 15.0, higher_is_worse=False)
+    assert live_tuning.warn_cut(_nav2_manager(config), "/cmd_vel_nav", metric) == 15.0

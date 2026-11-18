@@ -54,11 +54,14 @@ def meter(value: float, zone: ThresholdZone | None, segments: int) -> str:
     """
     if zone is None or zone.orange is None:
         return ""
+    if not math.isfinite(value):  # No margin to show: the worst reading there is.
+        color = SEVERITY_COLORS[Severity.ERROR]
+        return f"[{color}]{FILLED_SQUARE}[/{color}]{EMPTY_SQUARE * max(0, segments - 1)}"
     color = SEVERITY_COLORS.get(evaluate_zone(value, zone), "white")
     if segments <= 1:
         return f"[{color}]{FILLED_SQUARE}[/{color}]"
     span = zone.red if zone.red is not None else zone.orange * METER_FALLBACK_SCALE
-    remaining = 1.0 - value / span if span > 0 else 0.0
+    remaining = max(0.0, min(1.0, 1.0 - value / span)) if span > 0 else 0.0
     filled = max(1, min(segments, round(remaining * segments)))
     return f"[{color}]{FILLED_SQUARE * filled}[/{color}]{EMPTY_SQUARE * (segments - filled)}"
 

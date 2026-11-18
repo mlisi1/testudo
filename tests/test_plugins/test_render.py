@@ -1,10 +1,11 @@
 """Unit tests for the shared plugin rendering helpers -- pure strings, no ROS."""
 from __future__ import annotations
 
+import pytest
 from rich.text import Text
 
 from testudo.plugins.base import Severity, ThresholdZone
-from testudo.plugins.render import downsample, fmt_sigma, fmt_size, meter, sparkline, strip
+from testudo.plugins.render import FILLED_SQUARE, downsample, fmt_sigma, fmt_size, meter, sparkline, strip
 
 
 def _plain(markup: str) -> str:
@@ -79,3 +80,8 @@ def test_downsample_averages_consecutive_chunks() -> None:
     assert downsample(range(60), 20)[0] == 1.0
     nan_chunk = downsample([float("nan"), float("nan"), 1.0, 1.0], 2)
     assert nan_chunk[1] == 1.0 and nan_chunk[0] != nan_chunk[0]
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), 1e308])
+def test_a_meter_survives_any_reading(value: float) -> None:
+    assert meter(value, ThresholdZone(green=1e-3, orange=1e-2), 6).count(FILLED_SQUARE) == 1

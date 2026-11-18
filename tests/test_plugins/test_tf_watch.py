@@ -232,3 +232,15 @@ def test_map_odom_levels_come_from_the_tf_topics_config() -> None:
     plugin.on_message("/tf", _map_odom(0.0))
     plugin.on_message("/tf", _map_odom(1.0))
     assert plugin.derived_rows()[0].status.codes == {}
+
+
+def test_resetting_stats_keeps_static_transforms() -> None:
+    plugin = TFWatchPlugin(related_topics={"tf_static": "/tf_static"})
+    plugin.set_watched_pairs([("base_link", "laser")])
+    plugin.on_tick(1.0)
+    plugin.on_message("/tf_static", _tf_message(_transform("base_link", "laser")))
+    assert plugin.get_status().severity == Severity.OK
+
+    plugin.reset()
+    plugin.on_tick(100.0)
+    assert plugin.get_status().severity == Severity.OK

@@ -634,9 +634,8 @@ def test_related_topic_is_routed_to_same_plugin_instance_not_subscribed_separate
     manager = SubscriptionManager(node, config, discovered, clock=_fixed_clock(0.0), **_FAST_SETTLE)
     manager.start()
 
-    # Exactly two subscriptions: /odom (primary) and /cmd_vel (related, fed
-    # to the same plugin instance) -- not a third, independent vitals-tier
-    # subscription to /cmd_vel from the generic topic loop.
+    # Exactly two subscriptions: /odom (primary) and /cmd_vel, whose own
+    # subscription also feeds the plugin reading it -- not a third companion.
     assert len(node.subscriptions) == 2
     subscribed_topics = {sub.topic for sub in node.subscriptions}
     assert subscribed_topics == {"/odom", "/cmd_vel"}
@@ -647,11 +646,11 @@ def test_related_topic_is_routed_to_same_plugin_instance_not_subscribed_separate
     cmd_vel_sub.callback(sentinel)
     assert plugin.calls == [("/cmd_vel", sentinel)]
 
-    # /cmd_vel never gets its own report row -- it's an input, not a monitored topic.
+    # Being another topic's input doesn't take away /cmd_vel's own monitoring.
     odom_sub = next(sub for sub in node.subscriptions if sub.topic == "/odom")
     odom_sub.callback(object())
     reports = manager.reports()
-    assert [r.topic for r in reports] == ["/odom"]
+    assert [r.topic for r in reports] == ["/cmd_vel", "/odom"]
 
 
 def _sharing_manager(declared: list[TopicConfig], topics: list[tuple[str, list[str]]]) -> tuple[_FakeNode, SubscriptionManager]:
@@ -2047,3 +2046,150 @@ def test_per_plugin_publish_topics_and_node_profiling_topic_are_self_excluded() 
     assert not combined.is_default_excluded("/testudo/localization")
     assert combined.is_default_excluded("/diagnostics")
     assert combined.is_default_excluded(combined._config.faults.publish_topic)
+
+
+def test_a_related_topic_found_first_still_reaches_its_listener_once() -> None:
+    node = _FakeNode(
+        topics=[("/cmd_vel", ["geometry_msgs/msg/Twist"]), ("/odom", ["nav_msgs/msg/Odometry"])],
+        publishers_by_topic={
+            "/cmd_vel": [_FakeEndpointInfo(qos_profile=_qos())],
+            "/odom": [_FakeEndpointInfo(qos_profile=_qos())],
+        },
+    )
+    discovered = [DiscoveredPlugin(name="recording", plugin_class=_RecordingPlugin, source="packaged")]
+    odom = TopicConfig(name="/odom", msg_type="nav_msgs/msg/Odometry", related_topics={"cmd_vel": "/cmd_vel"})
+    config = TestudoConfig(topics={"nav_msgs/msg/Odometry": [odom]})
+    manager = SubscriptionManager(node, config, discovered, clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+
+    assert sorted(sub.topic for sub in node.subscriptions) == ["/cmd_vel", "/odom"]
+    sentinel = object()
+    next(sub for sub in node.subscriptions if sub.topic == "/cmd_vel").callback(sentinel)
+    assert manager._full_tier["/odom"].plugin.calls == [("/cmd_vel", sentinel)]
+
+
+class _RaisingPlugin(_EmptyPlugin):
+    """A plugin that fails on every message."""
+
+    def on_message(self, topic: str, msg: Any) -> None:
+        raise ValueError("math domain error")
+
+
+def _raising_manager(node: _FakeNode) -> SubscriptionManager:
+    discovered = [DiscoveredPlugin(name="raising", plugin_class=_RaisingPlugin, source="packaged")]
+    return SubscriptionManager(node, _config(), discovered, clock=_fixed_clock(0.0), **_FAST_SETTLE)
+
+
+def _beep_node() -> _FakeNode:
+    return _FakeNode(
+        topics=[("/beep", ["std_msgs/msg/Empty"])],
+        publishers_by_topic={"/beep": [_FakeEndpointInfo(qos_profile=_qos())]},
+    )
+
+
+def test_a_plugin_that_raises_is_reported_and_monitoring_goes_on(caplog: pytest.LogCaptureFixture) -> None:
+    node = _beep_node()
+    manager = _raising_manager(node)
+    manager.start()
+
+    node.subscriptions[0].callback(object())  # must not reach the executor, which would end the spin thread
+    node.subscriptions[0].callback(object())
+
+    status = manager.reports()[0].status
+    assert status.severity == Severity.ERROR
+    assert "math domain error" in status.codes["CHECK-001"]
+    assert manager._full_tier["/beep"].vitals.message_count == 2
+
+
+def test_resetting_stats_clears_a_check_failure() -> None:
+    node = _beep_node()
+    manager = _raising_manager(node)
+    manager.start()
+    node.subscriptions[0].callback(object())
+
+    manager.reset_stats()
+    assert "CHECK-001" not in manager.reports()[0].status.codes
+
+
+def test_a_poll_never_runs_while_a_message_is_being_handled() -> None:
+    node = _beep_node()
+    discovered = [DiscoveredPlugin(name="empty", plugin_class=_EmptyPlugin, source="packaged")]
+    manager = SubscriptionManager(node, _config(), discovered, clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+    held: list[bool] = []
+    plugin = manager._full_tier["/beep"].plugin
+    original = plugin.get_status
+    plugin.get_status = lambda: (held.append(manager._lock._is_owned()), original())[1]
+
+    manager.tick()
+    manager.reports()
+    node.subscriptions[0].callback(object())
+    assert held and all(held)
+
+
+def test_an_excluded_tf_stays_excluded_across_rediscovery() -> None:
+    node = _FakeNode(
+        topics=[("/tf", ["tf2_msgs/msg/TFMessage"]), ("/tf_static", ["tf2_msgs/msg/TFMessage"])],
+        publishers_by_topic={
+            "/tf": [_FakeEndpointInfo(qos_profile=_qos())],
+            "/tf_static": [_FakeEndpointInfo(qos_profile=_qos())],
+        },
+    )
+    discovered = [DiscoveredPlugin(name="tf", plugin_class=_TFPlugin, source="packaged")]
+    config = TestudoConfig(exclude_topics=[ExcludeRule("/tf")])
+    manager = SubscriptionManager(
+        node, config, discovered, clock=_fixed_clock(0.0), rediscovery_interval_seconds=0.0, **_FAST_SETTLE
+    )
+    manager.start()
+    manager.maintain()
+    manager.maintain()
+
+    assert node.subscriptions == []
+    assert [(report.topic, report.tier) for report in manager.reports()] == [("/tf", "excluded")]
+
+
+def test_resetting_stats_keeps_a_latched_topic_received() -> None:
+    latched_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+    node = _FakeNode(
+        topics=[("/robot_description", ["std_msgs/msg/String"])],
+        publishers_by_topic={"/robot_description": [_FakeEndpointInfo(qos_profile=latched_qos)]},
+    )
+    clock_seconds = [0.0]
+    config = _declaring(("/robot_description", "std_msgs/msg/String"))
+    manager = _manager_with_mutable_clock(node, config, clock_seconds)
+    manager.start()
+    node.subscriptions[0].callback(b"")
+
+    manager.reset_stats()
+    clock_seconds[0] = 60.0
+    status = manager.reports()[0].status
+    assert (status.severity, status.label) == (Severity.OK, "latched")
+
+
+def test_quiet_rows_do_not_keep_a_closed_stack_looking_alive() -> None:
+    quiet = [(f"/plan_{index}", ["nav_msgs/msg/Path"]) for index in range(3)]
+    topics = [("/odom", ["nav_msgs/msg/Odometry"]), *quiet]
+    publishers: dict[str, list[object]] = {name: [_FakeEndpointInfo(qos_profile=_qos())] for name, _ in topics}
+    node = _FakeNode(topics=topics, publishers_by_topic=publishers)
+    clock_seconds = [0.0]
+    manager = SubscriptionManager(
+        node,
+        _config(),
+        [],
+        clock=_mutable_clock(clock_seconds),
+        stale_after_seconds=2.0,
+        rediscovery_interval_seconds=1000.0,
+        stale_stack_fraction=0.9,
+        stale_stack_grace_seconds=0.0,
+        stale_check_interval_seconds=0.0,
+        **_FAST_SETTLE,
+    )
+    manager.start()
+    next(sub for sub in node.subscriptions if sub.topic == "/odom").callback(b"")
+
+    clock_seconds[0] = 10.0
+    manager.maintain()
+    topics.clear()
+    publishers.clear()
+    manager.maintain()
+    assert manager.reports() == []

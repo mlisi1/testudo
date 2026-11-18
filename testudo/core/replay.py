@@ -42,7 +42,6 @@ from testudo.core.tier_subscription import (
     FullTierState,
     add_related_listener,
     feed_related_listeners,
-    has_own_subscription,
     process_full_tier_message,
     runs_content_checks,
 )
@@ -150,12 +149,9 @@ def _feed_replayed_message(manager: SubscriptionManager, topic_name: str, msg_ty
     already, so liveness/decimation/hysteresis all reason in bag time.
     """
     now = manager._clock.now_seconds()
-    if not has_own_subscription(manager, topic_name):
-        if topic_name in manager._related_topic_targets:
-            feed_related_listeners(manager, topic_name, msg, now)
-            return
-        if topic_name in manager._reserved_related_topic_names():
-            return  # its listener's first message is still to come
+    if topic_name == TF_STATIC_TOPIC and topic_name in manager._related_topic_targets:
+        feed_related_listeners(manager, topic_name, msg, now)
+        return
 
     _track_for_replay(manager, topic_name, msg_type_str)
 
@@ -166,6 +162,8 @@ def _feed_replayed_message(manager: SubscriptionManager, topic_name: str, msg_ty
     state = manager._full_tier.get(topic_name)
     if state is not None:
         process_full_tier_message(manager, state, topic_name, msg, now)
+    else:
+        feed_related_listeners(manager, topic_name, msg, now)  # presence tier: read, but not monitored
 
 
 def _wire_tf_watch_for_replay(manager: SubscriptionManager, topic_types: dict[str, str]) -> None:

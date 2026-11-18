@@ -32,14 +32,17 @@ from testudo.core.exclusion import sweep_excluded_topics
 from testudo.core.global_watches import subscribe_lifecycle_tracking, subscribe_tf_watch
 from testudo.core.lifecycle import LifecycleTracker
 from testudo.core.tier_subscription import subscribe_topic
-from testudo.core.report_builder import build_reports, never_published_undeclared
-from testudo.core.topic_report import TopicReport
+from testudo.core.report_builder import build_reports
+from testudo.core.topic_report import QUIET_LABELS, TopicReport
 from testudo.plugins.base import Severity
 
 if TYPE_CHECKING:
     from testudo.core.subscription_manager import SubscriptionManager
 
 _logger = logging.getLogger(__name__)
+
+#: Rows with no liveness of their own: worked out from another topic, or never subscribed.
+_NO_LIVENESS_TIERS = frozenset({"derived", "presence", "excluded"})
 
 #: How often a live session re-scans the graph for topics that weren't
 #: there yet at `start()` (or a whole stack started after Testudo did),
@@ -73,13 +76,11 @@ def discover_and_subscribe(manager: "SubscriptionManager") -> None:
     Shared by `SubscriptionManager.start()`'s initial pass and
     `maintain()`'s periodic re-scans. A topic previously recorded as having
     no publishers is retried here rather than left alone -- only topics
-    actually committed to a tier, or reserved as another topic's
-    related-topic companion, are skipped.
+    actually committed to a tier, or reserved for the TF watch, are skipped.
     """
     topics_by_name = {topic_info.name: topic_info for topic_info in list_topics(manager._node)}
 
-    reserved = manager._reserved_related_topic_names()
-    reserved |= subscribe_tf_watch(manager, topics_by_name)
+    reserved = subscribe_tf_watch(manager, topics_by_name)
     subscribe_lifecycle_tracking(manager, topics_by_name)
 
     committed = set(manager._msg_type_by_topic) - manager._no_publishers
@@ -178,11 +179,11 @@ def _mostly_dead(manager: "SubscriptionManager", reports: list[TopicReport]) -> 
     complaining about it, not a dead one.
     """
     # A derived row has no liveness of its own: it outlives the topic it's worked out from.
-    # A topic that never published says nothing about whether the stack is still up.
+    # Neither does a row that can't report a liveness failure say the stack is still up.
     reports = [
         report
         for report in reports
-        if report.tier != "derived" and not never_published_undeclared(manager, report.topic)
+        if report.tier not in _NO_LIVENESS_TIERS and report.status.label not in QUIET_LABELS
     ]
     dead_count = sum(
         1 for report in reports if report.status.label == "liveness" and report.status.severity >= Severity.ERROR

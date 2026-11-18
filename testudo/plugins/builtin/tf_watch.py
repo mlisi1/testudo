@@ -109,15 +109,19 @@ class TFWatchPlugin(CheckPlugin):
         self._watched_pairs = list(pairs)
 
     def reset(self) -> None:
-        """Clear the observed tree, keeping the watched pairs and buffer window.
+        """Clear the observed tree, keeping the watched pairs, buffer window and static transforms.
 
-        Both are configuration (set after construction, from `tf:`), not
-        accumulated state -- the base class's re-run of `__init__` would
+        The first two are configuration (set after construction, from `tf:`),
+        not accumulated state -- the base class's re-run of `__init__` would
         silently drop the watched pairs, and every chain check with them.
+        Static transforms are latched: nobody would send them again.
         """
-        watched_pairs, levels = self._watched_pairs, self.levels
+        watched_pairs, levels, static_edges, now = self._watched_pairs, self.levels, self._static_edges, self._now
         self.__init__(self.thresholds, self.related_topics, self._buffer_window_seconds)
-        self._watched_pairs, self.levels = watched_pairs, levels
+        self._watched_pairs, self.levels, self._now = watched_pairs, levels, now
+        for parent, child in static_edges:
+            self._record_edge(parent, child)
+            self._static_edges.add((parent, child))
 
     def on_tick(self, now_seconds: float) -> None:
         self._now = now_seconds
@@ -128,15 +132,18 @@ class TFWatchPlugin(CheckPlugin):
             parent = transform.header.frame_id
             child = transform.child_frame_id
             self._edge_count += 1
-            self._parents_by_child[child].add(parent)
-            self._adjacency[parent].add(child)
-            self._adjacency[child].add(parent)
-            self._last_seen_seconds[(parent, child)] = self._now
+            self._record_edge(parent, child)
             if is_static:
                 self._static_edges.add((parent, child))
             else:
                 self._static_edges.discard((parent, child))
             self._map_odom.observe(transform, self._now, self.levels)
+
+    def _record_edge(self, parent: str, child: str) -> None:
+        self._parents_by_child[child].add(parent)
+        self._adjacency[parent].add(child)
+        self._adjacency[child].add(parent)
+        self._last_seen_seconds[(parent, child)] = self._now
 
     def _multi_parent_children(self) -> dict[str, set[str]]:
         return {child: parents for child, parents in self._parents_by_child.items() if len(parents) > 1}

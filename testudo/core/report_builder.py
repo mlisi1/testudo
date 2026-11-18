@@ -20,6 +20,7 @@ from testudo.core.passive_reports import (
     no_publishers_report,
     presence_report,
 )
+from testudo.core.tier_subscription import run_check
 from testudo.core.topic_report import (
     TopicReport,
     full_tier_report,
@@ -31,7 +32,7 @@ from testudo.core.topic_report import (
 )
 from testudo.core.vitals import TopicVitals
 
-from testudo.plugins.base import SeverityLevels
+from testudo.plugins.base import CheckStatus, Severity, SeverityLevels
 
 if TYPE_CHECKING:
     from testudo.core.subscription_manager import SubscriptionManager
@@ -84,24 +85,34 @@ def build_reports(manager: "SubscriptionManager", *, code_overrides: bool = True
         )
         reports.append(_suppress(manager, topic_name, _with_nav2_rate(manager, report, vitals, now)))
     for topic_name, state in manager._full_tier.items():
+        plugin_status = run_check(state, topic_name, state.plugin.get_status)
         report = full_tier_report(
             topic_name,
             manager._msg_type_by_topic[topic_name],
             state.vitals,
             state.debouncer.current,
-            state.plugin.get_status(),
+            plugin_status or CheckStatus(severity=Severity.OK, label="check", message="the check failed"),
             now,
             manager._stale_after_seconds,
             manager._monitor_hz,
             **_quiet_flags(manager, topic_name),
             rate_levels=_rate_levels(manager, topic_name),
         )
+        report = _with_check_failure(report, state)
         reports.append(_suppress(manager, topic_name, _with_nav2_rate(manager, report, state.vitals, now)))
         reports.extend(_derived_reports(topic_name, state))
 
     if code_overrides:
         reports = [_override_codes(manager, report) for report in reports]
     return sorted(reports, key=lambda report: report.topic)
+
+
+def _with_check_failure(report: TopicReport, state: "FullTierState") -> TopicReport:
+    """`report` saying that its plugin raised: what it shows can't be trusted any more."""
+    if state.check_failure is None:
+        return report
+    message = f"the check failed: {state.check_failure}"
+    return replace(report, status=with_code(report.status, "CHECK-001", Severity.ERROR, message))
 
 
 def _with_nav2_rate(manager: "SubscriptionManager", report: TopicReport, vitals: TopicVitals, now: float) -> TopicReport:

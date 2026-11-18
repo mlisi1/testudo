@@ -26,6 +26,7 @@ from testudo.core.discovery import (
     resolve_subscription_qos,
     subscription_qos,
 )
+from testudo.core.exclusion import matching_rule
 from testudo.core.plugin_settings import build_plugin
 from testudo.core.tier_subscription import TF_STATIC_TOPIC, TF_TOPIC, runs_content_checks, subscribe_full_tier
 
@@ -66,6 +67,9 @@ def subscribe_tf_watch(manager: "SubscriptionManager", topics_by_name: dict[str,
         return set()
 
     claimed = {TF_TOPIC} | ({TF_STATIC_TOPIC} if TF_STATIC_TOPIC in topics_by_name else set())
+    if matching_rule(manager, TF_TOPIC) is not None:
+        # The generic loop records /tf as excluded; /tf_static only ever serves it.
+        return claimed - {TF_TOPIC}
     if TF_TOPIC in manager._full_tier:
         return claimed
 

@@ -92,13 +92,22 @@ def _levels_of(manager: "SubscriptionManager", topic: str, metric: str) -> Sever
     return state.plugin.levels.get(metric)
 
 
+def _follows_nav2_rate(manager: "SubscriptionManager", topic: str) -> bool:
+    config = manager._topic_config_by_name.get(topic)
+    return topic in manager._nav2_rates.expected and (config is None or _RATE_METRIC not in config.levels)
+
+
 def warn_cut(manager: "SubscriptionManager", topic: str, metric: CodeMetric) -> float | None:
     """The `warn` level at `metric`'s current value, rounded so that value stays on the good side.
 
     None when `warn` can't quiet it: the value is past the metric's `error`
-    level, which only the user should move, or isn't a finite number.
+    level, which only the user should move, or isn't a finite number. Also
+    None for a rate judged against Nav2's parameters: a `rate_hz` in the config
+    replaces that check, and isn't applied to a topic that may go quiet.
     """
     if not math.isfinite(metric.value):
+        return None
+    if metric.name == _RATE_METRIC and _follows_nav2_rate(manager, topic):
         return None
     error = (_levels_of(manager, topic, metric.name) or SeverityLevels()).error
     if evaluate_levels(metric.value, SeverityLevels(error=error), higher_is_worse=metric.higher_is_worse) != Severity.OK:

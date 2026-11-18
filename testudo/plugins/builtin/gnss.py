@@ -210,6 +210,8 @@ class GnssPlugin(CheckPlugin):
         fix resumes; gating on `has_fix` for both ends avoids that.
         """
         stamp_seconds = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        # A non-finite position is GNSS-006's to report: there's no distance to work out from it.
+        has_fix = has_fix and all(math.isfinite(value) for value in (msg.latitude, msg.longitude, msg.altitude))
         if has_fix and self._last_fix is not None:
             last_stamp, last_lat, last_lon, last_alt = self._last_fix
             dt = stamp_seconds - last_stamp

@@ -243,3 +243,13 @@ def test_metrics_publish_full_precision_position_and_sigmas() -> None:
     assert metrics["fix_status"] == NavSatStatus.STATUS_FIX
     assert metrics["sigma_horizontal_m"] == 0.5
     assert metrics["sigma_vertical_m"] == 0.5
+
+
+def test_an_infinite_position_after_a_good_fix_is_reported_not_raised() -> None:
+    plugin = GnssPlugin()
+    plugin.on_message("/gps", _fix(stamp_sec=1))
+    plugin.on_message("/gps", _fix(lat=float("inf"), stamp_sec=2))
+    assert "GNSS-006" in plugin.get_status().codes
+
+    plugin.on_message("/gps", _fix(stamp_sec=3))  # the next good fix isn't compared with the bad one
+    assert "GNSS-004" not in plugin.get_status().codes

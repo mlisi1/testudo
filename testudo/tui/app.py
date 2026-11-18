@@ -174,11 +174,13 @@ class TestudoApp(App):
         self._poll(force=True)
 
     def _poll(self, *, force: bool = False) -> None:
+        # Pausing freezes what's on screen: diagnostics and the fault history carry on.
+        snapshot = self.data_source.poll()
+        if self._on_snapshot is not None:
+            self._on_snapshot(snapshot)
         if self.paused and not force:
             return
-        self.latest_snapshot = self.data_source.poll()
-        if self._on_snapshot is not None:
-            self._on_snapshot(self.latest_snapshot)
+        self.latest_snapshot = snapshot
         if force or self._draw_is_due():
             self._notify_dashboard()
 

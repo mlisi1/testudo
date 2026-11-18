@@ -30,6 +30,7 @@ subscriptions, so it must run on whichever thread owns the spin loop.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Any, Callable
 
@@ -53,7 +54,7 @@ from testudo.core.maintenance import maintain as _maintain
 from testudo.core.nav2_rates import Nav2RateReader
 from testudo.core.report_builder import build_reports as _build_reports
 from testudo.core.topic_report import TopicReport
-from testudo.core.tier_subscription import FullTierState, has_own_subscription
+from testudo.core.tier_subscription import FullTierState, run_check
 from testudo.core.vitals import DEFAULT_STALE_AFTER_SECONDS, TopicVitals
 from testudo.plugins.base import CheckPlugin, CheckStatus
 from testudo.plugins.registry import DiscoveredPlugin
@@ -219,6 +220,9 @@ class SubscriptionManager:
         # related-topic name -> the subscription feeding those listeners, for
         # an undeclared topic (a declared one forwards from its own subscription).
         self._related_subscriptions: dict[str, Any] = {}
+        # Held for each message on the spin thread and for each poll on the UI's: rediscovery
+        # changes what's tracked, and plugins aren't written to be read while they update.
+        self._lock = threading.RLock()
         # Only `start()` flips this on -- `replay` constructs
         # a manager and drives `tick()` without ever calling `start()`'s live
         # discovery, so periodic rediscovery and stale-stack clearing (both
@@ -262,19 +266,19 @@ class SubscriptionManager:
         Safe from any thread: the matched topics only move into the
         excluded tier on the next `maintain()` cycle.
         """
-        return add_rule(self, rule)
+        with self._lock:
+            return add_rule(self, rule)
 
     def remove_exclude_rule(self, rule: ExcludeRule) -> bool:
         """Remove a rule, True if one was; its topics get rediscovered next `maintain()` (see `exclusion.remove_rule`)."""
-        return remove_rule(self, rule)
+        with self._lock:
+            return remove_rule(self, rule)
 
     def start(self) -> None:
         """Subscribe to every currently-discovered, non-excluded topic, then arm live rediscovery.
 
-        A topic used as another topic's `related_topics` companion (e.g. a
-        cmd_vel cross-check input), or /tf_static, is reserved up front so
-        the generic loop never subscribes it independently. After this
-        initial pass, `maintain()` re-runs the same discovery periodically
+        /tf_static is reserved up front, so the generic loop never subscribes
+        it independently. After this initial pass, `maintain()` re-runs the same discovery periodically
         (see maintenance.py) so topics -- or a whole stack -- started after
         Testudo still get picked up.
         """
@@ -282,13 +286,6 @@ class SubscriptionManager:
         _discover_and_subscribe(self)
         self._last_rediscovery_monotonic = time.monotonic()
         self._live = True
-
-    def _reserved_related_topic_names(self) -> set[str]:
-        """Topics that are only another topic's input: declaring one monitors it as well."""
-        reserved: set[str] = set()
-        for topic_config in self._topic_config_by_name.values():
-            reserved.update(topic_config.related_topics.values())
-        return {name for name in reserved if not has_own_subscription(self, name)}
 
     def _related_topic_names(self) -> set[str]:
         """Every topic some declared topic or action reads as a related topic."""
@@ -309,13 +306,16 @@ class SubscriptionManager:
 
     def tick(self) -> None:
         """Advance every full-tier plugin's time-based state. Call on a fixed timer."""
-        now = self._clock.now_seconds()
-        for topic_name, state in self._full_tier.items():
-            state.plugin.on_tick(now)
-            # Messages drive the status everywhere else; a topic allowed to
-            # go quiet would otherwise sit on its last verdict indefinitely.
-            if state.vitals.message_count and state.plugin.silence_expected(self._msg_type_by_topic.get(topic_name, "")):
-                state.debouncer.update(state.stamps.applied_to(state.plugin.get_status()))
+        with self._lock:
+            now = self._clock.now_seconds()
+            for topic_name, state in self._full_tier.items():
+                run_check(state, topic_name, lambda: state.plugin.on_tick(now))
+                # Messages drive the status everywhere else; a topic allowed to
+                # go quiet would otherwise sit on its last verdict indefinitely.
+                if state.vitals.message_count and state.plugin.silence_expected(self._msg_type_by_topic.get(topic_name, "")):
+                    status = run_check(state, topic_name, state.plugin.get_status)
+                    if status is not None:
+                        state.debouncer.update(state.stamps.applied_to(status))
 
     def maintain(self) -> None:
         """Periodic housekeeping for a live session: rediscover new topics, and clear a dead stack.
@@ -328,11 +328,13 @@ class SubscriptionManager:
         callable from any thread (as it already was) since it only touches
         plugin-internal state, never the node's subscriptions.
         """
-        _maintain(self)
+        with self._lock:
+            _maintain(self)
 
     def reports(self) -> list[TopicReport]:
         """Current health of every subscribed (or publisher-less) topic, sorted by name (see report_builder.py)."""
-        return _build_reports(self)
+        with self._lock:
+            return _build_reports(self)
 
     def _weight_for_topic(self, topic_name: str) -> float:
         """A topic's configured weight (declared topic or action status topic), default 1.0."""
@@ -356,10 +358,16 @@ class SubscriptionManager:
         plugin instance has accumulated -- so it's safe to call while a
         background spin thread may be concurrently delivering messages.
         """
-        for vitals in self._vitals.values():
-            vitals.reset()
-        for state in self._full_tier.values():
-            state.vitals.reset()
-            state.plugin.reset()
-            state.debouncer = HysteresisDebouncer(self._hysteresis_required_consecutive)
-            state.last_checked_seconds = None
+        with self._lock:
+            # A latched topic won't send its message again: forgetting it would read as a fault.
+            for topic_name, vitals in self._vitals.items():
+                if topic_name not in self._latched:
+                    vitals.reset()
+            for topic_name, state in self._full_tier.items():
+                state.check_failure = None
+                if topic_name in self._latched:
+                    continue
+                state.vitals.reset()
+                state.plugin.reset()
+                state.debouncer = HysteresisDebouncer(self._hysteresis_required_consecutive)
+                state.last_checked_seconds = None
