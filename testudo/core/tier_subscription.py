@@ -57,8 +57,9 @@ class FullTierState:
 
 
 def has_own_subscription(manager: SubscriptionManager, topic_name: str) -> bool:
-    """True for a declared topic: monitored in its own right, even when plugins also listen to it."""
-    return topic_name in manager._topic_config_by_name and topic_name != TF_STATIC_TOPIC
+    """True for a declared topic or action status: monitored in its own right, even when plugins also listen to it."""
+    declared = topic_name in manager._topic_config_by_name or topic_name in manager._action_config_by_status_topic
+    return declared and topic_name != TF_STATIC_TOPIC
 
 
 def add_related_listener(manager: SubscriptionManager, related_topic_name: str, plugin: CheckPlugin, primary: str) -> None:

@@ -698,6 +698,25 @@ def test_a_declared_topic_no_plugin_checks_still_feeds_its_listeners() -> None:
     assert manager._vitals["/cmd_vel"].message_count == 1
 
 
+def test_a_declared_action_status_stays_monitored_when_a_topic_also_reads_it() -> None:
+    status_topic = "/navigate_to_pose/_action/status"
+    topics = [("/odom_a", ["nav_msgs/msg/Odometry"]), (status_topic, ["action_msgs/msg/GoalStatusArray"])]
+    node = _FakeNode(topics, {name: [_FakeEndpointInfo(qos_profile=_qos())] for name, _types in topics})
+    discovered = [DiscoveredPlugin(name="recording", plugin_class=_RecordingPlugin, source="packaged")]
+    config = TestudoConfig(
+        topics={"nav_msgs/msg/Odometry": [_odom_config("/odom_a", {"goal_status": status_topic})]},
+        actions=[ActionConfig(name="navigate_to_pose", action_type="nav2_msgs/action/NavigateToPose")],
+    )
+    manager = SubscriptionManager(node, config, discovered, clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager.start()
+    subscriptions = [sub for sub in node.subscriptions if sub.topic == status_topic]
+    assert len(subscriptions) == 1
+    assert status_topic in {report.topic for report in manager.reports()}
+    sentinel = object()
+    subscriptions[0].callback(sentinel)
+    assert manager._full_tier["/odom_a"].plugin.calls == [(status_topic, sentinel)]
+
+
 def test_decimation_skips_plugin_calls_faster_than_max_check_rate() -> None:
     node = _FakeNode(
         topics=[("/odom", ["nav_msgs/msg/Odometry"])],
