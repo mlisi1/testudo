@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from testudo.core.config import ExcludeMatchType, ExcludeRule
+import pytest
+
+from testudo.core.config import ConfigError, ExcludeMatchType, ExcludeRule
 from testudo.core.config_loader import load_config
 from testudo.core.config_writer import write_exclude_rules
 
@@ -106,3 +108,34 @@ def test_write_exclude_rules_creates_a_missing_file_and_its_parent_directory(tmp
 
     assert load_config(path).exclude_topics == [ExcludeRule("/velodyne_packets")]
     assert not path.read_text().startswith("\n")  # no artificial leading blank line either
+
+
+def test_a_comment_after_the_block_survives_removing_it(tmp_path: Path) -> None:
+    path = _write(tmp_path, "exclude_topics:\n  - /old_topic\n\n# about faults\nfaults:\n  retention: session\n")
+    write_exclude_rules(path, [])
+    assert path.read_text() == "# about faults\nfaults:\n  retention: session\n"
+
+
+def test_a_rule_that_stays_keeps_its_comment(tmp_path: Path) -> None:
+    path = _write(tmp_path, "exclude_topics:\n  - /kept  # noisy driver\n  - /old\n")
+    write_exclude_rules(path, [ExcludeRule("/kept"), ExcludeRule("/new")])
+    assert path.read_text() == "exclude_topics:\n  - /kept  # noisy driver\n  - /new\n"
+
+
+def test_saving_follows_a_symlink_and_keeps_the_permissions(tmp_path: Path) -> None:
+    real = _write(tmp_path, "severity_mode: worst\n")
+    real.chmod(0o640)
+    link = tmp_path / "link.yaml"
+    link.symlink_to(real)
+    write_exclude_rules(link, [ExcludeRule("/a")])
+    assert link.is_symlink()
+    assert real.stat().st_mode & 0o777 == 0o640
+    assert load_config(real).exclude_topics == [ExcludeRule("/a")]
+
+
+def test_a_config_that_cannot_be_parsed_is_left_alone(tmp_path: Path) -> None:
+    path = _write(tmp_path, "topics: [1, 2\n")
+    with pytest.raises(ConfigError):
+        write_exclude_rules(path, [ExcludeRule("/a")])
+    assert path.read_text() == "topics: [1, 2\n"
+    assert [entry.name for entry in tmp_path.iterdir()] == ["config.yaml"]

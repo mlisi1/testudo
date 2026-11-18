@@ -4,11 +4,12 @@ on a fixed timer without needing to know which kind it has.
 """
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
-from testudo.core.config import ExcludeRule, FaultsConfig, SeverityMode
+from testudo.core.config import ConfigError, ExcludeRule, FaultsConfig, SeverityMode
 from testudo.core.config_writer import write_exclude_rules
 from testudo.core.fault_history import ClearedFault, FaultHistory
 from testudo.core.node_profiling.profiler import NodeProfiler
@@ -18,6 +19,8 @@ from testudo.plugins.base import CheckStatus
 
 if TYPE_CHECKING:
     from testudo.tui.replay_source import ReplayTimeline
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -135,8 +138,13 @@ class LiveDataSource:
         return removed
 
     def _persist(self) -> None:
-        if self._config_path is not None:
+        if self._config_path is None:
+            return
+        try:
             write_exclude_rules(self._config_path, self._manager.exclude_rules())
+        except (OSError, ConfigError) as exc:
+            # The rule still applies to this session; only saving it failed.
+            _logger.warning("could not save the exclude rules to %s: %s", self._config_path, exc)
 
 
 class StaticDataSource:
