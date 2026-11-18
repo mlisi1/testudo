@@ -82,6 +82,7 @@ def build_reports(manager: "SubscriptionManager", *, code_overrides: bool = True
             _rate_levels(manager, topic_name),
             manager._monitor_hz,
             **_quiet_flags(manager, topic_name, vitals_only=True),
+            first_message_grace_s=manager._first_message_grace_seconds,
         )
         reports.append(_suppress(manager, topic_name, _with_nav2_rate(manager, report, vitals, now)))
     for topic_name, state in manager._full_tier.items():
@@ -97,6 +98,7 @@ def build_reports(manager: "SubscriptionManager", *, code_overrides: bool = True
             manager._monitor_hz,
             **_quiet_flags(manager, topic_name),
             rate_levels=_rate_levels(manager, topic_name),
+            first_message_grace_s=manager._first_message_grace_seconds,
         )
         report = _with_check_failure(report, state)
         reports.append(_suppress(manager, topic_name, _with_nav2_rate(manager, report, state.vitals, now)))

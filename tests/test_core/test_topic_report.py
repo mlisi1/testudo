@@ -30,6 +30,23 @@ def test_vitals_report_no_messages_is_error() -> None:
     assert "LIVE-002" in report.status.codes
 
 
+def test_a_new_subscription_gets_time_for_its_first_message_before_live_002() -> None:
+    vitals = TopicVitals(topic="/x")
+    report = lambda now: vitals_report(
+        "/x", "std_msgs/msg/String", vitals, now=now, stale_after_seconds=2.0, first_message_grace_s=5.0
+    )
+    assert report(100.0).status.severity == Severity.OK
+    assert report(104.9).status.codes == {}
+    assert "LIVE-002" in report(105.0).status.codes
+
+
+def test_resetting_stats_restarts_the_wait_for_the_first_message() -> None:
+    vitals = TopicVitals(topic="/x")
+    vitals.waiting_for_first_message(100.0)
+    vitals.reset()
+    assert vitals.waiting_for_first_message(200.0) == 0.0
+
+
 def test_vitals_report_stale_after_threshold() -> None:
     vitals = _vitals_with_messages(1, [0.0])
     report = vitals_report("/x", "std_msgs/msg/String", vitals, now=10.0, stale_after_seconds=2.0)

@@ -93,7 +93,7 @@ class CategorySummaryTable(NavDataTable):
 
     def _add_columns(self) -> None:
         name_marker, status_marker = sort_markers(self._sort_by_severity)
-        self.add_column(f"Category{name_marker}", key="category", width=15)
+        self.add_column(f"Category{name_marker}", key="category", width=17)
         self.add_column(f"Status{status_marker}", key="status", width=12)
 
     @property

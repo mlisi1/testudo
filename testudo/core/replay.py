@@ -255,6 +255,7 @@ def run_replay(
         clock=clock,
         max_check_rate_hz=config.max_check_rate_hz,
         hysteresis_required_consecutive=config.debounce_samples,
+        first_message_grace_seconds=0.0,  # The bag has already said all it will.
     )
     manager._latched = _latched_topics(bag_path)
 

@@ -109,6 +109,7 @@ def liveness_status(
     *,
     latched: bool = False,
     event_driven: bool = False,
+    first_message_grace_s: float = 0.0,
 ) -> CheckStatus | None:
     """The liveness-tier verdict, or None if the topic is alive and not stale.
 
@@ -125,6 +126,10 @@ def liveness_status(
     publisher, typically sending once -- robot_description, camera
     extrinsics), and an `event_driven` one (see `EVENT_DRIVEN_MSG_TYPES`),
     which also isn't an error before its first message.
+
+    `first_message_grace_s` is how long a topic may wait for its first
+    message before that silence is LIVE-002 (a live session's subscription,
+    or `r`, has only just started listening); it reads as idle until then.
     """
     if vitals.message_count == 0:
         if event_driven:
@@ -132,6 +137,13 @@ def liveness_status(
                 severity=Severity.OK,
                 label=IDLE_LABEL,
                 message="no messages yet (event-driven: publishes only when something happens)",
+                values=vitals_values(vitals, None, monitor_hz),
+            )
+        if first_message_grace_s > 0.0 and vitals.waiting_for_first_message(now) < first_message_grace_s:
+            return CheckStatus(
+                severity=Severity.OK,
+                label=IDLE_LABEL,
+                message="waiting for the first message",
                 values=vitals_values(vitals, None, monitor_hz),
             )
         message = "publisher(s) present but no messages received"
@@ -211,6 +223,7 @@ def vitals_report(
     *,
     latched: bool = False,
     event_driven: bool = False,
+    first_message_grace_s: float = 0.0,
 ) -> TopicReport:
     """Build a vitals-tier report: liveness verdict, or "alive" (optionally rate-checked).
 
@@ -226,10 +239,11 @@ def vitals_report(
     whether a threshold is configured -- arrival timestamps are still
     recorded (staleness needs them), just not turned into a rate.
 
-    `latched`/`event_driven`: see `liveness_status`.
+    `latched`/`event_driven`/`first_message_grace_s`: see `liveness_status`.
     """
     liveness = liveness_status(
-        vitals, now, stale_after_seconds, monitor_hz, latched=latched, event_driven=event_driven
+        vitals, now, stale_after_seconds, monitor_hz,
+        latched=latched, event_driven=event_driven, first_message_grace_s=first_message_grace_s,
     )
     if liveness is not None:
         reported_rate = vitals.rate_hz() if monitor_hz else None
@@ -295,6 +309,7 @@ def full_tier_report(
     latched: bool = False,
     event_driven: bool = False,
     rate_levels: SeverityLevels | None = None,
+    first_message_grace_s: float = 0.0,
 ) -> TopicReport:
     """Build a full-tier report: liveness verdict takes priority, else the (debounced) content status.
 
@@ -316,7 +331,8 @@ def full_tier_report(
     beside the plugin's numbers.
     """
     liveness = liveness_status(
-        vitals, now, stale_after_seconds, monitor_hz, latched=latched, event_driven=event_driven
+        vitals, now, stale_after_seconds, monitor_hz,
+        latched=latched, event_driven=event_driven, first_message_grace_s=first_message_grace_s,
     )
     reported_rate = vitals.rate_hz() if monitor_hz else None
     content = debounced_status if debounced_status is not None else fallback_status

@@ -14,7 +14,7 @@ Every subscribed topic is checked for being alive, with no configuration. Topics
 
 ### LIVE-002 · Publisher present, no messages { #live-002 }
 
-<span class="sev sev-error">✗ ERROR</span> A declared topic has a publisher, but no message has arrived.
+<span class="sev sev-error">✗ ERROR</span> A declared topic has a publisher, but no message has arrived within 5 s of subscribing to it.
 
 **Likely causes:** a publisher waiting for its input, or a QoS or network problem.
 

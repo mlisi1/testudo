@@ -263,6 +263,7 @@ def _qos() -> QoSProfile:
 # doesn't busy-loop for the real production budget) so tests avoid
 # production ROS I/O and stay fast.
 _FAST_SETTLE = {
+    "first_message_grace_seconds": 0.0,
     "graph_settle_seconds": 0.0,
     "get_state_timeout_seconds": 0.01,
     "spin_once": lambda node, timeout_sec=None: None,
@@ -582,6 +583,19 @@ def test_full_tier_topic_with_no_messages_is_error_not_plugin_default() -> None:
     reports = manager.reports()
     assert reports[0].status.severity == Severity.ERROR
     assert "no messages received" in reports[0].status.message
+
+
+def test_a_healthy_topic_is_not_called_silent_before_its_first_message_had_time_to_arrive() -> None:
+    node = _FakeNode(
+        topics=[("/beep", ["std_msgs/msg/Empty"])],
+        publishers_by_topic={"/beep": [_FakeEndpointInfo(qos_profile=_qos())]},
+    )
+    discovered = [DiscoveredPlugin(name="empty", plugin_class=_EmptyPlugin, source="packaged")]
+    settings = {**_FAST_SETTLE, "first_message_grace_seconds": 5.0}
+    manager = SubscriptionManager(node, _config(), discovered, clock=_fixed_clock(0.0), **settings)
+    manager.start()
+
+    assert manager.reports()[0].status.codes == {}
 
 
 def test_full_tier_thresholds_merge_topic_config_over_plugin_defaults() -> None:

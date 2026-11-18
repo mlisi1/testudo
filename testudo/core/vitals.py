@@ -15,6 +15,9 @@ from dataclasses import dataclass, field
 
 DEFAULT_WINDOW_SIZE = 20
 DEFAULT_STALE_AFTER_SECONDS = 2.0
+#: How long a live session waits for a new subscription's first message before
+#: calling it missing: DDS discovery and a slow publisher's first period take time.
+DEFAULT_FIRST_MESSAGE_GRACE_SECONDS = 5.0
 #: `recent_rate_hz`: too few arrivals to call a rate, and how many periods of silence mean it stopped.
 _MIN_RECENT_ARRIVALS = 4
 _MAX_PERIODS_SINCE_LAST = 3.0
@@ -28,6 +31,7 @@ class TopicVitals:
     window_size: int = DEFAULT_WINDOW_SIZE
     message_count: int = 0
     _arrival_times: deque[float] = field(init=False, repr=False)
+    _waiting_since: float | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._arrival_times = deque(maxlen=self.window_size)
@@ -41,6 +45,16 @@ class TopicVitals:
         """Clear the accumulated count and rolling arrival-time window (the TUI's 'reset stats')."""
         self.message_count = 0
         self._arrival_times.clear()
+        self._waiting_since = None
+
+    def waiting_for_first_message(self, now_seconds: float) -> float:
+        """Seconds since this topic was first found to have no message; 0 the first time it's asked.
+
+        A clock that moved backwards (a restarted simulation) starts the wait again.
+        """
+        if self._waiting_since is None or now_seconds < self._waiting_since:
+            self._waiting_since = now_seconds
+        return now_seconds - self._waiting_since
 
     @property
     def last_arrival_seconds(self) -> float | None:

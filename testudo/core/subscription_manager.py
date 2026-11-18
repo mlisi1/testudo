@@ -55,7 +55,7 @@ from testudo.core.nav2_rates import Nav2RateReader
 from testudo.core.report_builder import build_reports as _build_reports
 from testudo.core.topic_report import TopicReport
 from testudo.core.tier_subscription import FullTierState, run_check
-from testudo.core.vitals import DEFAULT_STALE_AFTER_SECONDS, TopicVitals
+from testudo.core.vitals import DEFAULT_FIRST_MESSAGE_GRACE_SECONDS, DEFAULT_STALE_AFTER_SECONDS, TopicVitals
 from testudo.plugins.base import CheckPlugin, CheckStatus
 from testudo.plugins.registry import DiscoveredPlugin
 
@@ -147,11 +147,13 @@ class SubscriptionManager:
         stale_check_interval_seconds: float = DEFAULT_STALE_CHECK_INTERVAL_SECONDS,
         spin_once: Callable[[Any, float], None] = rclpy.spin_once,
         monitor_hz: bool = True,
+        first_message_grace_seconds: float = DEFAULT_FIRST_MESSAGE_GRACE_SECONDS,
     ) -> None:
         self._node = node
         self._config = config
         self._clock = clock if clock is not None else TestudoClock.from_node(node)
         self._stale_after_seconds = stale_after_seconds
+        self._first_message_grace_seconds = first_message_grace_seconds
         # `--no-hz`: arrival timestamps are still recorded (staleness needs
         # them), but no rate is computed from them or checked against a
         # configured threshold -- see topic_report.py.
