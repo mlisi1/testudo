@@ -50,6 +50,7 @@ from testudo.core.maintenance import (
 )
 from testudo.core.maintenance import discover_and_subscribe as _discover_and_subscribe
 from testudo.core.maintenance import maintain as _maintain
+from testudo.core.nav2_rates import Nav2RateReader
 from testudo.core.report_builder import build_reports as _build_reports
 from testudo.core.topic_report import TopicReport
 from testudo.core.tier_subscription import FullTierState, has_own_subscription
@@ -171,6 +172,7 @@ class SubscriptionManager:
         self._topic_config_by_name = _index_topic_configs_by_name(config)
         self._action_config_by_status_topic = _index_action_configs_by_status_topic(config)
         self._lifecycle_tracker = LifecycleTracker()
+        self._nav2_rates = Nav2RateReader(node)
 
         self._vitals: dict[str, TopicVitals] = {}
         self._full_tier: dict[str, FullTierState] = {}

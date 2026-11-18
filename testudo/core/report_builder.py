@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from testudo.core.code_overrides import apply_code_overrides
 from testudo.core.exclusion import matching_rule
 from testudo.core.global_watches import TF_TOPIC
+from testudo.core.nav2_rates import rate_problem as nav2_rate_problem
 from testudo.core.passive_reports import (
     excluded_report,
     missing_type_report,
@@ -25,7 +26,9 @@ from testudo.core.topic_report import (
     is_event_driven,
     suppress_if_inactive,
     vitals_report,
+    with_code,
 )
+from testudo.core.vitals import TopicVitals
 
 from testudo.plugins.base import SeverityLevels
 
@@ -78,7 +81,7 @@ def build_reports(manager: "SubscriptionManager", *, code_overrides: bool = True
             manager._monitor_hz,
             **_quiet_flags(manager, topic_name),
         )
-        reports.append(_suppress(manager, topic_name, report))
+        reports.append(_suppress(manager, topic_name, _with_nav2_rate(manager, report, vitals, now)))
     for topic_name, state in manager._full_tier.items():
         report = full_tier_report(
             topic_name,
@@ -92,12 +95,25 @@ def build_reports(manager: "SubscriptionManager", *, code_overrides: bool = True
             **_quiet_flags(manager, topic_name),
             rate_levels=_rate_levels(manager, topic_name),
         )
-        reports.append(_suppress(manager, topic_name, report))
+        reports.append(_suppress(manager, topic_name, _with_nav2_rate(manager, report, state.vitals, now)))
         reports.extend(_derived_reports(topic_name, state))
 
     if code_overrides:
         reports = [_override_codes(manager, report) for report in reports]
     return sorted(reports, key=lambda report: report.topic)
+
+
+def _with_nav2_rate(manager: "SubscriptionManager", report: TopicReport, vitals: TopicVitals, now: float) -> TopicReport:
+    """`report` judged against the rate Nav2's parameters ask for; a `rate_hz` in the config wins."""
+    expected = manager._nav2_rates.expected.get(report.topic)
+    if expected is None or not manager._monitor_hz or _rate_levels(manager, report.topic) is not None:
+        return report
+    status = report.status
+    values = {**status.values, "expected_rate": f"{expected.hz:.3g} Hz ({expected.source})"}
+    metrics = {**status.metrics, "expected_rate_hz": expected.hz} if status.metrics else status.metrics
+    status = replace(status, values=values, metrics=metrics)
+    problem = nav2_rate_problem(expected, vitals, now)
+    return replace(report, status=with_code(status, "LIVE-004", *problem) if problem is not None else status)
 
 
 def _derived_reports(topic_name: str, state: "FullTierState") -> list[TopicReport]:

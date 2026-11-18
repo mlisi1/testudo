@@ -15,6 +15,9 @@ from dataclasses import dataclass, field
 
 DEFAULT_WINDOW_SIZE = 20
 DEFAULT_STALE_AFTER_SECONDS = 2.0
+#: `recent_rate_hz`: too few arrivals to call a rate, and how many periods of silence mean it stopped.
+_MIN_RECENT_ARRIVALS = 4
+_MAX_PERIODS_SINCE_LAST = 3.0
 
 
 @dataclass
@@ -58,6 +61,18 @@ class TopicVitals:
         if span <= 0:
             return None
         return (len(self._arrival_times) - 1) / span
+
+    def recent_rate_hz(self, now_seconds: float, window_seconds: float) -> float | None:
+        """Rate over the last `window_seconds`, or None unless the topic is publishing right now.
+
+        Unlike `rate_hz`, a pause doesn't count against it: arrivals before
+        the pause have left the window, and a topic that stopped has no rate.
+        """
+        recent = [arrival for arrival in self._arrival_times if now_seconds - arrival <= window_seconds]
+        if len(recent) < _MIN_RECENT_ARRIVALS or recent[-1] <= recent[0]:
+            return None
+        rate = (len(recent) - 1) / (recent[-1] - recent[0])
+        return rate if (now_seconds - recent[-1]) * rate <= _MAX_PERIODS_SINCE_LAST else None
 
     def mean_period_seconds(self) -> float | None:
         """Mean inter-arrival period over the rolling window, or None with fewer than 2 samples."""

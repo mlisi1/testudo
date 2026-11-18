@@ -110,6 +110,7 @@ def maintain(manager: "SubscriptionManager") -> None:
     sweep_excluded_topics(manager)
     _maybe_clear_stale_stack(manager)
     _maybe_rediscover(manager)
+    manager._nav2_rates.poll(time.monotonic())
 
 
 def _maybe_rediscover(manager: "SubscriptionManager") -> None:

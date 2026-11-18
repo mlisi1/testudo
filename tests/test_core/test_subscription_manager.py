@@ -24,6 +24,7 @@ from testudo.core.config import (
     TFPairConfig,
     TopicConfig,
 )
+from testudo.core.nav2_rates import ExpectedRate
 from testudo.core.report_builder import build_reports
 from testudo.core.subscription_manager import SubscriptionManager
 from testudo.core.topic_report import TopicReport
@@ -97,6 +98,9 @@ class _FakeNode:
 
     def get_topic_names_and_types(self) -> list[tuple[str, list[str]]]:
         return self._topics
+
+    def get_node_names_and_namespaces(self) -> list[tuple[str, str]]:
+        return []
 
     def get_publishers_info_by_topic(self, topic_name: str) -> list[object]:
         return self._publishers_by_topic.get(topic_name, [])
@@ -789,6 +793,44 @@ def test_opting_out_covers_tf_unless_frame_pairs_are_declared() -> None:
     assert set(_tf_only_manager(check_undeclared_topics=False)._vitals) == {"/tf"}
     pairs = [TFPairConfig(parent="map", child="odom")]
     assert set(_tf_only_manager(check_undeclared_topics=False, tf=pairs)._full_tier) == {"/tf"}
+
+
+def _commanded_manager(**topic_config) -> tuple[SubscriptionManager, list[float]]:
+    topics = [("/cmd_vel", ["geometry_msgs/msg/Twist"])]
+    node = _FakeNode(topics, {"/cmd_vel": [_FakeEndpointInfo(qos_profile=_qos())]})
+    clock_seconds = [100.0]
+
+    class _Clock:
+        def now(self):
+            class _T:
+                nanoseconds = int(clock_seconds[0] * 1e9)
+
+            return _T()
+
+    declared = {"geometry_msgs/msg/Twist": [TopicConfig(name="/cmd_vel", msg_type="geometry_msgs/msg/Twist", **topic_config)]}
+    clock = TestudoClock(_Clock(), sim_time_query=lambda: False)
+    manager = SubscriptionManager(node, TestudoConfig(topics=declared), [], clock=clock, **_FAST_SETTLE)
+    manager.start()
+    manager._nav2_rates.expected = {"/cmd_vel": ExpectedRate(20.0, "controller_frequency")}
+    callback = node.subscriptions[0].callback
+    for _ in range(30):
+        clock_seconds[0] += 0.2  # 5 Hz, a quarter of what the controller is configured for
+        callback(b"")
+    return manager, clock_seconds
+
+
+def test_a_topic_slower_than_nav2_asks_for_is_flagged() -> None:
+    manager, _clock = _commanded_manager()
+    status = manager.reports()[0].status
+    assert status.code_severities == {"LIVE-004": Severity.ERROR}
+    assert status.values["expected_rate"] == "20 Hz (controller_frequency)"
+
+
+def test_a_rate_in_the_config_wins_over_nav2() -> None:
+    manager, _clock = _commanded_manager(levels={"rate_hz": LevelsOverride(warn=1.0)})
+    status = manager.reports()[0].status
+    assert status.codes == {}
+    assert "expected_rate" not in status.values
 
 
 def test_decimation_skips_plugin_calls_faster_than_max_check_rate() -> None:

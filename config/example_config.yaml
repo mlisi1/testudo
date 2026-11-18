@@ -152,6 +152,10 @@ topics:
       codes:
         GNSS-001: warn
 
+  # With Nav2 running, the controller's and velocity smoother's commands, and
+  # a costmap set to always_send_full_costmap, are held to the rate their own
+  # parameters ask for, while they publish. A `rate_hz` here replaces that.
+  #
   # Costmap/planner/controller actual-vs-configured rate: no dedicated
   # plugin needed for this -- any declared topic's rate is checked against
   # `rate_hz` if it's set (lower is worse; unchecked by default, and never
