@@ -7,6 +7,7 @@ environment, since the latter wouldn't be re-read after import anyway.
 """
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import pytest
@@ -112,3 +113,22 @@ def test_headless_poll_loop_publishes_each_poll_until_rclpy_shuts_down(monkeypat
 def test_watch_accepts_headless() -> None:
     args = cli._build_parser().parse_args(["watch", "--headless"])
     assert args.command == "watch" and args.headless
+
+
+class _FailingExecutor:
+    """An executor whose next spin hits a context that has just been shut down."""
+
+    def spin_once(self, timeout_sec: float) -> None:
+        raise cli.RCLError("failed to initialize wait set: the given context is not valid")
+
+
+def test_spin_loop_ends_quietly_when_shutdown_lands_mid_spin(monkeypatch) -> None:
+    states = iter([True, False])
+    monkeypatch.setattr(cli.rclpy, "ok", lambda: next(states))
+    cli._spin_until_stopped(_FailingExecutor(), threading.Event(), manager=None)
+
+
+def test_spin_loop_still_raises_an_rcl_error_while_ros_is_running(monkeypatch) -> None:
+    monkeypatch.setattr(cli.rclpy, "ok", lambda: True)
+    with pytest.raises(cli.RCLError):
+        cli._spin_until_stopped(_FailingExecutor(), threading.Event(), manager=None)

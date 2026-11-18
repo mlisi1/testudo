@@ -15,6 +15,7 @@ import time
 
 import rclpy
 import rclpy.node
+from rclpy._rclpy_pybind11 import RCLError
 from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.utilities import remove_ros_args
 
@@ -291,11 +292,16 @@ def _spin_until_stopped(
     while not stop_event.is_set() and rclpy.ok():
         try:
             executor.spin_once(timeout_sec=_SPIN_TIMEOUT_SECONDS)
+            if time.monotonic() >= next_maintain:
+                manager.maintain()
+                next_maintain = time.monotonic() + _SPIN_TIMEOUT_SECONDS
         except ExternalShutdownException:
             return  # Ctrl-C/SIGTERM (headless): rclpy's signal handler shut the context down
-        if time.monotonic() >= next_maintain:
-            manager.maintain()
-            next_maintain = time.monotonic() + _SPIN_TIMEOUT_SECONDS
+        except RCLError:
+            # The same shutdown, landing between the loop's check and rcl's next call.
+            if rclpy.ok():
+                raise
+            return
 
 
 def cmd_replay(args: argparse.Namespace) -> int:
