@@ -194,7 +194,8 @@ def process_full_tier_message(
         # Status (and hysteresis) at the decimated rate either way: a
         # plugin that needs every message still isn't re-evaluated per message.
         state.last_checked_seconds = now
-        state.stamps.observe(msg, now, latched=topic_name in manager._latched)
+        quiet = topic_name in manager._latched or state.plugin.silence_expected(manager._msg_type_by_topic.get(topic_name, ""))
+        state.stamps.observe(msg, now, latched=quiet)
         state.debouncer.update(state.stamps.applied_to(state.plugin.get_status()))
 
 

@@ -32,8 +32,9 @@ from testudo.plugins.base import (
     evaluate_levels,
 )
 from testudo.plugins.builtin.localization_jumps import PoseJumpCheck
-from testudo.plugins.builtin.localization_math import _is_positive_semidefinite, _quaternion_to_euler, _split_zone
-from testudo.plugins.builtin.localization_roles import GLOBAL_ROLE, ROLE_LEVELS, frame_role
+from testudo.plugins.builtin.localization_motion import CommandedMotion, commands_motion
+from testudo.plugins.builtin.localization_math import _is_positive_semidefinite, _quaternion_to_euler, _split_zone, growth_rate
+from testudo.plugins.builtin.localization_roles import CONTINUOUS_ROLE, GLOBAL_ROLE, ROLE_LEVELS, frame_role
 from testudo.plugins.builtin.localization_layout import (
     ORIENTATION_AXES,
     POSITION_AXES,
@@ -62,8 +63,6 @@ _TWIST_ANGULAR_Z_VARIANCE_INDEX = 35
 
 _GROWTH_WINDOW_SIZE = 10
 
-_CMD_MOVING_THRESHOLD_MPS = 0.05
-_CMD_MOVING_THRESHOLD_RADPS = 0.05
 _ODOM_STUCK_THRESHOLD_MPS = 0.02
 _ODOM_STUCK_THRESHOLD_RADPS = 0.02
 
@@ -109,6 +108,8 @@ class LocalizationPlugin(CheckPlugin):
         self._has_twist = False
         self._role_override: str | None = None
         self._jumps = PoseJumpCheck()
+        self._commanded = CommandedMotion()
+        self._last_output: float | None = None
         self._sigma_xy_history: deque[float] = deque(maxlen=_SIGMA_HISTORY_SIZE)
         self._last_sigma_sample: float | None = None
 
@@ -181,8 +182,20 @@ class LocalizationPlugin(CheckPlugin):
             # geometry_msgs Twist, or TwistStamped with the same fields under `.twist`.
             twist = getattr(msg, "twist", msg)
             self._last_cmd_vel = (twist.linear.x, twist.angular.z)
+            self._commanded.on_command(twist.linear.x, twist.angular.z, self._now)
             return
+        self._last_output = self._now
         self._on_pose(msg)
+
+    def silence_expected(self, msg_type: str) -> bool:
+        """A pose estimate may stay quiet at rest (AMCL only updates on motion), not while told to move.
+
+        Odometry streams at a fixed rate in any frame, so its silence is
+        always a fault; so is a pose stream in a continuous frame.
+        """
+        if msg_type != POSE_MSG_TYPE or self._role() == CONTINUOUS_ROLE:
+            return False
+        return not self._commanded.silent_too_long(self._last_output, self._now)
 
     def _on_pose(self, msg: Any) -> None:
         self._message_count += 1
@@ -208,7 +221,7 @@ class LocalizationPlugin(CheckPlugin):
         stamp_seconds = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
         self._jumps.observe(msg, stamp_seconds, self._now, self._role(), self.levels)
         self._growth_history.append((stamp_seconds, self._position_covariance_trace))
-        self._growth_rate = self._compute_growth_rate()
+        self._growth_rate = growth_rate(self._growth_history)
 
         self._has_twist = hasattr(msg, "twist")
         if self._has_twist:
@@ -225,25 +238,13 @@ class LocalizationPlugin(CheckPlugin):
         self._last_linear_x = twist.twist.linear.x
         self._last_angular_z = twist.twist.angular.z
 
-    def _compute_growth_rate(self) -> float:
-        if len(self._growth_history) < 2:
-            return 0.0
-        t0, v0 = self._growth_history[0]
-        t1, v1 = self._growth_history[-1]
-        span = t1 - t0
-        if span <= 0:
-            return 0.0
-        return (v1 - v0) / span
-
     def _cmd_vel_cross_check(self) -> tuple[int, str]:
         if not self._has_twist or self._role() == GLOBAL_ROLE:
             return Severity.OK, "no velocity to cross-check on this topic"
         if self._last_cmd_vel is None:
             return Severity.OK, "no cmd_vel received yet"
         cmd_linear_x, cmd_angular_z = self._last_cmd_vel
-        commanding_motion = (
-            abs(cmd_linear_x) > _CMD_MOVING_THRESHOLD_MPS or abs(cmd_angular_z) > _CMD_MOVING_THRESHOLD_RADPS
-        )
+        commanding_motion = commands_motion(cmd_linear_x, cmd_angular_z)
         odom_moving = (
             abs(self._last_linear_x) > _ODOM_STUCK_THRESHOLD_MPS
             or abs(self._last_angular_z) > _ODOM_STUCK_THRESHOLD_RADPS

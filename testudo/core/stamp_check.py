@@ -65,9 +65,10 @@ class StampCheck:
     def observe(self, msg: Any, now: float, *, latched: bool = False) -> None:
         """Judge `msg`'s stamp against `now`.
 
-        A latched topic is only checked for a stamp from the future: its
-        message may be arbitrarily old by the time it's received, and a
-        static one is often never stamped at all. `now <= 0` is a sim clock
+        A latched topic (or one allowed to go quiet, see
+        `CheckPlugin.silence_expected`) is only checked for a stamp from the
+        future: its message may be arbitrarily old by the time it's
+        received, and a static one is often never stamped at all. `now <= 0` is a sim clock
         that hasn't started, so there's nothing to compare against yet.
         """
         self._lag_s = None

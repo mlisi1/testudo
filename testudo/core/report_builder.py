@@ -131,8 +131,12 @@ def _rate_levels(manager: "SubscriptionManager", topic_name: str) -> SeverityLev
 def _quiet_flags(manager: "SubscriptionManager", topic_name: str) -> dict[str, bool]:
     """`latched`/`event_driven` kwargs for a topic's liveness verdict (see `liveness_status`)."""
     topic_config = manager._topic_config_by_name.get(topic_name)
-    event_driven = is_event_driven(topic_name, manager._msg_type_by_topic.get(topic_name)) or (
-        topic_config is not None and topic_config.event_driven
+    msg_type = manager._msg_type_by_topic.get(topic_name)
+    state = manager._full_tier.get(topic_name)
+    event_driven = (
+        is_event_driven(topic_name, msg_type)
+        or (topic_config is not None and topic_config.event_driven)
+        or (state is not None and state.plugin.silence_expected(msg_type or ""))
     )
     return {"latched": topic_name in manager._latched, "event_driven": event_driven}
 

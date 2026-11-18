@@ -302,8 +302,12 @@ class SubscriptionManager:
     def tick(self) -> None:
         """Advance every full-tier plugin's time-based state. Call on a fixed timer."""
         now = self._clock.now_seconds()
-        for state in self._full_tier.values():
+        for topic_name, state in self._full_tier.items():
             state.plugin.on_tick(now)
+            # Messages drive the status everywhere else; a topic allowed to
+            # go quiet would otherwise sit on its last verdict indefinitely.
+            if state.vitals.message_count and state.plugin.silence_expected(self._msg_type_by_topic.get(topic_name, "")):
+                state.debouncer.update(state.stamps.applied_to(state.plugin.get_status()))
 
     def maintain(self) -> None:
         """Periodic housekeeping for a live session: rediscover new topics, and clear a dead stack.

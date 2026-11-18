@@ -234,6 +234,75 @@ def test_a_pose_without_velocity_is_credited_a_plausible_speed() -> None:
     assert "LOC-007" not in plugin.get_status().codes
 
 
+POSE_TYPE = "geometry_msgs/msg/PoseWithCovarianceStamped"
+
+
+def test_a_pose_estimate_may_be_silent_before_its_first_message_and_at_rest() -> None:
+    plugin = LocalizationPlugin()
+    assert plugin.silence_expected(POSE_TYPE)
+    plugin.on_tick(100.0)
+    plugin.on_message("/amcl_pose", _pose())
+    plugin.on_tick(500.0)
+    assert plugin.silence_expected(POSE_TYPE)
+
+
+def test_odometry_is_never_expected_to_go_silent() -> None:
+    plugin = LocalizationPlugin()
+    plugin.on_message("/pose", _framed_odometry("map"))
+    assert not plugin.silence_expected("nav_msgs/msg/Odometry")
+
+
+def test_a_pose_in_a_continuous_frame_is_not_expected_to_go_silent() -> None:
+    plugin = LocalizationPlugin()
+    plugin.on_message("/pose", _pose(frame_id="odom"))
+    assert not plugin.silence_expected(POSE_TYPE)
+
+
+def _commanded_pose_plugin(start: float = 100.0) -> LocalizationPlugin:
+    plugin = LocalizationPlugin(related_topics={"cmd_vel": "/cmd_vel"})
+    plugin.on_tick(start)
+    plugin.on_message("/amcl_pose", _pose())
+    return plugin
+
+
+def _command(plugin: LocalizationPlugin, now: float, linear_x: float = 0.5) -> None:
+    plugin.on_tick(now)
+    plugin.on_message("/cmd_vel", _twist(linear_x=linear_x))
+
+
+def test_a_pose_silent_while_the_robot_is_told_to_move_is_a_fault() -> None:
+    plugin = _commanded_pose_plugin()
+    for second in range(101, 110):
+        _command(plugin, float(second))
+    assert plugin.silence_expected(POSE_TYPE)  # still within the grace period
+    _command(plugin, 111.0)
+    assert not plugin.silence_expected(POSE_TYPE)
+
+
+def test_a_new_pose_while_moving_restarts_the_grace_period() -> None:
+    plugin = _commanded_pose_plugin()
+    for second in range(101, 112):
+        _command(plugin, float(second))
+    plugin.on_message("/amcl_pose", _pose())
+    assert plugin.silence_expected(POSE_TYPE)
+
+
+def test_stopping_makes_silence_normal_again() -> None:
+    plugin = _commanded_pose_plugin()
+    for second in range(101, 112):
+        _command(plugin, float(second))
+    _command(plugin, 112.0, linear_x=0.0)
+    assert plugin.silence_expected(POSE_TYPE)
+
+
+def test_a_cmd_vel_that_stopped_arriving_says_nothing() -> None:
+    plugin = _commanded_pose_plugin()
+    for second in range(101, 112):
+        _command(plugin, float(second))
+    plugin.on_tick(120.0)
+    assert plugin.silence_expected(POSE_TYPE)
+
+
 def _twist(linear_x: float = 0.0, angular_z: float = 0.0) -> Twist:
     msg = Twist()
     msg.linear.x = linear_x

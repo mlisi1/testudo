@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -41,3 +42,11 @@ def _split_zone(zone: ThresholdZone | None, parts: int) -> ThresholdZone | None:
     return ThresholdZone(
         *(boundary / parts if boundary is not None else None for boundary in (zone.green, zone.orange, zone.red))
     )
+
+
+def growth_rate(history: Sequence[tuple[float, float]]) -> float:
+    """Change per second between the oldest and newest (time, value) sample; 0 without a time span."""
+    if len(history) < 2:
+        return 0.0
+    (t0, v0), (t1, v1) = history[0], history[-1]
+    return (v1 - v0) / (t1 - t0) if t1 > t0 else 0.0

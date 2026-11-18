@@ -349,6 +349,18 @@ class CheckPlugin(abc.ABC):
         """
         return False
 
+    def silence_expected(self, msg_type: str) -> bool:
+        """True while this topic (of `msg_type`) is legitimately allowed to stop publishing.
+
+        For a publisher whose silence depends on what's happening right now
+        (a pose estimate only published while the robot moves), which a
+        fixed `event_driven: true` can't express. Silence then reads as idle
+        instead of stale, the status keeps being evaluated without new
+        messages, and stamps are only checked for being in the future (an
+        old stamp on a sparse topic says nothing). False by default.
+        """
+        return False
+
     @abc.abstractmethod
     def on_message(self, topic: str, msg: Any) -> None:
         """Handle one (possibly decimated) message received on `topic`.

@@ -1133,6 +1133,78 @@ def test_excluding_a_declared_topic_of_an_uninstalled_type_clears_its_error() ->
     assert reports["/declared"].status.severity == Severity.OK
 
 
+class _SettableTime:
+    """A clock a test moves by hand."""
+
+    def __init__(self, seconds: float) -> None:
+        self.seconds = seconds
+
+    def now(self) -> Any:
+        return type("_Now", (), {"nanoseconds": int(self.seconds * 1e9)})()
+
+
+def _sparse_pose_manager() -> tuple[_FakeNode, SubscriptionManager, _SettableTime]:
+    from testudo.plugins.builtin.localization import LocalizationPlugin
+
+    pose_type = "geometry_msgs/msg/PoseWithCovarianceStamped"
+    node = _FakeNode(
+        topics=[("/amcl_pose", [pose_type])], publishers_by_topic={"/amcl_pose": [_FakeEndpointInfo(qos_profile=_qos())]}
+    )
+    time_source = _SettableTime(1000.0)
+    clock = TestudoClock(time_source, sim_time_query=lambda: False)
+    discovered = [DiscoveredPlugin(name="localization", plugin_class=LocalizationPlugin, source="packaged")]
+    manager = SubscriptionManager(node, TestudoConfig(), discovered, clock=clock, **_FAST_SETTLE)
+    manager.start()
+    return node, manager, time_source
+
+
+def _stamped_pose(seconds: float, x: float = 0.0) -> Any:
+    from geometry_msgs.msg import PoseWithCovarianceStamped
+
+    msg = PoseWithCovarianceStamped()
+    msg.header.frame_id = "map"
+    msg.header.stamp.sec = int(seconds)
+    msg.pose.pose.position.x = x
+    msg.pose.pose.orientation.w = 1.0
+    return msg
+
+
+def test_a_silent_pose_estimate_reads_idle_not_stale_or_missing() -> None:
+    node, manager, time_source = _sparse_pose_manager()
+    assert manager.reports()[0].status.severity == Severity.OK  # no message yet: AMCL waits for motion
+
+    node.subscriptions[0].callback(_stamped_pose(1000.0))
+    time_source.seconds = 1600.0
+    manager.tick()
+
+    report = manager.reports()[0]
+    assert report.status.severity == Severity.OK
+    assert "idle_for_s" in report.status.values
+
+
+def test_a_single_sparse_jump_is_raised_and_cleared_by_ticks_alone() -> None:
+    node, manager, time_source = _sparse_pose_manager()
+    node.subscriptions[0].callback(_stamped_pose(1000.0))
+    time_source.seconds = 1002.0
+    node.subscriptions[0].callback(_stamped_pose(1002.0, x=30.0))  # no further message follows
+
+    for offset in (0.5, 1.0, 1.5):
+        time_source.seconds = 1002.0 + offset
+        manager.tick()
+    assert "LOC-007" in manager.reports()[0].status.codes
+
+    for offset in (11.0, 11.5, 12.0):
+        time_source.seconds = 1002.0 + offset
+        manager.tick()
+    assert "LOC-007" not in manager.reports()[0].status.codes
+
+
+def test_an_old_stamp_on_a_sparse_pose_is_not_flagged() -> None:
+    node, manager, _time_source = _sparse_pose_manager()
+    node.subscriptions[0].callback(_stamped_pose(0.0))  # an /initialpose sent by hand: stamp left at zero
+    assert not any(code.startswith("STAMP-") for code in manager.reports()[0].status.codes)
+
+
 def test_tf_watch_routes_tf_and_tf_static_to_one_instance() -> None:
     node = _FakeNode(
         topics=[
