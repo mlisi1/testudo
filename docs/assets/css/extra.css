@@ -8,8 +8,8 @@
   --testudo-maroon-dark: #74101f;
   --testudo-gold: #ffb500;
   --testudo-slate: #4b5563;
-  /* Marks areas of a screenshot: unlike the brand and severity colors, it appears nowhere in the dashboard. */
-  --testudo-callout: #22d3ee;
+  /* Marks areas of a screenshot: a warm white that sits with the maroon and gold. */
+  --testudo-callout: #f5ead6;
   --md-primary-fg-color: var(--testudo-maroon);
   --md-primary-fg-color--light: #b23347;
   --md-primary-fg-color--dark: var(--testudo-maroon-dark);
@@ -35,6 +35,54 @@
   --md-footer-bg-color: #101216;
   --md-footer-bg-color--dark: #0b0d10;
   --testudo-rule: #9ca3af33;
+}
+
+/* Rounder buttons, everywhere. */
+.md-typeset .md-button {
+  border-radius: 0.8rem;
+}
+
+/* The site's name in the header is the logo's lettering. */
+.md-header__title .md-header__topic:first-child .md-ellipsis {
+  background: url("../logo_text.svg") left center / contain no-repeat;
+  color: transparent;
+  display: block;
+  height: 1.3rem;
+  margin-top: 0.55rem;
+  width: 7.6rem;
+}
+
+/* Going back up the Dashboard page. */
+.tx-top {
+  background: var(--testudo-maroon);
+  border: 1px solid var(--testudo-gold);
+  border-radius: 1.2rem;
+  bottom: 1.2rem;
+  box-shadow: 0 0.3rem 1rem #00000040;
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 600;
+  opacity: 0;
+  padding: 0.35rem 0.85rem;
+  pointer-events: none;
+  position: fixed;
+  right: 1.2rem;
+  transform: translateY(0.5rem);
+  transition: opacity 250ms, transform 250ms;
+  z-index: 3;
+}
+.tx-top--shown {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+.tx-top:hover {
+  background: var(--testudo-maroon-dark);
+}
+/* This page has its own button: Material's only shows while scrolling up. */
+body:has(.tx-top) .md-top {
+  display: none;
 }
 
 /* The header stays maroon in both schemes, with a gold edge. */
@@ -324,14 +372,16 @@
 .tx-zone {
   border: 2px solid var(--testudo-callout);
   border-radius: 0.2rem;
+  box-shadow: 0 0 0 1px #14161ccc;
   box-sizing: border-box;
   position: absolute;
 }
 .tx-zone b,
 .md-typeset .tx-legend li::before {
-  background: var(--testudo-callout);
+  background: var(--testudo-maroon);
   border-radius: 50%;
-  color: #1f2937;
+  box-shadow: 0 0 0 1px var(--testudo-callout);
+  color: #ffffff;
   display: inline-block;
   font-size: 0.62rem;
   font-weight: 700;
@@ -374,7 +424,7 @@
   top: 0.05rem;
 }
 
-/* The Dashboard page: parts of the screenshot, each marked area a link. */
+/* The Dashboard page: parts of the screenshot with their pieces marked. Only the overview's panes are links. */
 .md-typeset figure.tx-map {
   display: block;
   margin: 1.5rem auto;
@@ -401,21 +451,25 @@
 .md-typeset .tx-spot {
   border: 1.5px solid var(--testudo-callout);
   border-radius: 0.15rem;
+  box-shadow: 0 0 0 1px #14161ccc;
   box-sizing: border-box;
   position: absolute;
-  transition: background-color 120ms;
 }
-.md-typeset a.tx-spot:hover,
-.md-typeset a.tx-spot:focus-visible {
-  background-color: #22d3ee40;
+.md-typeset a.tx-spot--pane {
+  transition: background-color 160ms;
+}
+.md-typeset a.tx-spot--pane:hover,
+.md-typeset a.tx-spot--pane:focus-visible {
+  background-color: #f5ead62e;
   z-index: 2;
 }
 .tx-spot b,
 .md-typeset .tx-num,
 .md-typeset .tx-pane-link b {
-  background: var(--testudo-callout);
+  background: var(--testudo-maroon);
   border-radius: 50%;
-  color: #1f2937;
+  box-shadow: 0 0 0 1px var(--testudo-callout);
+  color: #ffffff;
   display: inline-block;
   font-size: 0.55rem;
   font-weight: 700;
@@ -429,6 +483,11 @@
   z-index: 1;
 }
 .tx-spot__badge--top { left: 0; top: -0.6rem; }
+/* On a one-line strip the numbers sit above the text instead of over it. */
+.md-typeset figure.tx-map--strip {
+  padding-top: 1.3rem;
+}
+.tx-map--strip .tx-spot__badge--top { left: 50%; top: -1.15rem; transform: translateX(-50%); }
 .tx-spot__badge--bottom { bottom: -0.6rem; left: 0; }
 .tx-spot__badge--left { left: -1rem; top: 50%; transform: translateY(-50%); }
 .tx-spot__badge--right { right: -1rem; top: 50%; transform: translateY(-50%); }

@@ -69,8 +69,7 @@ def test_every_mark_on_the_dashboard_page_stays_on_screen_and_links_to_a_real_pa
                 for spot in item.spots:
                     assert crop.col <= spot.col and spot.col + spot.width <= crop.col + crop.width, item.name
                     assert crop.row <= spot.row and spot.row + spot.height <= crop.row + crop.height, item.name
-                    target = spot.target or item.target
-                    assert target is None or (DOCS / target.partition("#")[0]).is_file(), target
+                assert item.target is None or (DOCS / item.target.partition("#")[0]).is_file(), item.target
 
 
 def test_every_code_in_the_explore_pages_sample_data_is_documented() -> None:
@@ -87,3 +86,12 @@ def test_every_page_the_explore_page_links_to_exists() -> None:
 
 def test_example_config_is_valid_yaml() -> None:
     assert yaml.safe_load((ROOT / "config" / "example_config.yaml").read_text(encoding="utf-8"))
+
+
+def test_dashboard_marks_stay_on_the_page() -> None:
+    """Only the overview links, and only to sections of the same page: the tables hold the links elsewhere."""
+    for path, content in GEN.dashboard_map.generated_files(DOCS / "includes").items():
+        figures = content.split("</figure>")[0]
+        hrefs = re.findall(r'<a [^>]*href="([^"]*)"', figures)
+        assert all(href.startswith("#") for href in hrefs), path
+        assert path.name == "overview.md" or not hrefs, path

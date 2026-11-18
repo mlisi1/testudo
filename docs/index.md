@@ -16,6 +16,7 @@ hide:
 <p class="tx-hero__text">Testudo is a diagnostics dashboard for ROS 2 navigation stacks. It watches every topic from the outside, judges what it sees, and points you at the problem, live in your terminal or from a recorded bag.</p>
 
 [Get started](getting-started/index.md){ .md-button .md-button--primary }
+[Try the dashboard](tui/explore.md){ .md-button }
 [See what it checks](plugins/index.md){ .md-button }
 
 <ul class="tx-pills">

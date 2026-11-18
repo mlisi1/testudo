@@ -21,13 +21,12 @@ ROWS = 35
 
 @dataclass(frozen=True)
 class Spot:
-    """A rectangle of terminal cells. `target` overrides its item's link; `badge` is where the number sits."""
+    """A rectangle of terminal cells. `badge` is where the number sits, None for no number."""
 
     col: int
     row: int
     width: int
     height: int = 1
-    target: str | None = None
     badge: str | None = "top"
 
 
@@ -74,7 +73,7 @@ def _hint_items() -> tuple[Item, ...]:
     return tuple(items)
 
 
-#: The Plugin Panel's rows, top to bottom, as `dashboard.png` shows them: check them after re-recording it.
+#: The page behind each Plugin Panel row.
 _CATEGORIES = (
     ("plugins/image-stream.md", "Image stream"),
     ("plugins/gnss.md", "GNSS"),
@@ -89,18 +88,16 @@ _CATEGORIES = (
     ("plugins/velocity-command.md", "Velocity command"),
 )
 
-STATUS_LEFT = Crop(0, 0, 64, 1, (
+STATUS_BAR = Crop(0, 0, COLUMNS, 1, (
     Item("Name", "The tool you are looking at.", "index.md", "Home", (Spot(1, 0, 7),)),
     Item("ROS distro", "The ROS 2 distribution this session runs on.", "getting-started/index.md#1-install", "Install",
          (Spot(10, 0, 9),)),
     Item("Domain", "The `ROS_DOMAIN_ID`. Testudo only sees topics on this domain.",
          "getting-started/index.md#2-watch-your-stack", "Watch your stack", (Spot(22, 0, 10),)),
-    Item("Middleware", "The RMW implementation in use. Hidden when the terminal is under 120 columns.", None,
-         spots=(Spot(35, 0, 18),)),
-    Item("Uptime", "How long this dashboard has been open.", None, spots=(Spot(56, 0, 6),)),
-))
-
-STATUS_RIGHT = Crop(78, 0, 44, 1, (
+    Item("Middleware", "The RMW implementation in use. Hidden when the terminal is under 120 columns.",
+         "getting-started/index.md#2-watch-your-stack", "Watch your stack", (Spot(35, 0, 18),)),
+    Item("Uptime", "How long this dashboard has been open.",
+         "getting-started/index.md#2-watch-your-stack", "Watch your stack", (Spot(56, 0, 6),)),
     Item("Verdict", "The state of the whole stack, and the first thing to read.",
          "concepts/severity.md#the-overall-verdict", "The overall verdict", (Spot(81, 0, 9),)),
     Item("Problem counts", "How many topics are stale (`■`), in error (`✗`) or in warning (`▲`). Nodes are not counted.",
@@ -111,11 +108,10 @@ STATUS_RIGHT = Crop(78, 0, 44, 1, (
 
 PLUGIN_PANEL = Crop(0, 1, 33, 20, (
     Item("Category",
-         "Topics grouped by what they are. Click a row above to open its page: "
+         "Topics grouped by what they are. Each has its own page: "
          + ", ".join(f"[{name}](../{target})" for target, name in _CATEGORIES) + ".",
          "plugins/index.md", "Plugins",
-         tuple(Spot(1, 2 + index, 18, target=target, badge="left" if index == 0 else None)
-               for index, (target, _name) in enumerate(_CATEGORIES))),
+         tuple(Spot(1, 2 + index, 18, badge="left" if index == 0 else None) for index in range(len(_CATEGORIES)))),
     Item("Severity breakdown", "How many of the category's topics are at each severity, worst first.",
          "concepts/severity.md", "Severity", (Spot(20, 2, 12, 11, badge="right"),)),
     Item("Sort marker", "`▼` sorts worst first. Press ++s++ to sort by name, and the marker moves to the name column as `▲`.",
@@ -169,7 +165,7 @@ HINT_BAR = Crop(0, 34, 100, 1, _hint_items())
 
 #: The file each group of figures is written to, under `docs/includes/dashboard/`.
 SECTIONS: dict[str, tuple[Crop, ...]] = {
-    "status-bar": (STATUS_LEFT, STATUS_RIGHT),
+    "status-bar": (STATUS_BAR,),
     "plugin-panel": (PLUGIN_PANEL,),
     "topic-panel": (TOPIC_PANEL,),
     "detail-panel": (DETAIL_PANEL,),
@@ -184,14 +180,6 @@ OVERVIEW = (
     ("D", "Detail Panel", "detail-panel", (0, 23, 122, 11), "inside"),
     ("E", "Hint bar", "hint-bar", (0, 34, 122, 1), "bottom"),
 )
-
-
-def _href(target: str) -> str:
-    """The built page's URL for docs path `target`, from the Dashboard page."""
-    path, _, anchor = target.partition("#")
-    page = path.removesuffix(".md").removesuffix("index").rstrip("/")
-    url = f"../{page}/" if page else "../"
-    return f"{url}#{anchor}" if anchor else url
 
 
 def _percent(value: float) -> str:
@@ -218,7 +206,7 @@ def _frame(crop: Crop, spots: list[str], alt: str) -> str:
         f'left:{_percent(-x / width * 100)};top:{_percent(-y / height * 100)}">'
     )
     return "\n".join([
-        f'<figure class="tx-map" style="max-width:{round(width * 1.15)}px">',
+        f'<figure class="tx-map{" tx-map--strip" if crop.height == 1 else ""}" style="max-width:{round(width * 1.15)}px">',
         f'<div class="tx-map__frame" style="aspect-ratio:{width}/{height}">',
         f'<div class="tx-map__view">{image}</div>',
         *spots,
@@ -227,14 +215,11 @@ def _frame(crop: Crop, spots: list[str], alt: str) -> str:
     ])
 
 
-def _spot(spot: Spot, crop: Crop, href: str | None, title: str, number: int | str) -> str:
-    """A marked area: a link, or a plain mark when no page covers it."""
+def _spot(spot: Spot, crop: Crop, title: str, number: int) -> str:
+    """A marked area. It only points at something: the table under the figure holds the links."""
     badge = f'<b class="tx-spot__badge--{spot.badge}">{number}</b>' if spot.badge else ""
     box = _box(spot.col, spot.row, spot.width, spot.height, crop)
-    attributes = f'class="tx-spot" style="{box}" title="{escape(title, quote=True)}"'
-    if href is None:
-        return f"<span {attributes}>{badge}</span>"
-    return f'<a {attributes} href="{href}">{badge}</a>'
+    return f'<span class="tx-spot" style="{box}" title="{escape(title, quote=True)}">{badge}</span>'
 
 
 def _plain(markdown: str) -> str:
@@ -251,8 +236,7 @@ def section_markup(crops: tuple[Crop, ...], first_number: int) -> str:
         for item in crop.items:
             title = f"{_plain(item.name)}: {_plain(item.text.split(': [')[0])}"
             for spot in item.spots:
-                target = spot.target or item.target
-                spots.append(_spot(spot, crop, _href(target) if target else None, title, number))
+                spots.append(_spot(spot, crop, title, number))
             link = f"[{item.link}](../{item.target})" if item.target else "–"
             rows.append(f'| <span class="tx-num">{number}</span> | **{item.name}** | {item.text} | {link} |')
             number += 1
@@ -262,7 +246,7 @@ def section_markup(crops: tuple[Crop, ...], first_number: int) -> str:
 
 
 def overview_markup() -> str:
-    """The whole dashboard, each pane linking to its section of the page."""
+    """The whole dashboard, each pane leading to its section further down this page."""
     whole = Crop(0, 0, COLUMNS, ROWS)
     spots = [
         f'<a class="tx-spot tx-spot--pane" style="{_box(*cells, whole)}" href="#{section}" title="{name}">'

@@ -36,6 +36,9 @@
       this.term = host.querySelector(".tx-term");
       this.float = host.querySelector(".tx-float");
       this.inspect = host.querySelector(".tx-inspect");
+      // The frame marks keyboard focus only: a click already shows where you are.
+      this.term.addEventListener("focus", () => this.term.classList.toggle("tx-term--tabbed", this.term.matches(":focus-visible")));
+      this.term.addEventListener("blur", () => this.term.classList.remove("tx-term--tabbed"));
       this.term.addEventListener("keydown", (event) => this.onKey(event));
       this.term.addEventListener("click", (event) => this.onClick(event));
       this.term.addEventListener("mousemove", (event) => this.onHover(event));
@@ -303,8 +306,8 @@
       const cleared = window.TESTUDO_EXPLORER.cleared.map((c) =>
         `<div class="tx-row tx-faded"> <span data-tip="code:${c.code}">${ICONS[c.sev]} ${c.code} ${c.ago}</span> <span data-tip="cleared">${esc(c.topic)}</span></div>`).join("");
       return `<div class="tx-left"><div class="tx-head">${cell(" " + marker[0], 20, "")}<span data-tip="sort">${marker[1]}</span></div>${rows}` +
-        (problems.length ? `<div class="tx-row">&nbsp;</div><div class="tx-row" data-tip="attention"><b> Needs attention</b></div>${attention}${more}` : "") +
-        `<div class="tx-row">&nbsp;</div><div class="tx-row tx-faded" data-tip="cleared"><b> Cleared</b></div>${cleared}</div>`;
+        (problems.length ? `<div class="tx-row" data-tip="attention"><b> Needs attention</b></div>${attention}${more}` : "") +
+        `<div class="tx-row tx-faded" data-tip="cleared"><b> Cleared</b></div>${cleared}</div>`;
     }
 
     statusCell(topic) {
@@ -317,11 +320,11 @@
     rightPane(cat, topics) {
       if (!cat) return '<div class="tx-right"><div class="tx-head"> Topic</div><div class="tx-row"> <i>No topic matches the search</i></div></div>';
       const rateName = cat.rate || "Hz";
-      const head = `<div class="tx-head">${cell(" Topic", 38, "", "topic")}${cell("Status", 11, "", "status")}${cell(rateName, 8, "", cat.rate === "State" ? "state" : cat.rate === "Mem" ? "mem" : "hz")}${cell(cat.column || "", 10, "", cat.column ? "column" : null)}</div>`;
+      const head = `<div class="tx-head">${cell(" Topic", 54, "", "topic")}${cell("Status", 12, "", "status")}${cell(rateName, 9, "", cat.rate === "State" ? "state" : cat.rate === "Mem" ? "mem" : "hz")}${cell(cat.column || "", 11, "", cat.column ? "column" : null)}</div>`;
       const rows = topics.map((topic, i) => {
         const on = i === this.topicIndex ? (this.pane === "topics" ? " tx-on-topic" : " tx-on-topic tx-dim-sel") : "";
         const status = this.statusCell(topic);
-        return `<div class="tx-row${on}" data-topic="${i}">${cell(" " + topic.name, 38, "", "topic")}${cell(status.text, 11, status.cls, status.tip)}${cell(topic.rate ?? "", 8, "", "hz")}${cell(topic.extra ?? "", 10, "", cat.column ? "column" : null)}</div>`;
+        return `<div class="tx-row${on}" data-topic="${i}">${cell(" " + topic.name, 54, "", "topic")}${cell(status.text, 12, status.cls, status.tip)}${cell(topic.rate ?? "", 9, "", "hz")}${cell(topic.extra ?? "", 11, "", cat.column ? "column" : null)}</div>`;
       }).join("");
       return `<div class="tx-right">${head}${rows}</div>`;
     }
@@ -332,8 +335,9 @@
       const badge = topic.excluded ? "" : `<b class="tx-s${sev}" data-tip="dsev">${ICONS[sev]} ${LABELS[sev]}</b>  `;
       const head = `<div class="tx-row">${badge}<b data-tip="dtopic">${esc(topic.name)}</b>  <i data-tip="dtype">${esc(topic.type)}</i> <i>·</i> <i data-tip="dtier">${esc(topic.tier)} tier</i></div>`;
       const page = cat.page || "concepts/tiers";
-      const values = (topic.values || []).map(([key, value, cls]) =>
+      const rows = (topic.values || []).map(([key, value, cls]) =>
         `<div class="tx-row" data-tip="value:${esc(key)}|${page}"><i>${esc(key.padEnd(15))}</i> <span class="${cls || ""}">${esc(value)}</span></div>`).join("");
+      const values = `<div class="tx-values">${rows}</div>`;
       const codes = this.codes(topic).map((c) =>
         `<div class="tx-row" data-tip="code:${c.code}"><b>[${c.code}]</b> <span class="tx-s${c.sev}">${esc(c.msg)}</span></div>`).join("");
       const past = (topic.past || []).map((line) => `<div class="tx-row tx-faded" data-tip="cleared">${esc(line)}</div>`).join("");
@@ -370,6 +374,8 @@
   function mount() {
     const host = document.querySelector("#tx-explorer");
     if (host && !host.dataset.mounted) { host.dataset.mounted = "1"; new Explorer(host); }
+    // A frame later, so the side menus glide outwards instead of starting there.
+    requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.toggle("tx-explore-page", Boolean(host))));
   }
   if (window.document$) window.document$.subscribe(mount);
   else document.addEventListener("DOMContentLoaded", mount);

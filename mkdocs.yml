@@ -51,6 +51,7 @@ extra_css:
 
 extra_javascript:
   - assets/js/loop-video.js
+  - assets/js/page-glide.js
   - assets/js/explorer-data.js
   - assets/js/explorer.js
 

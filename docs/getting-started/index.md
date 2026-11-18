@@ -59,6 +59,8 @@ With your stack running, in a terminal on the same `ROS_DOMAIN_ID`:
 
 Every topic a plugin covers gets its content checks straight away. Cameras and point clouds are the exception: [declare them](config-init.md) to check their content.
 
+The Status Bar at the top says which session you are looking at: the ROS distro, the domain, the middleware in use, and how long this dashboard has been open.
+
 ## 3. Read the diagnosis
 
 There is a lot on screen, but you only need to read it in this order: the verdict (1), then what needs attention (3), then the details of that topic (5, 6).

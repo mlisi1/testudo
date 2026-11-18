@@ -8,7 +8,6 @@ window.TESTUDO_EXPLORER = {
   },
 
   cleared: [
-    { code: "GNSS-003", sev: 2, ago: "14s", topic: "/gps/fix" },
     { code: "LOC-002", sev: 1, ago: "2m", topic: "/odom" },
   ],
 

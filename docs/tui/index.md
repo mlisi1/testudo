@@ -4,7 +4,7 @@ Everything on screen, piece by piece. Four panes stay visible at once, and movin
 
 --8<-- "dashboard/overview.md"
 
-Click a marked area below to open the page that explains it. The screenshot shows a small stack that misbehaves on purpose, with a camera topic highlighted.
+Click a pane to go to its section. The screenshot shows a small stack that misbehaves on purpose, with a camera topic highlighted.
 
 ## Status Bar
 
@@ -92,3 +92,13 @@ The keys you need most. [Keys](keys.md) lists all of them.
 --8<-- "dashboard/hint-bar.md"
 
 In a replay, `s sort`, `p play` and `[ ] scrub` take the place of `a actions`, `p pause` and `o options`. See [Replay scrubbing](replay.md).
+
+<div class="tx-cta" markdown>
+
+**Want to see more? Try it.**
+
+Move around a working dashboard right here in your browser, with nothing to install.
+
+[Explore the dashboard](explore.md){ .md-button .md-button--primary }
+
+</div>
