@@ -14,7 +14,6 @@
   <depend>sensor_msgs</depend>
   <depend>sensor_msgs_py</depend>
   <depend>geometry_msgs</depend>
-  <depend>nav2_msgs</depend>
   <depend>action_msgs</depend>
   <depend>tf2_msgs</depend>
   <depend>ament_index_python</depend>
@@ -44,6 +43,10 @@
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>
   <test_depend>python3-pytest</test_depend>
+  <!-- Optional at runtime: nothing imports it, message types resolve when a
+       topic needs them. Without it the bt_log plugin just stays inactive.
+       Its tests are skipped when it's missing. -->
+  <test_depend>nav2_msgs</test_depend>
 
   <export>
     <build_type>ament_python</build_type>

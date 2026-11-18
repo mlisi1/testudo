@@ -1,6 +1,7 @@
 """Unit tests for ActionsPlugin -- synthetic action_msgs/GoalStatusArray, no live ROS graph."""
 from __future__ import annotations
 
+import pytest
 from action_msgs.msg import GoalStatus, GoalStatusArray
 from unique_identifier_msgs.msg import UUID
 
@@ -171,6 +172,7 @@ def test_no_feedback_yet_reports_remaining_distance_and_time_as_not_available() 
 
 
 def test_feedback_on_related_topic_populates_remaining_distance_and_time() -> None:
+    pytest.importorskip("nav2_msgs")
     from builtin_interfaces.msg import Duration
     from nav2_msgs.action._navigate_to_pose import NavigateToPose_Feedback, NavigateToPose_FeedbackMessage
 
@@ -190,6 +192,7 @@ def test_feedback_on_related_topic_populates_remaining_distance_and_time() -> No
 
 
 def test_feedback_without_expected_fields_is_ignored_without_error() -> None:
+    pytest.importorskip("nav2_msgs")
     from nav2_msgs.action._spin import Spin_Feedback, Spin_FeedbackMessage
 
     plugin = ActionsPlugin(related_topics={"feedback": "/spin/_action/feedback"})

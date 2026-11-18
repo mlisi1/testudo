@@ -1,12 +1,20 @@
 """Unit tests for BehaviorTreeLogPlugin -- synthetic nav2_msgs/BehaviorTreeLog, no live ROS graph."""
 from __future__ import annotations
 
-from nav2_msgs.msg import BehaviorTreeLog, BehaviorTreeStatusChange
-
+import pytest
 from rich.text import Text
 
 from testudo.plugins.base import Severity, SeverityLevels
 from testudo.plugins.builtin.bt_log import BehaviorTreeLogPlugin
+
+# Optional at runtime, so its tests skip without it. A marker rather than a
+# module-level importorskip, which drops every test in this package silently.
+try:
+    from nav2_msgs.msg import BehaviorTreeLog, BehaviorTreeStatusChange
+except ImportError:
+    BehaviorTreeLog = BehaviorTreeStatusChange = None
+
+pytestmark = pytest.mark.skipif(BehaviorTreeLog is None, reason="nav2_msgs is not installed")
 
 
 def _plain(markup: str) -> str:
