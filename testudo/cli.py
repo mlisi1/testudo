@@ -136,7 +136,19 @@ def _load_config_or_exit(path: str | None) -> tuple[TestudoConfig, str]:
         sys.exit(2)
 
 
+def _dashboard_can_start() -> bool:
+    """False, with the reason logged, when the installed Textual is too old for the dashboard."""
+    from testudo.tui.requirement import textual_problem
+
+    problem = textual_problem()
+    if problem is not None:
+        _logger.error("%s", problem)
+    return problem is None
+
+
 def cmd_watch(args: argparse.Namespace) -> int:
+    if not args.headless and not _dashboard_can_start():
+        return 2
     config, config_path = _load_config_or_exit(args.config)
     plugins = discover_all_plugins(config.plugins_dir)
     warn_unknown_metrics(config, plugins, config_path)
@@ -335,6 +347,8 @@ def _spin_until_stopped(
 
 
 def cmd_replay(args: argparse.Namespace) -> int:
+    if args.watch and not _dashboard_can_start():
+        return 2
     config, config_path = _load_config_or_exit(args.config)
     plugins = discover_all_plugins(config.plugins_dir)
     warn_unknown_metrics(config, plugins, config_path)

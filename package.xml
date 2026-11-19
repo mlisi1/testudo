@@ -3,9 +3,13 @@
 <package format="3">
   <name>testudo</name>
   <version>1.0.0</version>
-  <description>Black-box diagnostics tool for navigation stacks (Nav2-first).</description>
+  <description>Diagnostics dashboard for ROS 2 navigation stacks: watches every topic from the outside and points at what broke.</description>
   <maintainer email="elechim2196@gmail.com">mlisi1</maintainer>
   <license>Apache-2.0</license>
+
+  <url type="website">https://mlisi1.github.io/testudo/</url>
+  <url type="repository">https://github.com/mlisi1/testudo</url>
+  <url type="bugtracker">https://github.com/mlisi1/testudo/issues</url>
 
   <depend>rclpy</depend>
   <depend>rcl_interfaces</depend>
@@ -33,21 +37,16 @@
   <!-- Only needed for `testudo replay`; imported lazily so other commands
        don't require it. -->
   <exec_depend>rosbag2_py</exec_depend>
-  <!-- rosdep resolves this to an apt package stuck at 0.1.13 (2022), far
-       too old for the reactive-widget/DataTable APIs `testudo watch` uses
-       (setup.py's install_requires pulls a modern one via pip instead).
-       Declared here for ROS packaging convention; `pip install textual`
-       is what actually needs to happen on a rosdep-based install. -->
+  <!-- Only the dashboard needs it, and it needs Textual 6 or newer: on Ubuntu
+       24.04 rosdep resolves this to 0.1.13. `testudo watch` checks the
+       version at startup and says what to pip install
+       (testudo/tui/requirement.py); headless and replay work without it. -->
   <exec_depend>python3-textual</exec_depend>
 
-  <test_depend>ament_copyright</test_depend>
-  <test_depend>ament_flake8</test_depend>
-  <test_depend>ament_pep257</test_depend>
   <test_depend>python3-pytest</test_depend>
-  <!-- Optional at runtime: nothing imports it, message types resolve when a
-       topic needs them. Without it the bt_log plugin just stays inactive.
-       Its tests are skipped when it's missing. -->
-  <test_depend>nav2_msgs</test_depend>
+  <!-- nav2_msgs is optional and deliberately not declared, not even for tests:
+       Nav2 isn't released into every distro, and bloom needs every declared
+       key. Without it the bt_log plugin stays inactive and its tests skip. -->
 
   <export>
     <build_type>ament_python</build_type>

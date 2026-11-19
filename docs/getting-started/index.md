@@ -18,7 +18,7 @@ colcon build --packages-select testudo
 source install/setup.bash
 ```
 
-Ubuntu's own `python3-textual` is too old for the dashboard, so it is skipped and a newer one goes in your home directory. `--break-system-packages` is what Ubuntu 24.04 asks for to allow that, and `--user` leaves the system's packages untouched.
+Ubuntu's own `python3-textual` is too old for the dashboard, so it is skipped and a newer one goes in your home directory. If it is still too old, `testudo watch` says so and prints this command. `--break-system-packages` is what Ubuntu 24.04 asks for to allow that, and `--user` leaves the system's packages untouched.
 
 Check that it works. This lists every check and the message types it covers:
 

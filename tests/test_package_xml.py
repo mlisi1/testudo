@@ -12,3 +12,20 @@ def test_package_xml_is_well_formed() -> None:
     # A `--` inside an XML comment is the usual way it breaks.
     document = xml.dom.minidom.parse(str(PACKAGE_XML))
     assert document.getElementsByTagName("build_type")[0].firstChild.data == "ament_python"
+
+
+def test_every_version_agrees() -> None:
+    """bloom releases package.xml's version: setup.py and both changelogs must say the same."""
+    root = PACKAGE_XML.parent
+    version = xml.dom.minidom.parse(str(PACKAGE_XML)).getElementsByTagName("version")[0].firstChild.data
+    assert f'version="{version}"' in (root / "setup.py").read_text(encoding="utf-8")
+    rst = (root / "CHANGELOG.rst").read_text(encoding="utf-8").splitlines()
+    assert rst[4].startswith(f"{version} (") and set(rst[5]) == {"-"} and len(rst[5]) == len(rst[4])
+    assert f"## {version} (" in (root / "CHANGELOG.md").read_text(encoding="utf-8")
+
+
+def test_no_dependency_bloom_cannot_resolve_everywhere() -> None:
+    """nav2_msgs isn't released into every distro, and bloom needs every declared key."""
+    text = PACKAGE_XML.read_text(encoding="utf-8")
+    assert "<test_depend>nav2_msgs</test_depend>" not in text
+    assert "<url type=\"repository\">" in text

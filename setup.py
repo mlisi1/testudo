@@ -26,11 +26,11 @@ setup(
     # (core/node_profiling/sampler.py) -- a hard dependency, unlike the
     # optional pynvml (GPU memory only, lazily imported, deliberately
     # never listed here or in package.xml -- see core/node_profiling/gpu.py).
-    install_requires=["setuptools", "PyYAML", "textual", "numpy", "psutil"],
+    install_requires=["setuptools", "PyYAML", "textual>=6", "numpy", "psutil"],
     zip_safe=True,
     maintainer="mlisi1",
     maintainer_email="elechim2196@gmail.com",
-    description="Black-box diagnostics tool for navigation stacks (Nav2-first).",
+    description="Diagnostics dashboard for ROS 2 navigation stacks: watches every topic from the outside and points at what broke.",
     license="Apache-2.0",
     tests_require=["pytest"],
     entry_points={
