@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>testudo</name>
-  <version>0.0.1</version>
+  <version>1.0.0</version>
   <description>Black-box diagnostics tool for navigation stacks (Nav2-first).</description>
   <maintainer email="elechim2196@gmail.com">mlisi1</maintainer>
   <license>Apache-2.0</license>

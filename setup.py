@@ -4,7 +4,7 @@ package_name = "testudo"
 
 setup(
     name=package_name,
-    version="0.0.1",
+    version="1.0.0",
     packages=find_packages(exclude=["tests", "tests.*"]),
     # The shield as the TUI's X11 window icon (tools/make_window_icon.py).
     package_data={"testudo.tui.assets": ["window_icon.bin"]},
