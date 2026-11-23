@@ -133,7 +133,7 @@ TOPIC_PANEL = Crop(33, 1, 89, 2, (
          "concepts/tiers.md", "Monitoring tiers", (Spot(34, 2, 29, badge="bottom"),)),
     Item("Status", "The topic's severity, or a label when it is quiet by design.",
          "concepts/liveness.md", "Liveness", (Spot(90, 2, 8, badge="bottom"),)),
-    Item("Hz", "The publish rate over the last 20 messages, `-` until there is one.",
+    Item("Hz", "The publish rate over the last second, or the last 20 messages on a slower topic, `-` until there is one.",
          "core-checks/live.md#live-004", "LIVE-004", (Spot(101, 2, 4, badge="bottom"),)),
     Item("Plugin column", "One number chosen by the plugin. Cameras show the frame size here.",
          "plugins/image-stream.md", "Image stream", (Spot(109, 2, 6, badge="bottom"),)),
