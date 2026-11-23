@@ -14,6 +14,8 @@ Checks the transform tree: that it is valid, connected where you need it, and st
 | TUI category | TF |
 | Published on | `/testudo/tf_watch` |
 
+A `/tf` that never publishes is idle while the whole tree comes from `/tf_static`, as on a robot with only fixed joints and no localization running. Once a dynamic transform has arrived, silence on `/tf` is stale again.
+
 It also works out the `map → odom` row shown in the Localization category. See [`LOC-009`](localization.md#loc-009).
 
 ## What it needs

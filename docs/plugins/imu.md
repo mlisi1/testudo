@@ -72,6 +72,8 @@ topics:
 
 **What to do:** fix the driver's unit setting. Mounting and slope don't affect this check, because only the length is judged.
 
+A stream whose acceleration has only ever been zero on all three axes is taken to carry no acceleration, such as a RealSense `gyro/sample` without `unite_imu_method`. This check then doesn't run, and the Detail Panel says the field isn't in this stream.
+
 ### IMU-006 · Gravity mode changed { #imu-006 }
 
 <span class="sev sev-warn">▲ WARN</span> The acceleration at rest switched between including and removing gravity, or between units. It stays active for 10 s.

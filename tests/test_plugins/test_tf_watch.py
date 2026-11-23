@@ -136,6 +136,17 @@ def test_tf_static_edges_are_never_stale() -> None:
     assert _plain(status.values["stale_dynamic"]) == "–"
 
 
+def test_silence_on_tf_is_expected_while_the_whole_tree_is_static() -> None:
+    # Drivers only, fixed joints (field bag, 2026-11-23): robot_state_publisher
+    # advertises /tf and never publishes on it.
+    plugin = TFWatchPlugin(related_topics={"tf_static": "/tf_static"})
+    assert not plugin.silence_expected("tf2_msgs/msg/TFMessage")  # nothing at all yet
+    plugin.on_message("/tf_static", _tf_message(_transform("base_link", "laser")))
+    assert plugin.silence_expected("tf2_msgs/msg/TFMessage")
+    plugin.on_message("/tf", _tf_message(_transform("odom", "base_link")))
+    assert not plugin.silence_expected("tf2_msgs/msg/TFMessage")
+
+
 def test_default_thresholds_are_empty() -> None:
     assert TFWatchPlugin.default_thresholds() == {}
 

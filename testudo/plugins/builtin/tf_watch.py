@@ -68,6 +68,7 @@ class TFWatchPlugin(CheckPlugin):
         # Edges only ever seen on /tf_static: latched, published once, and
         # valid forever by definition -- never aged by `_stale_edges`.
         self._static_edges: set[tuple[str, str]] = set()
+        self._dynamic_seen = False
         self._now = 0.0
         self._edge_count = 0
         self._map_odom = MapOdomWatch()
@@ -86,6 +87,17 @@ class TFWatchPlugin(CheckPlugin):
     @classmethod
     def default_thresholds(cls) -> dict[str, ThresholdZone]:
         return {}
+
+    def silence_expected(self, msg_type: str) -> bool:
+        """True while the whole tree came from `/tf_static` and nothing dynamic ever arrived.
+
+        A robot with only fixed joints and no localization running (drivers
+        only) has `robot_state_publisher` advertise `/tf` and never publish
+        on it. Once a dynamic transform arrives, `/tf` going silent is stale
+        again. A chain declared under `tf:` that needs a dynamic edge is still
+        TF-002, whatever the silence.
+        """
+        return not self._dynamic_seen and bool(self._static_edges)
 
     @classmethod
     def default_levels(cls) -> dict[str, SeverityLevels]:
@@ -137,6 +149,7 @@ class TFWatchPlugin(CheckPlugin):
                 self._static_edges.add((parent, child))
             else:
                 self._static_edges.discard((parent, child))
+                self._dynamic_seen = True
             self._map_odom.observe(transform, self._now, self.levels)
 
     def _record_edge(self, parent: str, child: str) -> None:

@@ -43,6 +43,9 @@ _TREND_WIDTH = 20
 
 _AXES = ("x", "y", "z")
 
+#: The accel or gyro value of a stream that has only ever sent zeros there.
+_NOT_IN_STREAM = "[dim]always 0: not in this stream[/dim]"
+
 
 def _vector(values: tuple[float, float, float], fmt: str) -> str:
     return "  ".join(f"[dim]{axis}[/dim] {value:{fmt}}" for axis, value in zip(_AXES, values))
@@ -83,6 +86,12 @@ class ImuPlugin(CheckPlugin):
         self._accel: tuple[float, float, float] = (0.0, 0.0, 0.0)
         self._gyro: tuple[float, float, float] = (0.0, 0.0, 0.0)
         self._covariances = {"orient": "", "gyro": "", "accel": ""}
+        # A split stream fills only half of each message (a RealSense without
+        # unite_imu_method: accel/sample and gyro/sample). A real sensor is never
+        # exactly 0.0 on all three axes for long, so a half that has always been
+        # is one this stream doesn't carry.
+        self._accel_provided = False
+        self._gyro_provided = False
         self._now = 0.0
         self._gyro_trend: deque[float] = deque(maxlen=_TREND_SIZE)
         self._last_trend_sample: float | None = None
@@ -174,9 +183,14 @@ class ImuPlugin(CheckPlugin):
             "accel": _covariance_state(msg.linear_acceleration_covariance),
         }
 
+        self._accel_provided = self._accel_provided or any(fields[0:3])
+        self._gyro_provided = self._gyro_provided or any(fields[3:6])
+
         self._check_stuck(fields)
         if invalid == 0:
-            self._gravity.observe(accel_magnitude, gyro_magnitude, self._now)
+            # A gyro-only stream would otherwise read as an IMU with gravity filtered out.
+            if self._accel_provided:
+                self._gravity.observe(accel_magnitude, gyro_magnitude, self._now)
             self._saturation.observe(fields, self._now, self.levels.get("saturated_samples"))
             self._gyro_bias.observe_gyro(self._gyro, self._now)
         self._quaternion_error = quaternion_norm_error(msg.orientation, msg.orientation_covariance)
@@ -252,15 +266,20 @@ class ImuPlugin(CheckPlugin):
         gravity_sign = "+" if self._accel[gravity_axis] >= 0 else "-"
         covariances = " · ".join(f"{name} {state}" for name, state in self._covariances.items())
         values = {
-            "accel": f"{_vector(self._accel, '6.2f')}   |a| {accel_magnitude:.2f} m/s²",
-            "gyro": f"{_vector(self._gyro, '7.3f')} rad/s",
+            "accel": (
+                f"{_vector(self._accel, '6.2f')}   |a| {accel_magnitude:.2f} m/s²"
+                if self._accel_provided
+                else _NOT_IN_STREAM
+            ),
+            "gyro": f"{_vector(self._gyro, '7.3f')} rad/s" if self._gyro_provided else _NOT_IN_STREAM,
             "|ω|": f"{gyro_trend or '[dim]–[/dim]'} [dim]({len(self._gyro_trend)} s)[/dim]",
             "stuck": str(self._stuck_count),
             "invalid": f"{self._invalid_ratio:.0%}",
             "covariance": covariances,
             "frame": self._last_frame_id or "",
-            "gravity_on_more": f"{gravity_sign}{_AXES[gravity_axis]}",
         }
+        if self._accel_provided:
+            values["gravity_on_more"] = f"{gravity_sign}{_AXES[gravity_axis]}"
         if self._gyro_bias.bias is not None:
             values["gyro_bias"] = f"{self._gyro_bias.bias:.4f} rad/s"
         if self._gravity.mode is not None:
@@ -272,7 +291,7 @@ class ImuPlugin(CheckPlugin):
             message=message,
             values=values,
             topic_panel_column="|a|",
-            topic_panel_value=f"{accel_magnitude:.2f}",
+            topic_panel_value=f"{accel_magnitude:.2f}" if self._accel_provided else "[dim]–[/dim]",
             codes=codes.messages,
             code_severities=codes.severities,
             code_metrics=self._code_metrics(),

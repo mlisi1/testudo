@@ -37,16 +37,18 @@ def short_fix_label(fix_label: str) -> str:
 PLACEHOLDER_VARIANCE = 1e-6
 
 
-def sigma_cell(label: str, variance: float | None, zone: ThresholdZone | None, judged: float | None) -> str:
+def sigma_cell(
+    label: str, variance: float | None, zone: ThresholdZone | None, judged: float | None, *, missing: str = "unknown"
+) -> str:
     """`label ±σ meter`; the meter judges `judged` (the worst single axis it summarizes) against `zone`.
 
     `variance=None` means the driver doesn't report a covariance at all:
-    shown dim as "n/a", never as a reassuring green meter. A variance
+    shown dim as "n/a (`missing`)", never as a reassuring green meter. A variance
     under `PLACEHOLDER_VARIANCE` is the same thing in practice, so it's
     shown dim as a placeholder rather than as the best possible reading.
     """
     if variance is None:
-        return f"{label} [dim]n/a (unknown)[/dim]"
+        return f"{label} [dim]n/a ({missing})[/dim]"
     if variance < PLACEHOLDER_VARIANCE:
         return f"{label} [dim]≈0 (placeholder)[/dim]"
     bar = meter(judged if judged is not None else variance, zone, 6)

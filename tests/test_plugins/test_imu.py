@@ -3,10 +3,15 @@ from __future__ import annotations
 
 import pytest
 from nav_msgs.msg import Odometry
+from rich.text import Text
 from sensor_msgs.msg import Imu
 
 from testudo.plugins.base import Severity
 from testudo.plugins.builtin.imu import ImuPlugin
+
+
+def _plain(markup: str) -> str:
+    return Text.from_markup(markup).plain
 
 
 def _imu(
@@ -138,6 +143,31 @@ def test_gravity_already_removed_is_fine() -> None:
     status = plugin.get_status()
     assert status.codes == {}
     assert status.metrics["gravity"] == "removed"
+
+
+def test_a_gyro_only_stream_is_not_read_as_gravity_removed() -> None:
+    # A RealSense without unite_imu_method (field bag, 2026-11-23): gyro/sample
+    # leaves linear_acceleration at zero in every message.
+    plugin = ImuPlugin()
+    for step in range(30):
+        plugin.on_tick(100.0 + step * 0.1)
+        plugin.on_message("/gyro", _imu(angular_vel=(0.001 * (step % 2), -0.003, 0.0)))
+    status = plugin.get_status()
+    assert status.codes == {}
+    assert "gravity" not in status.values and "gravity" not in status.metrics
+    assert "gravity_on_more" not in status.values
+    assert _plain(status.values["accel"]) == "always 0: not in this stream"
+    assert _plain(status.topic_panel_value) == "–"
+
+
+def test_an_accel_only_stream_still_judges_gravity() -> None:
+    plugin = ImuPlugin()
+    for step in range(30):
+        plugin.on_tick(100.0 + step * 0.1)
+        plugin.on_message("/accel", _imu(linear_accel=(0.18 + 0.001 * (step % 2), -9.69, 0.47)))
+    status = plugin.get_status()
+    assert status.metrics["gravity"] == "included"
+    assert _plain(status.values["gyro"]) == "always 0: not in this stream"
 
 
 def test_an_imu_reporting_in_g_is_flagged() -> None:

@@ -2,6 +2,12 @@
 Changelog for package testudo
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* GNSS: without a fix, only GNSS-001 is raised; the placeholder σ, the repeated position and a window of nothing but dropouts no longer add GNSS-002, -005 and -003.
+* TF: a ``/tf`` that never publishes is idle while the whole tree comes from ``/tf_static`` (fixed joints only, no localization running), instead of LIVE-002.
+* IMU: a stream carrying only gyro or only acceleration (a RealSense without ``unite_imu_method``) says so, and a gyro-only stream no longer reads as gravity removed.
+
 1.0.0 (2026-11-19)
 ------------------
 * The first public release.

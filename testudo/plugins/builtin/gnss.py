@@ -161,12 +161,20 @@ class GnssPlugin(CheckPlugin):
         if self._message_count == 0:
             return
         if self._last_trend_sample is None or now_seconds - self._last_trend_sample >= _TREND_SAMPLE_SECONDS:
-            self._sigma_h_trend.append(sigma_h(self._position_covariance) if self._covariance_known() else math.nan)
+            self._sigma_h_trend.append(sigma_h(self._position_covariance) if self._covariance_judged() else math.nan)
             self._jump_trend.append(self._jump_speed_mps if self._jump_speed_mps is not None else math.nan)
             self._last_trend_sample = now_seconds
 
-    def _covariance_known(self) -> bool:
-        return self._covariance_type != NavSatFix.COVARIANCE_TYPE_UNKNOWN
+    def _covariance_judged(self) -> bool:
+        """Whether the reported σ means anything: the receiver fills it in, and has a fix.
+
+        Without a fix a receiver reports an "accuracy unknown" placeholder
+        (an Xsens: ±4294967 m, uint32 max in mm), which GNSS-001 already covers.
+        """
+        return self._covariance_type != NavSatFix.COVARIANCE_TYPE_UNKNOWN and self._has_fix()
+
+    def _has_fix(self) -> bool:
+        return self._status != NavSatStatus.STATUS_NO_FIX
 
     def on_message(self, topic: str, msg: Any) -> None:
         self._message_count += 1
@@ -184,14 +192,16 @@ class GnssPlugin(CheckPlugin):
         invalid = sum(1 for value in fields if _is_bad_float(value))
         self._invalid_ratio = invalid / len(fields)
 
-        signature = (msg.latitude, msg.longitude, msg.altitude)
-        if self._last_signature is not None and signature == self._last_signature:
+        has_fix = self._has_fix()
+        # Only a fix can be stuck: without one a receiver repeats its placeholder
+        # (often 0, 0, 0), and GNSS-001 already says so.
+        signature = (msg.latitude, msg.longitude, msg.altitude) if has_fix else None
+        if signature is not None and signature == self._last_signature:
             self._stuck_count += 1
         else:
             self._stuck_count = 0
         self._last_signature = signature
 
-        has_fix = self._status != NavSatStatus.STATUS_NO_FIX
         self._update_jump_speed(msg, has_fix)
 
         self._dropout_window.append(not has_fix)
@@ -226,15 +236,15 @@ class GnssPlugin(CheckPlugin):
             return CheckStatus(severity=Severity.OK, label="gnss", message="no messages received yet")
 
         fix_label = _FIX_STATUS_LABELS.get(self._status, str(self._status))
-        fix_severity = Severity.ERROR if self._status == NavSatStatus.STATUS_NO_FIX else Severity.OK
+        fix_severity = Severity.OK if self._has_fix() else Severity.ERROR
 
         covariance_label = _COVARIANCE_TYPE_LABELS.get(self._covariance_type, str(self._covariance_type))
-        covariance_known = self._covariance_known()
+        covariance_judged = self._covariance_judged()
         covariance_zone = self.thresholds.get("position_covariance")
         covariance_levels = self.levels.get("position_covariance")
         axis_severities = (
             [evaluate_levels(value, covariance_levels) for value in self._position_covariance]
-            if covariance_known
+            if covariance_judged
             else [Severity.OK] * len(_POSITION_AXES)
         )
         covariance_severity = max(axis_severities)
@@ -246,7 +256,13 @@ class GnssPlugin(CheckPlugin):
             if self._jump_speed_mps is not None
             else Severity.OK
         )
-        dropout_severity = evaluate_levels(self._dropout_ratio, self.levels.get("fix_dropout_ratio"))
+        # A window of nothing but dropouts only repeats GNSS-001: the ratio is for
+        # a fix that keeps coming and going.
+        dropout_severity = (
+            Severity.OK
+            if all(self._dropout_window)
+            else evaluate_levels(self._dropout_ratio, self.levels.get("fix_dropout_ratio"))
+        )
         frame_id_severity = Severity.WARN if self._frame_id_changed else Severity.OK
 
         worst = max(
@@ -320,8 +336,11 @@ class GnssPlugin(CheckPlugin):
         var_h, var_v = horizontal_vertical(self._position_covariance)
         var_x, var_y, _var_z = self._position_covariance
         fix_chip = colorize(f"● {fix_label}", fix_severity)
-        horizontal = sigma_cell("σ horiz", var_h if covariance_known else None, covariance_zone, max(var_x, var_y))
-        vertical = sigma_cell("σ vert", var_v if covariance_known else None, covariance_zone, var_v)
+        missing = "unknown" if self._covariance_type == NavSatFix.COVARIANCE_TYPE_UNKNOWN else "no fix"
+        horizontal = sigma_cell(
+            "σ horiz", var_h if covariance_judged else None, covariance_zone, max(var_x, var_y), missing=missing
+        )
+        vertical = sigma_cell("σ vert", var_v if covariance_judged else None, covariance_zone, var_v, missing=missing)
         jump = (
             f"{self._jump_speed_mps:.2f} m/s {meter(self._jump_speed_mps, self.thresholds.get('jump_speed_mps'), _METER_SEGMENTS)}"
             if self._jump_speed_mps is not None
@@ -345,7 +364,7 @@ class GnssPlugin(CheckPlugin):
         # the fix itself red) plus σh, the number that says how good it is.
         sigma = sigma_h(self._position_covariance)
         topic_panel_value = colorize(short_fix_label(fix_label), fix_severity)
-        if covariance_known:
+        if covariance_judged:
             topic_panel_value += colorize(f" ±{sigma:.2f}" if sigma < 10 else f" ±{sigma:.0f}", covariance_severity)
 
         return CheckStatus(
@@ -357,24 +376,24 @@ class GnssPlugin(CheckPlugin):
             topic_panel_value=topic_panel_value,
             codes=codes.messages,
             code_severities=codes.severities,
-            code_metrics=self._code_metrics(covariance_known),
-            metrics=self._metrics(fix_label, covariance_label, covariance_known),
+            code_metrics=self._code_metrics(covariance_judged),
+            metrics=self._metrics(fix_label, covariance_label, covariance_judged),
         )
 
-    def _code_metrics(self, covariance_known: bool) -> dict[str, CodeMetric]:
+    def _code_metrics(self, covariance_judged: bool) -> dict[str, CodeMetric]:
         """The numbers behind the GNSS codes decided by a level."""
         metrics = {
             "GNSS-003": CodeMetric("fix_dropout_ratio", self._dropout_ratio),
             "GNSS-005": CodeMetric("stuck_count", float(self._stuck_count)),
             "GNSS-006": CodeMetric("invalid_ratio", self._invalid_ratio),
         }
-        if covariance_known:
+        if covariance_judged:
             metrics["GNSS-002"] = CodeMetric("position_covariance", max(self._position_covariance))
         if self._jump_speed_mps is not None:
             metrics["GNSS-004"] = CodeMetric("jump_speed_mps", self._jump_speed_mps)
         return metrics
 
-    def _metrics(self, fix_label: str, covariance_label: str, covariance_known: bool) -> dict[str, float | str]:
+    def _metrics(self, fix_label: str, covariance_label: str, covariance_judged: bool) -> dict[str, float | str]:
         """The published numbers: fix status, position, σ (when the receiver reports it), dropout/jump/stuck/invalid."""
         latitude, longitude, altitude = self._position
         metrics: dict[str, float | str] = {
@@ -391,7 +410,7 @@ class GnssPlugin(CheckPlugin):
             "invalid_ratio": self._invalid_ratio,
             "frame_id": self._last_frame_id or "",
         }
-        if covariance_known:
+        if covariance_judged:
             var_h, var_v = horizontal_vertical(self._position_covariance)
             metrics["sigma_horizontal_m"] = math.sqrt(max(0.0, var_h))
             metrics["sigma_vertical_m"] = math.sqrt(max(0.0, var_v))

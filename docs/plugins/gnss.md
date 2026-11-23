@@ -38,7 +38,7 @@ topics:
 
 ### GNSS-002 · Position uncertainty too high { #gnss-002 }
 
-<span class="sev sev-warn">▲ WARN</span> <span class="sev sev-error">✗ ERROR</span> The variance of at least one axis is past `position_covariance`. Each axis is judged separately, so a bad vertical fix can't hide behind good horizontal ones. It is skipped when the driver reports `COVARIANCE_TYPE_UNKNOWN`.
+<span class="sev sev-warn">▲ WARN</span> <span class="sev sev-error">✗ ERROR</span> The variance of at least one axis is past `position_covariance`. Each axis is judged separately, so a bad vertical fix can't hide behind good horizontal ones. It is skipped when the driver reports `COVARIANCE_TYPE_UNKNOWN`, and while there is no fix: a receiver without one reports a placeholder σ, and [`GNSS-001`](#gnss-001) already says so.
 
 **Likely causes:** poor satellite geometry, multipath, or a level meant for another receiver grade.
 
@@ -46,7 +46,7 @@ topics:
 
 ### GNSS-003 · Fix dropping out { #gnss-003 }
 
-<span class="sev sev-warn">▲ WARN</span> <span class="sev sev-error">✗ ERROR</span> More than `fix_dropout_ratio` of the last 20 checked messages had no fix.
+<span class="sev sev-warn">▲ WARN</span> <span class="sev sev-error">✗ ERROR</span> More than `fix_dropout_ratio` of the last 20 checked messages had no fix. When none of them had one, only [`GNSS-001`](#gnss-001) is raised.
 
 **Likely causes:** bridges, tree canopy or a marginal antenna.
 
@@ -62,7 +62,7 @@ topics:
 
 ### GNSS-005 · Fix stuck { #gnss-005 }
 
-<span class="sev sev-warn">▲ WARN</span> <span class="sev sev-error">✗ ERROR</span> Latitude, longitude and altitude have been identical for more consecutive checked messages than `stuck_count` allows.
+<span class="sev sev-warn">▲ WARN</span> <span class="sev sev-error">✗ ERROR</span> Latitude, longitude and altitude have been identical for more consecutive checked fixes than `stuck_count` allows. A receiver without a fix repeating its placeholder position is [`GNSS-001`](#gnss-001).
 
 **Likely causes:** a frozen driver republishing its last fix.
 

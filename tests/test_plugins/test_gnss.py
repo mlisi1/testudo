@@ -65,6 +65,41 @@ def test_no_fix_is_error() -> None:
     assert "GNSS-001" in status.codes
 
 
+def test_no_fix_raises_only_gnss_001() -> None:
+    # A receiver without a fix (field bag, 2026-11-23): zeros for the position
+    # and its "accuracy unknown" placeholder (uint32 max in mm) for σ, every
+    # message. σ, stuck and a window of nothing but dropouts all repeat GNSS-001.
+    plugin = GnssPlugin()
+    placeholder = 4294967.0**2
+    for i in range(30):
+        plugin.on_message(
+            "/gnss",
+            _fix(
+                lat=0.0,
+                lon=0.0,
+                alt=0.0,
+                status=NavSatStatus.STATUS_NO_FIX,
+                covariance=(placeholder, 0, 0, 0, placeholder, 0, 0, 0, placeholder),
+                stamp_sec=i,
+            ),
+        )
+    status = plugin.get_status()
+    assert status.severity == Severity.ERROR
+    assert set(status.codes) == {"GNSS-001"}
+    assert status.message == "no fix"
+    assert _plain(status.values["fix"]).startswith("● NO_FIX   σ horiz n/a (no fix)   σ vert n/a (no fix)")
+    assert "sigma_horizontal_m" not in status.metrics
+
+
+def test_dropouts_still_flagged_while_the_fix_comes_and_goes() -> None:
+    plugin = GnssPlugin()
+    for i in range(20):
+        status_code = NavSatStatus.STATUS_FIX if i == 5 else NavSatStatus.STATUS_NO_FIX
+        plugin.on_message("/gps/fix", _fix(status=status_code, stamp_sec=i))
+    status = plugin.get_status()
+    assert {"GNSS-001", "GNSS-003"} <= set(status.codes)
+
+
 def test_sbas_fix_is_ok() -> None:
     plugin = GnssPlugin()
     plugin.on_message(
