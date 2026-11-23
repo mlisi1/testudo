@@ -98,6 +98,8 @@ class _FakeNode:
         self._publishers_by_topic = publishers_by_topic
         self._get_state_responses = get_state_responses or {}
         self.subscriptions: list[_RecordedSubscription] = []
+        #: Subscriber node names per topic; any topic not listed has one, `bt_navigator`.
+        self.subscribers: dict[str, list[str]] = {}
 
     def get_topic_names_and_types(self) -> list[tuple[str, list[str]]]:
         return self._topics
@@ -105,11 +107,17 @@ class _FakeNode:
     def get_node_names_and_namespaces(self) -> list[tuple[str, str]]:
         return []
 
+    def get_name(self) -> str:
+        return "testudo"
+
+    def get_namespace(self) -> str:
+        return "/"
+
     def get_publishers_info_by_topic(self, topic_name: str) -> list[object]:
         return self._publishers_by_topic.get(topic_name, [])
 
     def get_subscriptions_info_by_topic(self, topic_name: str) -> list[object]:
-        return [_FakeEndpointInfo(qos_profile=_qos(), node_name="bt_navigator")]
+        return [_FakeEndpointInfo(qos_profile=_qos(), node_name=name) for name in self.subscribers.get(topic_name, ["bt_navigator"])]
 
     def create_subscription(self, msg_class, topic, callback, qos_profile, raw: bool = False):
         sub = _RecordedSubscription(msg_class, topic, callback, qos_profile, raw)
@@ -2012,6 +2020,32 @@ def test_maintain_clears_when_some_topics_are_stale_and_others_never_received_a_
 
     manager.maintain()  # grace period (0s) has now elapsed -> clears
     assert node.subscriptions == []
+    assert manager.reports() == []
+
+
+def test_a_topic_with_no_publishers_is_forgotten_once_it_leaves_the_graph() -> None:
+    """Right after a dead-stack clear the graph may still list the topics; they must not stay as rows."""
+    topics = [("/odom", ["nav_msgs/msg/Odometry"])]
+    node = _FakeNode(topics=topics, publishers_by_topic={})
+    manager = SubscriptionManager(
+        node, _config(), [], clock=_fixed_clock(0.0), rediscovery_interval_seconds=0.0, **_FAST_SETTLE
+    )
+    manager._had_publishers.add("/odom")
+    manager.start()
+    assert [report.topic for report in manager.reports()] == ["/odom"]
+
+    topics.clear()
+    manager.maintain()
+    assert manager.reports() == []
+
+
+def test_a_topic_only_testudo_subscribes_to_is_not_recorded_as_having_no_publishers() -> None:
+    """Our own subscriptions, just destroyed by a dead-stack clear, can linger on the graph for a moment."""
+    node = _FakeNode(topics=[("/odom", ["nav_msgs/msg/Odometry"])], publishers_by_topic={})
+    node.subscribers["/odom"] = ["testudo"]
+    manager = SubscriptionManager(node, _config(), [], clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    manager._had_publishers.add("/odom")
+    manager.start()
     assert manager.reports() == []
 
 

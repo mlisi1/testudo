@@ -15,6 +15,12 @@ Content checks run at most `max_check_rate_hz` times per second per topic, 10 by
 
 On a very large stack, set `check_undeclared_topics: false` so only declared topics get content checks.
 
+## What monitoring costs
+
+Every message on a full or vitals topic still runs a short callback on Testudo's one receiving thread. On Jazzy and newer, Testudo uses rclpy's events executor. On a robot publishing about 4,700 messages a second, with seven topics at 400 Hz, it takes about a fifth of one CPU core. Humble has no events executor, and the older executor takes about a whole core for the same load. Each topic's rate is averaged over at least its last second of messages.
+
+If the events executor misbehaves, which rclpy still marks experimental, set `TESTUDO_EXECUTOR=single` to fall back to the older one.
+
 ## Presence tier
 
 Subscribing to camera or point cloud data can compete with the pipeline producing it, and can wake a lazy `image_transport` encoder. Declare one of these topics under `topics:` to opt it into full monitoring.

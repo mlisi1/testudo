@@ -17,7 +17,7 @@ import time
 import rclpy
 import rclpy.node
 from rclpy._rclpy_pybind11 import RCLError
-from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
+from rclpy.executors import Executor, ExternalShutdownException, SingleThreadedExecutor
 from rclpy.utilities import remove_ros_args
 
 from testudo.core.clock import TestudoClock
@@ -309,8 +309,16 @@ def _poll_until_stopped(data_source, on_snapshot, poll_rate_hz: float) -> None:
 _SPIN_TIMEOUT_SECONDS = 0.1
 
 
-def _make_executor(node: rclpy.node.Node) -> SingleThreadedExecutor:
-    """An executor that owns `node` for the whole session.
+def _make_executor(node: rclpy.node.Node) -> Executor:
+    """An executor that owns `node` for the whole session: rclpy's EventsExecutor where there is one.
+
+    `SingleThreadedExecutor` rebuilds a wait set over every subscription and
+    its QoS event handlers on each wait. On the first real robot (~4,700
+    msg/s, 2026-11-23) that alone took a whole core, and Testudo fell behind
+    its own topics; the EventsExecutor (rclpy >= 7.1, Jazzy) took a fifth of
+    a core for the same load (`tools/load_bench.py`). Humble has none, and
+    `TESTUDO_EXECUTOR=single` asks for the old one, should the experimental
+    executor misbehave in the field.
 
     Not `rclpy.spin_once(node, ...)`: that adds the node to the global
     executor and removes it again on every call, and the executor also
@@ -322,13 +330,23 @@ def _make_executor(node: rclpy.node.Node) -> SingleThreadedExecutor:
     received" on a full-scale sim). With the node kept and a constant
     timeout, one wait's ready callbacks are all run before the next wait.
     """
-    executor = SingleThreadedExecutor()
+    executor: Executor | None = None
+    if os.environ.get("TESTUDO_EXECUTOR", "").lower() != "single":
+        try:
+            from rclpy.experimental import EventsExecutor
+
+            executor = EventsExecutor()
+        except ImportError:
+            pass
+    if executor is None:
+        executor = SingleThreadedExecutor()
+    _logger.info("spinning with %s", type(executor).__name__)
     executor.add_node(node)
     return executor
 
 
 def _spin_until_stopped(
-    executor: SingleThreadedExecutor, stop_event: threading.Event, manager: SubscriptionManager
+    executor: Executor, stop_event: threading.Event, manager: SubscriptionManager
 ) -> None:
     next_maintain = time.monotonic()
     while not stop_event.is_set() and rclpy.ok():

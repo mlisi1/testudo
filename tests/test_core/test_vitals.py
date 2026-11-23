@@ -47,3 +47,22 @@ def test_age_seconds_reflects_time_since_last_arrival() -> None:
     vitals.record_arrival(now_seconds=5.0)
     vitals.record_arrival(now_seconds=5.5)
     assert vitals.age_seconds(now_seconds=8.0) == pytest.approx(2.5)
+
+
+def test_a_fast_topic_keeps_a_second_of_arrivals_so_jitter_averages_out() -> None:
+    # 100 Hz delivered in bursts of five every 50 ms (a busy publisher or scheduler):
+    # over 20 arrivals that read as up to ~12% fast on the first real robot.
+    vitals = TopicVitals(topic="/imu/mag")
+    for burst in range(60):
+        for i in range(5):
+            vitals.record_arrival(burst * 0.05 + i * 0.0005)
+    rate = vitals.rate_hz()
+    assert rate is not None and abs(rate - 100.0) / 100.0 < 0.03
+
+
+def test_a_slow_topic_still_keeps_its_last_twenty_arrivals() -> None:
+    vitals = TopicVitals(topic="/slow")
+    for i in range(50):
+        vitals.record_arrival(i * 0.5)  # 2 Hz: 20 arrivals span 9.5 s
+    assert vitals.rate_hz() == pytest.approx(2.0)
+    assert len(vitals._arrival_times) == 20

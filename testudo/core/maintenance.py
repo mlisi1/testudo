@@ -79,6 +79,7 @@ def discover_and_subscribe(manager: "SubscriptionManager") -> None:
     actually committed to a tier, or reserved for the TF watch, are skipped.
     """
     topics_by_name = {topic_info.name: topic_info for topic_info in list_topics(manager._node)}
+    _forget_vanished_topics(manager, topics_by_name)
 
     reserved = subscribe_tf_watch(manager, topics_by_name)
     subscribe_lifecycle_tracking(manager, topics_by_name)
@@ -91,6 +92,21 @@ def discover_and_subscribe(manager: "SubscriptionManager") -> None:
             _logger.warning("topic '%s' has no known message type; skipping", name)
             continue
         subscribe_topic(manager, name, topic_info.msg_types[0], topics_by_name)
+
+
+def _forget_vanished_topics(manager: "SubscriptionManager", topics_by_name: dict) -> None:
+    """Drop the rows of topics with no publishers that have left the graph since.
+
+    Such a topic has no subscription of ours, so nothing else would ever
+    remove it. Right after a dead-stack clear the graph can still list the
+    subscriptions just destroyed (the EventsExecutor lets them linger a
+    moment), and every dead topic used to come back as a permanent
+    "no publishers" row.
+    """
+    for topic_name in [name for name in manager._no_publishers if name not in topics_by_name]:
+        manager._no_publishers.discard(topic_name)
+        manager._msg_type_by_topic.pop(topic_name, None)
+        manager._subscribers_by_topic.pop(topic_name, None)
 
 
 def maintain(manager: "SubscriptionManager") -> None:

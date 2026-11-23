@@ -143,6 +143,25 @@ def _warn_unresolved(topic_name: str, msg_type_str: str) -> None:
     )
 
 
+def subscriber_names(manager: SubscriptionManager, topic_name: str) -> tuple[str, ...]:
+    """The fully-qualified names of the nodes subscribed to `topic_name`."""
+    return tuple(
+        fully_qualified_node_name(info.node_namespace, info.node_name)
+        for info in manager._node.get_subscriptions_info_by_topic(topic_name)
+    )
+
+
+def only_ours(manager: SubscriptionManager, subscribers: tuple[str, ...]) -> bool:
+    """True when every one of a publisher-less topic's `subscribers` is Testudo itself.
+
+    Nobody else uses such a topic: it's on the graph only through our own
+    subscriptions, such as ones a dead-stack clear has just destroyed, which
+    can linger on the graph for a moment.
+    """
+    own = fully_qualified_node_name(manager._node.get_namespace(), manager._node.get_name()) if subscribers else ""
+    return bool(subscribers) and all(subscriber == own for subscriber in subscribers)
+
+
 def subscribe_topic(
     manager: SubscriptionManager, topic_name: str, msg_type_str: str, topics_by_name: dict[str, TopicInfo]
 ) -> None:
@@ -154,12 +173,13 @@ def subscribe_topic(
     try:
         publisher_info = first_publisher_info(publisher_infos, topic_name)
     except NoPublishersError:
+        subscribers = subscriber_names(manager, topic_name)
+        if only_ours(manager, subscribers):
+            del manager._msg_type_by_topic[topic_name]
+            return
         _logger.info("topic '%s' has no publishers", topic_name)
         manager._no_publishers.add(topic_name)
-        manager._subscribers_by_topic[topic_name] = tuple(
-            fully_qualified_node_name(info.node_namespace, info.node_name)
-            for info in manager._node.get_subscriptions_info_by_topic(topic_name)
-        )
+        manager._subscribers_by_topic[topic_name] = subscribers
         return
     manager._no_publishers.discard(topic_name)
     manager._subscribers_by_topic.pop(topic_name, None)

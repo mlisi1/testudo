@@ -14,6 +14,11 @@ from collections import deque
 from dataclasses import dataclass, field
 
 DEFAULT_WINDOW_SIZE = 20
+#: The rate window also keeps every arrival of the last second: 20 arrivals are
+#: 50 ms at 400 Hz, where a single burst of jitter read a 100 Hz topic as 112 Hz
+#: on the first real robot (2026-11-23). Capped for very fast topics.
+RATE_WINDOW_SECONDS = 1.0
+_MAX_WINDOW_ARRIVALS = 2048
 DEFAULT_STALE_AFTER_SECONDS = 2.0
 #: How long a live session waits for a new subscription's first message before
 #: calling it missing: DDS discovery and a slow publisher's first period take time.
@@ -34,12 +39,19 @@ class TopicVitals:
     _waiting_since: float | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
-        self._arrival_times = deque(maxlen=self.window_size)
+        self._arrival_times = deque(maxlen=_MAX_WINDOW_ARRIVALS)
 
     def record_arrival(self, now_seconds: float) -> None:
-        """Record a message arrival at `now_seconds`."""
+        """Record a message arrival at `now_seconds`.
+
+        The window holds at least the last `window_size` arrivals, and at
+        least the last `RATE_WINDOW_SECONDS` of them.
+        """
         self.message_count += 1
-        self._arrival_times.append(now_seconds)
+        arrivals = self._arrival_times
+        arrivals.append(now_seconds)
+        while len(arrivals) > self.window_size and now_seconds - arrivals[0] > RATE_WINDOW_SECONDS:
+            arrivals.popleft()
 
     def reset(self) -> None:
         """Clear the accumulated count and rolling arrival-time window (the TUI's 'reset stats')."""

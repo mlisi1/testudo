@@ -9,6 +9,9 @@ Forthcoming
 * IMU: a stream carrying only gyro or only acceleration (a RealSense without ``unite_imu_method``) says so, and a gyro-only stream no longer reads as gravity removed.
 * An undeclared topic a plugin checks that has never published is idle, as an unchecked one already was, instead of LIVE-002 (GLIM's ``/glim_ros/grid``).
 * Node profiling: a process launched with only ``__ns:=`` is matched to the one unmatched node in that namespace (a RealSense driver), and an executable named like its node plus ``node`` matches (GLIM's ``glim_rosnode``).
+* Testudo uses rclpy's events executor where there is one (Jazzy and newer): on a load like the first real robot's (~4,700 msg/s) it takes about a fifth of a core instead of a whole one, and keeps up with its topics. ``TESTUDO_EXECUTOR=single`` falls back to the older executor.
+* A topic's rate is averaged over at least its last second of messages, not only its last 20: a 100 Hz topic read up to 12% fast.
+* After a stack closes, its topics no longer come back as "no publishers" rows when only Testudo's own just-destroyed subscriptions still list them, and a topic with no publishers is forgotten once it leaves the graph.
 * Docs: the GNSS clip shows the accuracy collapsing (GNSS-002) before the fix is lost (GNSS-001); the dashboard media were recorded again.
 
 1.0.0 (2026-11-19)

@@ -28,7 +28,14 @@ from testudo.core.discovery import (
 )
 from testudo.core.exclusion import matching_rule
 from testudo.core.plugin_settings import build_plugin
-from testudo.core.tier_subscription import TF_STATIC_TOPIC, TF_TOPIC, runs_content_checks, subscribe_full_tier
+from testudo.core.tier_subscription import (
+    TF_STATIC_TOPIC,
+    TF_TOPIC,
+    only_ours,
+    runs_content_checks,
+    subscribe_full_tier,
+    subscriber_names,
+)
 
 if TYPE_CHECKING:
     from testudo.core.subscription_manager import SubscriptionManager
@@ -78,6 +85,9 @@ def subscribe_tf_watch(manager: "SubscriptionManager", topics_by_name: dict[str,
         publisher_infos = manager._node.get_publishers_info_by_topic(TF_TOPIC)
         publisher_info = first_publisher_info(publisher_infos, TF_TOPIC)
     except NoPublishersError:
+        if only_ours(manager, subscriber_names(manager, TF_TOPIC)):
+            del manager._msg_type_by_topic[TF_TOPIC]
+            return claimed
         _logger.warning("'%s' has no publishers", TF_TOPIC)
         manager._no_publishers.add(TF_TOPIC)
         return claimed
