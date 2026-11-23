@@ -48,8 +48,19 @@ def _split_zone(zone: ThresholdZone | None, parts: int) -> ThresholdZone | None:
 
 
 def growth_rate(history: Sequence[tuple[float, float]]) -> float:
-    """Change per second between the oldest and newest (time, value) sample; 0 without a time span."""
+    """Change per second of (time, value) samples: their least-squares slope, 0 without a time span.
+
+    A fitted slope rather than oldest-to-newest, so one end landing on a
+    peak or a trough of a saw-tooth (an EKF's covariance between GNSS
+    fixes) doesn't read as a trend.
+    """
     if len(history) < 2:
         return 0.0
-    (t0, v0), (t1, v1) = history[0], history[-1]
-    return (v1 - v0) / (t1 - t0) if t1 > t0 else 0.0
+    times = [t for t, _ in history]
+    values = [v for _, v in history]
+    mean_t = sum(times) / len(times)
+    mean_v = sum(values) / len(values)
+    spread = sum((t - mean_t) ** 2 for t in times)
+    if spread <= 0.0:
+        return 0.0
+    return sum((t - mean_t) * (v - mean_v) for t, v in zip(times, values)) / spread

@@ -13,10 +13,10 @@ false positive this plugin should not manufacture -- plus NaN/Inf
 lat/lon/altitude, a stuck (byte-identical) fix, an implausible position-jump
 speed between consecutive real fixes, and frame_id consistency.
 
-The default covariance zone is RTK-grade (green=1e-4 m^2, ~1cm std): a
-consumer/SBAS-grade receiver reporting a few meters of std should override
-`position_covariance` per topic in config, the same way a noisier lidar
-overrides PointStreamPlugin's `invalid_ratio`.
+The default covariance level suits an ordinary (non-RTK) receiver, which
+claims a σ of a few metres with a good fix: warn past 25 m^2, σ 5 m per
+axis. An RTK receiver should tighten `position_covariance` per topic in config,
+e.g. warn past 1e-4 m^2 (σ 1 cm).
 """
 from __future__ import annotations
 
@@ -133,10 +133,9 @@ class GnssPlugin(CheckPlugin):
     def default_thresholds(cls) -> dict[str, ThresholdZone]:
         return {
             # Each of x/y/z's own position-covariance diagonal entry, m^2 --
-            # applied per axis, not summed. RTK-grade: green ~1cm std,
-            # orange ~10cm std (0.1 m^2, i.e. ~32cm std, is already bad for
-            # an RTK-corrected fix, so it lands past orange here).
-            "position_covariance": ThresholdZone(green=0.0001, orange=0.01),
+            # applied per axis, not summed. An ordinary receiver: green up
+            # to σ 2 m, orange up to σ 5 m.
+            "position_covariance": ThresholdZone(green=4.0, orange=25.0),
             "stuck_count": ThresholdZone(green=2, orange=10),
             "invalid_ratio": ThresholdZone(green=0.01, orange=0.05),
             # Implausible speed for a ground robot between consecutive real fixes.
@@ -150,7 +149,7 @@ class GnssPlugin(CheckPlugin):
         # σ 100 m per axis (an "unknown" placeholder), fixes nearly always
         # dropped, frozen output, mostly NaN. A jump is a glitch, never ERROR.
         return {
-            "position_covariance": SeverityLevels(warn=0.0001, error=1e4),
+            "position_covariance": SeverityLevels(warn=25.0, error=1e4),
             "stuck_count": SeverityLevels(warn=2, error=10),
             "invalid_ratio": SeverityLevels(warn=0.01, error=0.5),
             "jump_speed_mps": SeverityLevels(warn=15.0),

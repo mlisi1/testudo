@@ -545,6 +545,42 @@ def test_node_profiling_full(tmp_path: Path) -> None:
     ]
 
 
+def test_a_node_gets_its_own_levels_over_the_session_wide_ones(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        """
+        node_profiling:
+          thresholds:
+            memory_mb: {warn: 400}
+          nodes:
+            /mapper:
+              thresholds:
+                memory_slope_mb_per_min: {warn: null}
+                memory_mb: {warn: 2000}
+        """,
+    )
+    np = load_config(path).node_profiling
+    assert np.levels_for("/mapper", "memory_slope_mb_per_min") == SeverityLevels()
+    assert np.levels_for("/mapper", "memory_mb") == SeverityLevels(warn=2000.0)
+    assert np.levels_for("/mapper", "cpu_percent") == SeverityLevels(warn=150.0)
+    assert np.levels_for("/other", "memory_mb") == SeverityLevels(warn=400.0)
+    assert np.levels_for("/other", "memory_slope_mb_per_min") == SeverityLevels(warn=10.0)
+
+
+@pytest.mark.parametrize(
+    "nodes, message",
+    [
+        ("  nodes: [/mapper]\n", "must be a mapping of node names"),
+        ("  nodes:\n    mapper: {}\n", "fully-qualified node name"),
+        ("  nodes:\n    /mapper: {weight: 2}\n", "takes only 'thresholds'"),
+        ("  nodes:\n    /mapper:\n      thresholds: {bogus: {warn: 1}}\n", "unknown metric"),
+    ],
+)
+def test_node_entries_are_checked(tmp_path: Path, nodes: str, message: str) -> None:
+    with pytest.raises(ConfigError, match=message):
+        load_config(_write(tmp_path, "node_profiling:\n" + nodes))
+
+
 def test_node_profiling_must_be_a_mapping(tmp_path: Path) -> None:
     path = _write(tmp_path, "node_profiling: not_a_mapping")
     with pytest.raises(ConfigError, match="'node_profiling' must be a mapping"):

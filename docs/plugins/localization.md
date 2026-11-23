@@ -66,7 +66,7 @@ topics:
 
 ### LOC-003 · Covariance growing { #loc-003 }
 
-<span class="sev sev-warn">▲ WARN</span> <span class="sev sev-error">✗ ERROR</span> The position covariance trace is changing faster than `covariance_growth_rate`, in m²/s, across the last 10 messages. Continuous topics have no default level for this.
+<span class="sev sev-warn">▲ WARN</span> <span class="sev sev-error">✗ ERROR</span> The position covariance trace is growing faster than `covariance_growth_rate`, in m²/s, as a trend fitted over the last 10 s, so a filter's rise between two corrections doesn't count. A shrinking covariance is never flagged. Continuous topics have no default level for this.
 
 **Likely causes:** a global localizer no longer receiving corrections.
 

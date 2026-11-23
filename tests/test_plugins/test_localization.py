@@ -107,6 +107,22 @@ def test_global_frame_flags_growing_covariance() -> None:
     assert set(plugin.get_status().codes) == {"LOC-003"}
 
 
+def test_a_shrinking_covariance_is_never_growth() -> None:
+    plugin = LocalizationPlugin()
+    plugin.on_message("/pose", _framed_odometry("map", stamp_sec=0, xx=0.9))
+    plugin.on_message("/pose", _framed_odometry("map", stamp_sec=1, xx=0.3))
+    assert "LOC-003" not in plugin.get_status().codes
+
+
+def test_a_filters_rise_between_corrections_is_not_a_trend() -> None:
+    """An EKF's covariance rising for a second, then pulled back down by each GNSS fix."""
+    plugin = LocalizationPlugin()
+    for step in range(100):
+        sec, tenth = divmod(step, 10)
+        plugin.on_message("/pose", _framed_odometry("map", stamp_sec=sec, stamp_nanosec=tenth * 100_000_000, xx=0.3 + 0.02 * tenth))
+    assert "LOC-003" not in plugin.get_status().codes
+
+
 def test_global_frame_accepts_a_particle_filters_usual_covariance() -> None:
     plugin = LocalizationPlugin()
     plugin.on_message("/amcl_pose", _pose(xx=0.25))

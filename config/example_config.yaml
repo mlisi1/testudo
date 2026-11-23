@@ -140,13 +140,13 @@ topics:
     - name: /gps/fix
       weight: 2
       thresholds:
-        # This receiver is consumer/SBAS-grade, not RTK -- a few meters of
-        # std per axis is normal here, well past the plugin's RTK-tuned
-        # default (warn past 1e-4 m^2).
+        # This receiver is RTK-corrected: a few centimetres of std per axis,
+        # far tighter than the plugin's default for an ordinary receiver
+        # (warn past 25 m^2, a std of 5 m).
         position_covariance:
-          warn: 1.0
-          green: 1.0
-          orange: 9.0
+          warn: 0.0001
+          green: 0.0001
+          orange: 0.01
         # ...but under the canopy on this site, losing fix for a couple of
         # readings in twenty is normal; only flag heavier dropout than that.
         fix_dropout_ratio:
@@ -279,6 +279,13 @@ tf:
 #     # judged once the window spans a minute and the process has been up
 #     # 5 minutes (startup allocation isn't a leak).
 #     memory_slope_mb_per_min: {warn: 10}
+#   # One node's own levels, over the ones above: a mapper's memory grows
+#   # with its map, which Testudo can't tell from a leak.
+#   nodes:
+#     /glim_ros:
+#       thresholds:
+#         memory_mb: {warn: 4000}
+#         memory_slope_mb_per_min: {warn: null}
 #   exclude_nodes:
 #     - /some_noisy_diagnostic_only_node
 

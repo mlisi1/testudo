@@ -37,6 +37,7 @@ _NODE_PROFILING_KEYS = {
     "exclude_nodes",
     "thresholds",
     "publish_topic",
+    "nodes",
 }
 _NODE_METRICS = ("cpu_percent", "memory_mb", "ctx_switches_per_s", "memory_slope_mb_per_min")
 
@@ -64,6 +65,23 @@ def _parse_node_thresholds(raw: Any, source: str) -> dict[str, Any]:
     return raw
 
 
+def _parse_node_overrides(raw: Any, session: dict[str, SeverityLevels], source: str) -> dict[str, dict[str, SeverityLevels]]:
+    """`nodes:` -> {node: {metric: levels}}, each metric merged over the session-wide `session` levels."""
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{source}: node_profiling.nodes must be a mapping of node names")
+    overrides: dict[str, dict[str, SeverityLevels]] = {}
+    for node, entry in raw.items():
+        if not isinstance(node, str) or not node.startswith("/"):
+            raise ConfigError(f"{source}: node_profiling.nodes: {node!r} must be a fully-qualified node name like /glim_ros")
+        if not isinstance(entry, dict) or set(entry) - {"thresholds"}:
+            raise ConfigError(f"{source}: node_profiling.nodes.{node} takes only 'thresholds'")
+        thresholds = _parse_node_thresholds(entry.get("thresholds", {}), source)
+        overrides[node] = {
+            metric: _parse_node_levels(thresholds, metric, session[metric], source) for metric in thresholds
+        }
+    return overrides
+
+
 def default_node_profiling_topic(publish: PublishConfig) -> str:
     """Where node profiling publishes unless `publish_topic` is set: next to the rest of the output.
 
@@ -89,6 +107,7 @@ def parse_node_profiling(raw: Any, source: str, publish: PublishConfig) -> NodeP
 
     default = NodeProfilingConfig()
     thresholds = _parse_node_thresholds(raw.get("thresholds", {}), source)
+    session = {metric: _parse_node_levels(thresholds, metric, getattr(default, metric), source) for metric in _NODE_METRICS}
     return NodeProfilingConfig(
         enabled=enabled,
         poll_interval_seconds=parse_positive_number(
@@ -101,7 +120,8 @@ def parse_node_profiling(raw: Any, source: str, publish: PublishConfig) -> NodeP
         ),
         gpu_enabled=gpu_enabled,
         exclude_nodes=parse_exclude_rules(raw.get("exclude_nodes", []), source, key="exclude_nodes"),
-        **{metric: _parse_node_levels(thresholds, metric, getattr(default, metric), source) for metric in _NODE_METRICS},
+        **session,
+        node_levels=_parse_node_overrides(raw.get("nodes", {}), session, source),
         publish_topic=parse_topic_name(
             raw.get("publish_topic", default_node_profiling_topic(publish)), "node_profiling.publish_topic", source
         ),

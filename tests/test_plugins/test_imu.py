@@ -364,6 +364,28 @@ def test_a_gap_between_stamps_is_flagged() -> None:
     assert "between stamps" in status.codes["IMU-011"]
 
 
+def _arriving(stamps_and_arrivals: list[tuple[float, float]]) -> ImuPlugin:
+    """Each message handed over at its own arrival time, as the core does."""
+    plugin = ImuPlugin()
+    for step, (stamp, arrival) in enumerate(stamps_and_arrivals):
+        plugin.on_tick(arrival)
+        plugin.on_message("/imu", _stamped(stamp, step))
+    return plugin
+
+
+def test_a_dropout_arriving_fresh_is_flagged() -> None:
+    stamps = [100.0 + step * 0.1 for step in range(10)] + [101.5]
+    assert "IMU-011" in _arriving([(stamp, stamp + 0.002) for stamp in stamps]).get_status().codes
+
+
+def test_a_gap_testudo_caused_is_not_flagged() -> None:
+    """The spin thread was held up 0.4 s: the message ending the gap waited in Testudo's queue."""
+    steady = [(100.0 + step * 0.1, 100.0 + step * 0.1 + 0.002) for step in range(10)]
+    stalled = [(101.275, 101.3)]  # stamped 25 ms before the queue was read again
+    plugin = _arriving(steady + stalled + [(101.4, 101.402), (101.5, 101.502)])
+    assert "IMU-011" not in plugin.get_status().codes
+
+
 def test_a_stamp_going_backwards_is_flagged() -> None:
     stamps = [100.0 + step * 0.1 for step in range(5)] + [100.1]
     assert "went back" in _stamp_plugin(stamps).get_status().codes["IMU-011"]

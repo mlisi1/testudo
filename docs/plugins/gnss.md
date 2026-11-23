@@ -16,14 +16,14 @@ Checks a receiver's fix: whether it has one, how accurate it claims to be, and w
 
 ## What it needs
 
-No related topics. The default covariance level is RTK-grade, so a consumer or SBAS receiver should raise it:
+No related topics. The default covariance level suits an ordinary receiver: it warns past a variance of 25 m² on any axis, a σ of 5 m. An RTK receiver should tighten it, here to a σ of 1 cm:
 
 ```yaml
 topics:
   sensor_msgs/msg/NavSatFix:
     - name: /gps/fix
       thresholds:
-        position_covariance: {warn: 1.0}
+        position_covariance: {warn: 0.0001, green: 0.0001, orange: 0.01}
 ```
 
 ## Codes

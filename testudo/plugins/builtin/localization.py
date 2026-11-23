@@ -61,7 +61,11 @@ _ORIENTATION_VARIANCE_INDICES = (_ROLL_VARIANCE_INDEX, _PITCH_VARIANCE_INDEX, _Y
 _TWIST_LINEAR_X_VARIANCE_INDEX = 0
 _TWIST_ANGULAR_Z_VARIANCE_INDEX = 35
 
-_GROWTH_WINDOW_SIZE = 10
+#: Covariance growth (LOC-003) is a trend over this much of the topic's own
+#: time: shorter, and an EKF's normal rise between two GNSS fixes reads as
+#: growth. At most `_GROWTH_WINDOW_SIZE` samples (decimated, so ~10 Hz).
+_GROWTH_WINDOW_SECONDS = 10.0
+_GROWTH_WINDOW_SIZE = 200
 
 _ODOM_STUCK_THRESHOLD_MPS = 0.02
 _ODOM_STUCK_THRESHOLD_RADPS = 0.02
@@ -220,8 +224,13 @@ class LocalizationPlugin(CheckPlugin):
 
         stamp_seconds = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
         self._jumps.observe(msg, stamp_seconds, self._now, self._role(), self.levels)
-        self._growth_history.append((stamp_seconds, self._position_covariance_trace))
-        self._growth_rate = growth_rate(self._growth_history)
+        history = self._growth_history
+        if history and stamp_seconds < history[-1][0]:
+            history.clear()  # time went back (a restarted bag, a reset sim clock)
+        history.append((stamp_seconds, self._position_covariance_trace))
+        while stamp_seconds - history[0][0] > _GROWTH_WINDOW_SECONDS:
+            history.popleft()
+        self._growth_rate = growth_rate(history)
 
         self._has_twist = hasattr(msg, "twist")
         if self._has_twist:
@@ -259,7 +268,8 @@ class LocalizationPlugin(CheckPlugin):
 
         trace_severity = evaluate_levels(self._position_covariance_trace, self._levels_for("position_covariance_trace"))
         yaw_severity = evaluate_levels(self._yaw_variance, self._levels_for("yaw_variance"))
-        growth_severity = evaluate_levels(abs(self._growth_rate), self._levels_for("covariance_growth_rate"))
+        # Only growth: a covariance shrinking is a localizer converging, never a fault.
+        growth_severity = evaluate_levels(max(0.0, self._growth_rate), self._levels_for("covariance_growth_rate"))
         psd_severity = Severity.OK if (self._pose_psd_ok and self._twist_psd_ok) else Severity.ERROR
         cmd_vel_severity, cmd_vel_message = self._cmd_vel_cross_check()
         jumps = self._jumps.findings(self._now, self.levels)
@@ -330,7 +340,7 @@ class LocalizationPlugin(CheckPlugin):
             "axes_compact": "\n".join(sigmas(_COMPACT_METER_SEGMENTS) + motion),
             "σxy": (
                 f"{trend or '[dim]–[/dim]'} [dim]({len(self._sigma_xy_history)} s)[/dim]   "
-                f"growth {self._growth_rate:+.3f} m²/s {meter(abs(self._growth_rate), growth_zone, _METER_SEGMENTS)}   "
+                f"growth {self._growth_rate:+.3f} m²/s {meter(max(0.0, self._growth_rate), growth_zone, _METER_SEGMENTS)}   "
                 f"[dim]{frame or '?'} → {child or '?'}{f' · {role}' if role else ''}[/dim]"
             ),
             "pose_more": pose_line(self._position, self._orientation_rpy[2]),
@@ -350,7 +360,7 @@ class LocalizationPlugin(CheckPlugin):
             topic_panel_value=self._sigma_xy_cell(trace_severity, growth_zone),
             codes=codes.messages,
             code_severities=codes.severities,
-            code_metrics={"LOC-001": CodeMetric("position_covariance_trace", self._position_covariance_trace), "LOC-002": CodeMetric("yaw_variance", self._yaw_variance), "LOC-003": CodeMetric("covariance_growth_rate", abs(self._growth_rate))},
+            code_metrics={"LOC-001": CodeMetric("position_covariance_trace", self._position_covariance_trace), "LOC-002": CodeMetric("yaw_variance", self._yaw_variance), "LOC-003": CodeMetric("covariance_growth_rate", max(0.0, self._growth_rate))},
             metrics=self._metrics(),
         )
 

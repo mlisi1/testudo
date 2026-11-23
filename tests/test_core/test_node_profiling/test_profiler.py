@@ -348,3 +348,31 @@ def test_subprocess_count_comes_from_rediscovery_not_sampling(monkeypatch: pytes
     stat = profiler.reports()[0]
     assert stat.num_children == 1
     assert stat.status.values["subprocesses"] == "1"
+
+
+def test_a_node_is_judged_by_its_own_levels(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A mapper whose memory grows by design, named under `nodes:`, keeps its own memory level."""
+    monkeypatch.setattr("os.getpid", lambda: 555)
+    import testudo.core.node_profiling.process_match as process_match_module
+
+    class _FakeProc:
+        def __init__(self, pid, cmdline, name):
+            self.pid = pid
+            self.info = {"pid": pid, "cmdline": cmdline, "name": name}
+
+    monkeypatch.setattr(
+        process_match_module.psutil,
+        "process_iter",
+        lambda _attrs: iter([_FakeProc(777, ["mapper", "-r", "__node:=mapper"], "mapper")]),
+    )
+    _FakeProcess._next_by_pid = {777: {"cpu": 10.0, "mem_mb": 300.0, "threads": 1, "children": 0}}
+
+    def severity(config: NodeProfilingConfig) -> Severity:
+        profiler = NodeProfiler(_FakeNode(node_names=[("mapper", "/")]), config, hysteresis_required_consecutive=1)
+        profiler.start()
+        profiler.tick()
+        profiler.tick()
+        return next(stat for stat in profiler.reports() if stat.identity == "/mapper").status.severity
+
+    assert severity(_config()) == Severity.WARN
+    assert severity(_config(node_levels={"/mapper": {"memory_mb": SeverityLevels(warn=1000.0)}})) == Severity.OK

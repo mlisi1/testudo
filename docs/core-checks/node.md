@@ -30,7 +30,7 @@ A node is matched to its process through its `__node:=` remap, or else by execut
 
 **Likely causes:** a memory leak, or a buffer that never stops growing.
 
-**What to do:** watch the trend in the Detail Panel over a longer run.
+**What to do:** watch the trend in the Detail Panel over a longer run. Testudo can't tell a leak from memory that grows by design, such as a mapper's map: give that node its own level under [`nodes:`](#settings).
 
 ### NODE-004 · CPU usage high { #node-004 }
 
@@ -46,7 +46,7 @@ A node is matched to its process through its `__node:=` remap, or else by execut
 
 **Likely causes:** large maps or buffers, or a leak.
 
-**What to do:** raise the level if this size is normal for the node.
+**What to do:** raise the level for that node under [`nodes:`](#settings) if this size is normal for it.
 
 ## Settings
 
@@ -58,6 +58,13 @@ node_profiling:
   poll_interval_seconds: 2.0
   thresholds:
     cpu_percent: {warn: 200}
+  nodes:
+    /glim_ros:          # a mapper: its memory grows with the map
+      thresholds:
+        memory_mb: {warn: 4000}
+        memory_slope_mb_per_min: {warn: null}
   exclude_nodes:
     - /some_noisy_node
 ```
+
+A node under `nodes:` takes only the metrics written there from its own entry, and the rest from `thresholds:`.

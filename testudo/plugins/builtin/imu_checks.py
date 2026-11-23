@@ -50,6 +50,12 @@ _ODOM_EXPIRY_SECONDS = 1.0
 _STAMP_INTERVALS = 20
 _MIN_INTERVALS_FOR_GAP = 5
 _MIN_INTERVALS_FOR_JITTER = 10
+#: How much older than usual (arrival time minus stamp) the message ending a
+#: gap may arrive before the gap is put down to Testudo falling behind: a
+#: stalled spin thread finds that message waiting in its own queue, at
+#: least a queue depth of messages old (25 ms at 400 Hz), while after a
+#: real dropout it arrives as fresh as any other.
+_BEHIND_SECONDS = 0.01
 
 
 def classify_gravity(magnitude: float) -> str:
@@ -208,16 +214,20 @@ class StampRegularity:
     """Gaps and jitter between the stamps of the messages the plugin gets to check (IMU-011).
 
     High-rate topics are decimated, so this sees dropouts longer than the
-    check interval, not the odd late message between two checks.
+    check interval, not the odd late message between two checks. A gap
+    whose closing message arrived later than usual after its stamp is
+    Testudo's own: its spin thread was held up and found the message
+    queued, so the gap is not judged.
     """
 
     def __init__(self) -> None:
         self._last: float | None = None
         self._intervals: deque[float] = deque(maxlen=_STAMP_INTERVALS)
+        self._lags: deque[float] = deque(maxlen=_STAMP_INTERVALS)
         self._held: tuple[float, int, str] | None = None
 
     def observe(self, stamp: float, now: float, gap_levels: SeverityLevels | None) -> None:
-        """Take one message's stamp; an unset stamp is the core stamp check's to report."""
+        """Take one message's stamp, `now` being when it arrived; an unset stamp is the core stamp check's to report."""
         if stamp <= 0:
             return
         previous, self._last = self._last, stamp
@@ -227,13 +237,16 @@ class StampRegularity:
         if interval < 0:
             self._held = (now, Severity.WARN, f"stamp went back {-interval:.3f} s")
             return
+        lag = now - stamp
         if len(self._intervals) >= _MIN_INTERVALS_FOR_GAP:
             usual = statistics.median(self._intervals)
             severity = evaluate_levels(interval / usual, gap_levels)
             if severity != Severity.OK:
-                self._held = (now, severity, f"{interval:.3f} s between stamps, usually {usual:.3f} s")
-                return  # a dropout says nothing about the usual interval
+                if lag - statistics.median(self._lags) <= _BEHIND_SECONDS:
+                    self._held = (now, severity, f"{interval:.3f} s between stamps, usually {usual:.3f} s")
+                return  # a dropout says nothing about the usual interval, or the usual lag
         self._intervals.append(interval)
+        self._lags.append(lag)
 
     def jitter(self) -> float | None:
         """The stamp intervals' standard deviation over their mean, once there are enough of them."""

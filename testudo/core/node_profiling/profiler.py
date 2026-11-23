@@ -126,13 +126,13 @@ class NodeProfiler:
                 sample,
                 resolved.pid,
                 resolved.process_name,
-                self._config.cpu_percent,
-                self._config.memory_mb,
-                self._config.ctx_switches_per_s,
+                self._config.levels_for(resolved.identity, "cpu_percent"),
+                self._config.levels_for(resolved.identity, "memory_mb"),
+                self._config.levels_for(resolved.identity, "ctx_switches_per_s"),
                 gpu_mb,
                 resolved.num_children,
                 history.memory_slope_mb_per_min(),
-                self._config.memory_slope_mb_per_min,
+                self._config.levels_for(resolved.identity, "memory_slope_mb_per_min"),
             )
             debouncer = self._debouncers.setdefault(
                 resolved.identity, HysteresisDebouncer(self._hysteresis_required_consecutive)

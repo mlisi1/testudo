@@ -120,7 +120,7 @@ A stream whose acceleration has only ever been zero on all three axes is taken t
 
 **Likely causes:** dropped samples, a congested bus, or a host-stamped driver under load.
 
-**What to do:** check the sensor's link and the load on the host. Only the checked messages are seen, so very short gaps can pass unnoticed.
+**What to do:** check the sensor's link and the load on the host. Only the checked messages are seen, so very short gaps can pass unnoticed. A gap Testudo caused itself, by falling behind on a loaded host, isn't reported: the message after it arrives later than usual after its stamp, having waited in Testudo's own queue, while after a real dropout it arrives as fresh as any other.
 
 ## Settings
 

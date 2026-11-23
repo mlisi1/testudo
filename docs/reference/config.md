@@ -90,6 +90,7 @@ tf:
 | `publish_topic` | `/testudo/nodes` | Where results are published |
 | `exclude_nodes` | `[]` | Nodes to leave out |
 | `thresholds` | see [node profiling](../core-checks/node.md#settings) | `warn` and `error` only |
+| `nodes` | `{}` | One node's own `thresholds`, by its full name, over the ones above |
 
 ## `faults`
 

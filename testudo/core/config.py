@@ -239,6 +239,9 @@ class NodeProfilingConfig:
     samples (a least-squares slope, judged only once the window spans a
     minute and the process has been up 5 minutes, past its startup
     allocation) -- leak detection, which a single memory reading can't do.
+    `node_levels` holds a node's own levels (`nodes: <name>: thresholds:`),
+    already merged over the session-wide ones: a node whose memory grows
+    by design, such as a mapper, is told apart only by being named here.
     """
 
     enabled: bool = True
@@ -250,9 +253,16 @@ class NodeProfilingConfig:
     memory_mb: SeverityLevels = SeverityLevels(warn=500.0)
     ctx_switches_per_s: SeverityLevels = SeverityLevels(warn=50.0)
     memory_slope_mb_per_min: SeverityLevels = SeverityLevels(warn=10.0)
+    #: Fully-qualified node name -> {metric: levels}, for the nodes given their own.
+    node_levels: dict[str, dict[str, SeverityLevels]] = field(default_factory=dict)
     #: Defaults to `<publish.namespace>/nodes`, or `<publish.topic>/nodes` with
     #: `publish.per_plugin: false` (see `config_sections.default_node_profiling_topic`).
     publish_topic: str = "/testudo/nodes"
+
+    def levels_for(self, node: str, metric: str) -> SeverityLevels:
+        """`metric`'s levels for `node`: its own if configured, else the session-wide ones."""
+        own = self.node_levels.get(node, {})
+        return own[metric] if metric in own else getattr(self, metric)
 
 
 @dataclass(frozen=True)

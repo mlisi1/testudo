@@ -12,6 +12,10 @@
 - Testudo uses rclpy's events executor where there is one (Jazzy and newer): on a load like the first real robot's (~4,700 msg/s) it takes about a fifth of a core instead of a whole one, and keeps up with its topics. `TESTUDO_EXECUTOR=single` falls back to the older executor.
 - A topic's rate is averaged over at least its last second of messages, not only its last 20: a 100 Hz topic read up to 12% fast.
 - After a stack closes, its topics no longer come back as "no publishers" rows when only Testudo's own just-destroyed subscriptions still list them, and a topic with no publishers is forgotten once it leaves the graph.
+- IMU: a stamp gap Testudo caused itself, by falling behind on a loaded host, is no longer IMU-011: the message after it arrives later than usual after its stamp, having waited in Testudo's own queue.
+- Localization: LOC-003 judges only growth, never a shrinking covariance, as a trend fitted over the last 10 s instead of across the last 10 messages, so a filter's rise between two GNSS fixes isn't growth.
+- GNSS: the default `position_covariance` level suits an ordinary receiver (warn past 25 m², a σ of 5 m per axis) instead of RTK (σ 1 cm); an RTK receiver tightens it in config.
+- Node profiling: `node_profiling.nodes` gives a node its own levels, e.g. a mapper whose memory grows with its map.
 
 ### Docs
 

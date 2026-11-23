@@ -124,16 +124,23 @@ def test_unknown_covariance_type_does_not_penalize_zero_covariance() -> None:
     assert _plain(status.topic_panel_value) == "FIX"
 
 
+def test_an_ordinary_receivers_metres_are_fine() -> None:
+    """An ordinary receiver claims a σ of a few metres with a good fix."""
+    plugin = GnssPlugin()
+    plugin.on_message("/gps/fix", _fix(covariance=(15.6, 0, 0, 0, 15.6, 0, 0, 0, 21.8)))
+    assert "GNSS-002" not in plugin.get_status().codes
+
+
 def test_known_covariance_above_threshold_is_flagged() -> None:
     plugin = GnssPlugin()
-    # 0.1 m^2 (~32cm std) is degraded for RTK (warn past 1e-4), not broken.
-    plugin.on_message("/gps/fix", _fix(covariance=(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1)))
+    # 36 m^2 (6 m std) is degraded for any receiver (warn past 25), not broken.
+    plugin.on_message("/gps/fix", _fix(covariance=(36.0, 0, 0, 0, 36.0, 0, 0, 0, 36.0)))
     status = plugin.get_status()
     assert status.severity == Severity.WARN
     assert "position covariance out of bounds" in status.message
     assert "GNSS-002" in status.codes
     # The code speaks σ like the meters above it, not the raw m² variance.
-    assert _plain(status.codes["GNSS-002"]) == "position σ high (σx ±0.32m, σy ±0.32m, σz ±0.32m; per-axis limit ±0.01m)"
+    assert _plain(status.codes["GNSS-002"]) == "position σ high (σx ±6.00m, σy ±6.00m, σz ±6.00m; per-axis limit ±5.00m)"
 
 
 def test_placeholder_covariance_is_an_error_quoting_the_error_limit() -> None:
@@ -159,14 +166,14 @@ def test_covariance_flags_the_specific_bad_axis() -> None:
     # Only z (altitude) is bad -- x/y should not be implicated in the message,
     # and shouldn't be hidden behind a summed trace either.
     plugin = GnssPlugin()
-    plugin.on_message("/gps/fix", _fix(covariance=(0.0001, 0, 0, 0, 0.0001, 0, 0, 0, 0.5)))
+    plugin.on_message("/gps/fix", _fix(covariance=(0.0001, 0, 0, 0, 0.0001, 0, 0, 0, 36.0)))
     status = plugin.get_status()
     assert status.severity == Severity.WARN
     assert "z=" in status.message
     assert "x=" not in status.message
     assert "y=" not in status.message
     # The vertical meter judges z (zones color it red); the horizontal one stays green.
-    assert "σ vert ±0.71m [bold red]▮" in status.values["fix"]
+    assert "σ vert ±6.00m [bold red]▮" in status.values["fix"]
     assert "σ horiz ±0.01m [green]▮▮▮▮▮▮" in status.values["fix"]
 
 
