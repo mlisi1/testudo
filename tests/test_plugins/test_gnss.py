@@ -6,6 +6,7 @@ from sensor_msgs.msg import NavSatFix, NavSatStatus
 from rich.text import Text
 
 from testudo.plugins.base import Severity
+from testudo.plugins.builtin.gnss_layout import fix_history
 from testudo.plugins.builtin.gnss import GnssPlugin
 
 
@@ -89,6 +90,7 @@ def test_no_fix_raises_only_gnss_001() -> None:
     assert status.message == "no fix"
     assert _plain(status.values["fix"]).startswith("● NO_FIX   σ horiz n/a (no fix)   σ vert n/a (no fix)")
     assert "sigma_horizontal_m" not in status.metrics
+    assert status.values["fixes"] == fix_history([True] * 20, Severity.ERROR)
 
 
 def test_dropouts_still_flagged_while_the_fix_comes_and_goes() -> None:

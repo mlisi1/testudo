@@ -346,9 +346,11 @@ class GnssPlugin(CheckPlugin):
             if self._jump_speed_mps is not None
             else "[dim]–[/dim]"
         )
+        # A window of nothing but dropouts is GNSS-001's, so its count takes that color.
+        history_severity = max(dropout_severity, fix_severity) if all(self._dropout_window) else dropout_severity
         values: dict[str, str] = {
             "fix": f"{fix_chip}   {horizontal}   {vertical}   [dim]cov {covariance_label}[/dim]",
-            "fixes": fix_history(self._dropout_window, dropout_severity),
+            "fixes": fix_history(self._dropout_window, history_severity),
             "jump": jump,
             "stuck": str(self._stuck_count),
             "invalid": f"{self._invalid_ratio:.0%}",

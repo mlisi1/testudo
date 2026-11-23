@@ -19,8 +19,15 @@ def test_every_version_agrees() -> None:
     root = PACKAGE_XML.parent
     version = xml.dom.minidom.parse(str(PACKAGE_XML)).getElementsByTagName("version")[0].firstChild.data
     assert f'version="{version}"' in (root / "setup.py").read_text(encoding="utf-8")
+    # The newest released section first, unless a "Forthcoming" one (unreleased
+    # changes, which catkin_prepare_release turns into the next version) precedes it.
     rst = (root / "CHANGELOG.rst").read_text(encoding="utf-8").splitlines()
-    assert rst[4].startswith(f"{version} (") and set(rst[5]) == {"-"} and len(rst[5]) == len(rst[4])
+    released = [index for index, line in enumerate(rst) if line and set(line) == {"-"}]
+    titles = [rst[index - 1] for index in released]
+    if titles and titles[0] == "Forthcoming":
+        titles = titles[1:]
+    assert titles and titles[0].startswith(f"{version} (")
+    assert all(len(rst[index]) == len(rst[index - 1]) for index in released)
     assert f"## {version} (" in (root / "CHANGELOG.md").read_text(encoding="utf-8")
 
 

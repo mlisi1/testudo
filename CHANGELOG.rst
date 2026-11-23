@@ -7,6 +7,7 @@ Forthcoming
 * GNSS: without a fix, only GNSS-001 is raised; the placeholder σ, the repeated position and a window of nothing but dropouts no longer add GNSS-002, -005 and -003.
 * TF: a ``/tf`` that never publishes is idle while the whole tree comes from ``/tf_static`` (fixed joints only, no localization running), instead of LIVE-002.
 * IMU: a stream carrying only gyro or only acceleration (a RealSense without ``unite_imu_method``) says so, and a gyro-only stream no longer reads as gravity removed.
+* Docs: the GNSS clip shows the accuracy collapsing (GNSS-002) before the fix is lost (GNSS-001); the dashboard media were recorded again.
 
 1.0.0 (2026-11-19)
 ------------------

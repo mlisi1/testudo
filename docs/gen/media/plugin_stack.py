@@ -117,12 +117,16 @@ class PluginStack:
         self._imu.publish(msg)
 
     def _publish_gps(self, stamp, faulty: bool) -> None:
-        """GNSS-001 and GNSS-002: the fix is lost and the claimed accuracy collapses."""
+        """GNSS-002, then GNSS-001: the claimed accuracy collapses, then the fix is lost.
+
+        Without a fix σ isn't judged, so GNSS-002 clears when GNSS-001 comes up.
+        """
         variance = (25.0, 25.0, 64.0) if faulty else (0.00002, 0.00002, 0.00005)
+        fix_lost = phase_s() >= HEALTHY_S + FAULT_S / 2
         msg = NavSatFix()
         msg.header.stamp = stamp
         msg.header.frame_id = "gps_link"
-        msg.status.status = NavSatStatus.STATUS_NO_FIX if faulty else NavSatStatus.STATUS_FIX
+        msg.status.status = NavSatStatus.STATUS_NO_FIX if fix_lost else NavSatStatus.STATUS_FIX
         msg.latitude = 45.0 + random.gauss(0.0, 1e-7)
         msg.longitude = 9.0 + random.gauss(0.0, 1e-7)
         msg.altitude = 120.0 + random.gauss(0.0, 0.01)

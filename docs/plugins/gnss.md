@@ -2,8 +2,8 @@
 
 Checks a receiver's fix: whether it has one, how accurate it claims to be, and whether its positions are believable.
 
-<video class="tx-loop" src="../../assets/media/plugins/gnss.mp4" autoplay loop muted playsinline disablepictureinpicture disableremoteplayback preload="metadata" aria-label="A GNSS receiver losing its fix"></video>
-<p class="tx-caption" markdown="span">The receiver loses its fix and its claimed accuracy collapses: [`GNSS-001`](#gnss-001) and [`GNSS-002`](#gnss-002).</p>
+<video class="tx-loop" src="../../assets/media/plugins/gnss.mp4" autoplay loop muted playsinline disablepictureinpicture disableremoteplayback preload="metadata" aria-label="A GNSS receiver whose accuracy collapses before it loses its fix"></video>
+<p class="tx-caption" markdown="span">The claimed accuracy collapses, [`GNSS-002`](#gnss-002), then the receiver loses its fix, [`GNSS-001`](#gnss-001), and σ is no longer judged.</p>
 
 ## What it covers
 

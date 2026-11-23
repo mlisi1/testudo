@@ -139,7 +139,7 @@ class FaultStack:
         self._imu.publish(msg)
 
     def _publish_gps(self, stamp) -> None:
-        """GNSS-001 and GNSS-002: no fix and a large position variance."""
+        """GNSS-001: no fix (its placeholder variance is not judged without one)."""
         msg = NavSatFix()
         msg.header.stamp = stamp
         msg.header.frame_id = "gps_link"
