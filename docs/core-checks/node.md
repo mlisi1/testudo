@@ -4,7 +4,7 @@ Samples the CPU, memory and process state of every ROS node whose process can be
 
 It only runs live, because a bag has no processes to sample. GPU memory needs an NVIDIA card and `nvidia-ml-py`, and is skipped otherwise.
 
-A node is matched to its process through its `__node:=` remap, or else by executable name. A node that can't be matched either way isn't profiled.
+A node is matched to its process through its `__node:=` remap, or else by executable name, also without a trailing `node` (GLIM's `glim_rosnode` runs `glim_ros`). A process launched with only `__ns:=` takes the one node left unmatched in that namespace, such as a RealSense driver's `camera`. A node that can't be matched isn't profiled, and neither is a process in another PID namespace, such as a Docker container.
 
 ## Codes
 

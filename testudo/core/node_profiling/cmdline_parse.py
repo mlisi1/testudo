@@ -26,8 +26,29 @@ def parse_remapped_node_name(cmdline: list[str]) -> str | None:
     `-r__node:=X`/`--remap=__node:=X` -- every token is scanned for the
     prefix rather than assuming one fixed argv shape.
     """
+    node_name, namespace = _remaps(cmdline)
+    if not node_name:
+        return None
+    return fully_qualified_node_name(namespace or "", node_name)
+
+
+def parse_remapped_namespace(cmdline: list[str]) -> str | None:
+    """The namespace a process is launched into with `-r __ns:=...` and no `__node:=`, as `/ns`; else None.
+
+    Such a node keeps the name its code gives it (a RealSense driver launched
+    as `realsense2_camera_node --ros-args -r __ns:=/front_camera` is
+    `/front_camera/camera`), so only its namespace is known from argv.
+    """
+    node_name, namespace = _remaps(cmdline)
+    if node_name or namespace is None:
+        return None
+    return "/" + namespace.strip("/")
+
+
+def _remaps(cmdline: list[str]) -> tuple[str | None, str | None]:
+    """The `__node:=` and `__ns:=` values in `cmdline`, each None when absent (the last one wins)."""
     node_name: str | None = None
-    namespace = ""
+    namespace: str | None = None
     for token in cmdline:
         value = _remap_value(token)
         if value is None:
@@ -36,9 +57,7 @@ def parse_remapped_node_name(cmdline: list[str]) -> str | None:
             node_name = value[len(_NODE_NAME_REMAP_PREFIX) :]
         elif value.startswith(_NAMESPACE_REMAP_PREFIX):
             namespace = value[len(_NAMESPACE_REMAP_PREFIX) :]
-    if not node_name:
-        return None
-    return fully_qualified_node_name(namespace, node_name)
+    return node_name, namespace
 
 
 def _remap_value(token: str) -> str | None:

@@ -6,6 +6,10 @@ through rclpy. This uses two heuristics, in confidence order:
 
 1. Exact: the process's cmdline carries a `-r __node:=<name>` (optionally
    `__ns:=<namespace>`) remap arg -- an unambiguous fully-qualified match.
+1b. Namespace only: `-r __ns:=<namespace>` with no `__node:=`, the name
+   coming from the node's code (a RealSense driver launched into
+   `/front_camera` is `/front_camera/camera`). Matched last, and only to
+   the single node still unmatched in that namespace: with two, nothing.
 2. Fallback: some positional (non-flag) argv token's basename equals a
    candidate node's bare name -- catches the common case of a single-
    instance node named after its executable (most of Nav2's C++ servers,
@@ -51,7 +55,7 @@ from typing import Callable, Iterable
 
 import psutil
 
-from testudo.core.node_profiling.cmdline_parse import parse_remapped_node_name
+from testudo.core.node_profiling.cmdline_parse import parse_remapped_namespace, parse_remapped_node_name
 
 #: Testudo's own row when its process isn't itself a resolved ROS node --
 #: a name a person recognizes in the Topic Panel, unlike its PID.
@@ -107,10 +111,23 @@ def resolve_processes(
         for pid, cmdline, name in processes:
             if pid in resolved or not remaining:
                 continue
-            match, matched_basename = _bare_name_match(cmdline, remaining)
+            match, matched_basename = _bare_name_match(cmdline, _in_namespace(remaining, parse_remapped_namespace(cmdline)))
             if match is not None:
                 resolved[pid] = ResolvedProcess(pid=pid, identity=match, process_name=name or matched_basename, resolved=True)
                 remaining.discard(match)
+
+    # Heuristic 1b: launched into a namespace with no `__node:=`, the name coming
+    # from the node's code. Only once every other match is taken, and only when
+    # a single unmatched node is left in that namespace.
+    for pid, cmdline, name in processes:
+        namespace = parse_remapped_namespace(cmdline)
+        if pid in resolved or namespace is None:
+            continue
+        candidates = _in_namespace(remaining, namespace)
+        if len(candidates) == 1:
+            match = candidates.pop()
+            resolved[pid] = ResolvedProcess(pid=pid, identity=match, process_name=name or _first_basename(cmdline), resolved=True)
+            remaining.discard(match)
 
     if self_pid not in resolved:
         self_name = next((name or _first_basename(cmdline) for pid, cmdline, name in processes if pid == self_pid), "testudo")
@@ -156,6 +173,13 @@ def _live_processes(
         if parent_pid is not None:
             parent_pids[info["pid"]] = parent_pid
     return result, parent_pids
+
+
+def _in_namespace(node_names: set[str], namespace: str | None) -> set[str]:
+    """The fully-qualified `node_names` directly in `namespace`; all of them when it's None."""
+    if namespace is None:
+        return set(node_names)
+    return {fqn for fqn in node_names if (fqn.rsplit("/", 1)[0] or "/") == namespace}
 
 
 def _first_basename(cmdline: list[str]) -> str:
@@ -208,6 +232,15 @@ def _candidate_basenames(cmdline: list[str]) -> list[str]:
     return [known] + basenames if known is not None else basenames
 
 
+def _name_variants(stem: str) -> set[str]:
+    """`stem`, and `stem` without a trailing `_node`/`node` when something is left."""
+    variants = {stem}
+    for suffix in ("_node", "node"):
+        if stem.endswith(suffix) and len(stem) > len(suffix):
+            variants.add(stem[: -len(suffix)])
+    return variants
+
+
 def _bare_name_match(cmdline: list[str], remaining: set[str]) -> tuple[str | None, str | None]:
     """The first `remaining` fully-qualified name whose bare part matches one of `cmdline`'s candidate basenames.
 
@@ -216,11 +249,12 @@ def _bare_name_match(cmdline: list[str], remaining: set[str]) -> tuple[str | Non
     directly as a script (`python3 controller_server.py`, common for an
     unpackaged/dev node, or a light-path plugin's own test harness) keeps
     its `.py` suffix in argv, which a compiled/console-script executable's
-    extensionless name never has to begin with.
+    extensionless name never has to begin with. A trailing `node`/`_node` is
+    dropped too: GLIM's `glim_rosnode` runs the node `glim_ros`.
     """
     for basename in _candidate_basenames(cmdline):
-        stem = os.path.splitext(basename)[0]
-        match = next((fqn for fqn in remaining if fqn.rsplit("/", 1)[-1] in (basename, stem)), None)
+        names = _name_variants(os.path.splitext(basename)[0]) | {basename}
+        match = next((fqn for fqn in remaining if fqn.rsplit("/", 1)[-1] in names), None)
         if match is not None:
             return match, basename
     return None, None

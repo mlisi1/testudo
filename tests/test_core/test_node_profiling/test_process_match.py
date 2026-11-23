@@ -165,3 +165,56 @@ def test_num_children_counts_every_descendant_from_the_same_snapshot() -> None:
     assert by_pid[100].num_children == 2
     assert by_pid[999].num_children == 0
 
+
+
+def test_namespace_only_remap_matches_the_single_node_left_in_that_namespace() -> None:
+    # A real robot (2026-11-23): the RealSense driver names its node `camera` in code.
+    procs = [
+        _FakeProc(
+            70270,
+            [
+                "/opt/ros/jazzy/lib/realsense2_camera/realsense2_camera_node", "--ros-args",
+                "-r", "__ns:=/front_camera", "--params-file", "/x/front_d455.yaml",
+            ],
+            "realsense2_camera_node",
+        ),
+    ]
+    resolved = resolve_processes(
+        ["/front_camera/camera", "/camera"], self_pid=999, process_iter=_fake_process_iter(procs)
+    )
+    assert {r.pid: r.identity for r in resolved}[70270] == "/front_camera/camera"
+
+
+def test_namespace_only_remap_matches_nothing_when_the_namespace_holds_two_unmatched_nodes() -> None:
+    procs = [_FakeProc(1, ["camera_driver", "--ros-args", "-r", "__ns:=/front"], "camera_driver")]
+    resolved = resolve_processes(["/front/a", "/front/b"], self_pid=999, process_iter=_fake_process_iter(procs))
+    assert all(r.pid != 1 for r in resolved)
+
+
+def test_namespace_only_remap_never_takes_a_node_another_process_matched() -> None:
+    procs = [
+        _FakeProc(1, ["camera_driver", "--ros-args", "-r", "__ns:=/front"], "camera_driver"),
+        _FakeProc(2, ["republisher", "--ros-args", "-r", "__ns:=/front"], "republisher"),
+    ]
+    resolved = resolve_processes(
+        ["/front/camera", "/front/republisher"], self_pid=999, process_iter=_fake_process_iter(procs)
+    )
+    by_pid = {r.pid: r.identity for r in resolved}
+    assert by_pid[2] == "/front/republisher"
+    assert by_pid[1] == "/front/camera"
+
+
+def test_an_executable_named_like_its_node_plus_node_matches() -> None:
+    # GLIM: `glim_rosnode` runs the node `glim_ros`, with no remap.
+    procs = [
+        _FakeProc(
+            70257,
+            ["/home/ros/install/glim_ros/lib/glim_ros/glim_rosnode", "--ros-args", "--params-file", "/tmp/p"],
+            "glim_rosnode",
+        ),
+        _FakeProc(5, ["talker_node"], "talker_node"),
+    ]
+    resolved = resolve_processes(["/glim_ros", "/talker"], self_pid=999, process_iter=_fake_process_iter(procs))
+    by_pid = {r.pid: r.identity for r in resolved}
+    assert by_pid[70257] == "/glim_ros"
+    assert by_pid[5] == "/talker"
