@@ -28,6 +28,7 @@ from testudo.core.config import (
 )
 from testudo.core.nav2_rates import ExpectedRate
 from testudo.core.report_builder import build_reports
+from testudo.core.topic_report import quiet_label
 from testudo.core.subscription_manager import SubscriptionManager
 from testudo.core.topic_report import TopicReport
 from testudo.plugins.base import CheckPlugin, CheckStatus, Severity, ThresholdZone
@@ -571,18 +572,34 @@ def test_remove_then_immediately_readd_the_same_rule_does_not_leave_the_topic_in
     assert reports[0].tier == "excluded"
 
 
-def test_full_tier_topic_with_no_messages_is_error_not_plugin_default() -> None:
+def test_declared_full_tier_topic_with_no_messages_is_error_not_plugin_default() -> None:
     node = _FakeNode(
         topics=[("/beep", ["std_msgs/msg/Empty"])],
         publishers_by_topic={"/beep": [_FakeEndpointInfo(qos_profile=_qos())]},
     )
     discovered = [DiscoveredPlugin(name="empty", plugin_class=_EmptyPlugin, source="packaged")]
-    manager = SubscriptionManager(node, _config(), discovered, clock=_fixed_clock(0.0), **_FAST_SETTLE)
+    config = _declaring(("/beep", "std_msgs/msg/Empty"))
+    manager = SubscriptionManager(node, config, discovered, clock=_fixed_clock(0.0), **_FAST_SETTLE)
     manager.start()
 
     reports = manager.reports()
     assert reports[0].status.severity == Severity.ERROR
     assert "no messages received" in reports[0].status.message
+
+
+def test_undeclared_full_tier_topic_that_never_published_is_idle() -> None:
+    # GLIM's /glim_ros/grid on a real robot (2026-11-23): advertised, published on demand only.
+    node = _FakeNode(
+        topics=[("/beep", ["std_msgs/msg/Empty"])],
+        publishers_by_topic={"/beep": [_FakeEndpointInfo(qos_profile=_qos())]},
+    )
+    discovered = [DiscoveredPlugin(name="empty", plugin_class=_EmptyPlugin, source="packaged")]
+    manager = SubscriptionManager(node, _config(), discovered, clock=_fixed_clock(100.0), **_FAST_SETTLE)
+    manager.start()
+
+    report = manager.reports()[0]
+    assert report.status.severity == Severity.OK
+    assert quiet_label(report.status) == "idle"
 
 
 def test_a_healthy_topic_is_not_called_silent_before_its_first_message_had_time_to_arrive() -> None:

@@ -344,8 +344,10 @@ def full_tier_report(
         if slow is not None:
             status = with_code(status, "LIVE-004", *slow, rate_metric(reported_rate))
     elif liveness.label in QUIET_LABELS:
-        quiet = {f"{liveness.label}_for_s": f"{age:.1f}"} if age is not None else {}
-        quiet_metrics = {f"{liveness.label}_for_s": age} if metrics and age is not None else {}
+        # Never published yet: quiet since it was first polled, so it still reads as quiet.
+        quiet_age = age if age is not None else vitals.waiting_for_first_message(now)
+        quiet = {f"{liveness.label}_for_s": f"{quiet_age:.1f}"}
+        quiet_metrics = {f"{liveness.label}_for_s": quiet_age} if metrics else {}
         status = replace(content, values={**content.values, **quiet}, metrics={**metrics, **quiet_metrics})
     else:
         status = replace(

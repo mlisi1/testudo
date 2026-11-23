@@ -33,7 +33,7 @@ from testudo.core.global_watches import subscribe_lifecycle_tracking, subscribe_
 from testudo.core.lifecycle import LifecycleTracker
 from testudo.core.tier_subscription import subscribe_topic
 from testudo.core.report_builder import build_reports
-from testudo.core.topic_report import QUIET_LABELS, TopicReport
+from testudo.core.topic_report import TopicReport, quiet_label
 from testudo.plugins.base import Severity
 
 if TYPE_CHECKING:
@@ -183,7 +183,7 @@ def _mostly_dead(manager: "SubscriptionManager", reports: list[TopicReport]) -> 
     reports = [
         report
         for report in reports
-        if report.tier not in _NO_LIVENESS_TIERS and report.status.label not in QUIET_LABELS
+        if report.tier not in _NO_LIVENESS_TIERS and quiet_label(report.status) is None
     ]
     dead_count = sum(
         1 for report in reports if report.status.label == "liveness" and report.status.severity >= Severity.ERROR

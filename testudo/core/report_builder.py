@@ -81,7 +81,7 @@ def build_reports(manager: "SubscriptionManager", *, code_overrides: bool = True
             manager._stale_after_seconds,
             _rate_levels(manager, topic_name),
             manager._monitor_hz,
-            **_quiet_flags(manager, topic_name, vitals_only=True),
+            **_quiet_flags(manager, topic_name),
             first_message_grace_s=manager._first_message_grace_seconds,
         )
         reports.append(_suppress(manager, topic_name, _with_nav2_rate(manager, report, vitals, now)))
@@ -180,16 +180,18 @@ def _rate_levels(manager: "SubscriptionManager", topic_name: str) -> SeverityLev
 
 
 def never_published_undeclared(manager: "SubscriptionManager", topic_name: str) -> bool:
-    """True for a vitals-tier topic nobody asked for that hasn't sent a message yet.
+    """True for a subscribed topic nobody asked for that hasn't sent a message yet, on either tier.
 
     Nothing says it should have: debug and on-demand outputs are created at
-    startup and stay silent until needed. Declaring the topic makes silence an error.
+    startup and stay silent until needed (GLIM's `/glim_ros/grid` on a real
+    robot, 2026-11-23). Declaring the topic makes silence an error.
     """
-    vitals = manager._vitals.get(topic_name)
+    state = manager._full_tier.get(topic_name)
+    vitals = state.vitals if state is not None else manager._vitals.get(topic_name)
     return vitals is not None and vitals.message_count == 0 and not is_declared(manager, topic_name)
 
 
-def _quiet_flags(manager: "SubscriptionManager", topic_name: str, *, vitals_only: bool = False) -> dict[str, bool]:
+def _quiet_flags(manager: "SubscriptionManager", topic_name: str) -> dict[str, bool]:
     """`latched`/`event_driven` kwargs for a topic's liveness verdict (see `liveness_status`)."""
     topic_config = manager._topic_config_by_name.get(topic_name)
     msg_type = manager._msg_type_by_topic.get(topic_name)
@@ -198,7 +200,7 @@ def _quiet_flags(manager: "SubscriptionManager", topic_name: str, *, vitals_only
         is_event_driven(topic_name, msg_type)
         or (topic_config is not None and topic_config.event_driven)
         or (state is not None and state.plugin.silence_expected(msg_type or ""))
-        or (vitals_only and never_published_undeclared(manager, topic_name))
+        or never_published_undeclared(manager, topic_name)
     )
     return {"latched": topic_name in manager._latched, "event_driven": event_driven}
 
