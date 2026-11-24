@@ -16,6 +16,8 @@
 - Localization: LOC-003 judges only growth, never a shrinking covariance, as a trend fitted over the last 10 s instead of across the last 10 messages, so a filter's rise between two GNSS fixes isn't growth.
 - GNSS: the default `position_covariance` level suits an ordinary receiver (warn past 25 m², a σ of 5 m per axis) instead of RTK (σ 1 cm); an RTK receiver tightens it in config.
 - Node profiling: `node_profiling.nodes` gives a node its own levels, e.g. a mapper whose memory grows with its map.
+- Testudo subscribes with a history of 100 messages (10 for images and point clouds): a pause of a few tens of ms overflowed the old 10 at 400 Hz, and on a slower host the 400 Hz topics read 11% low and showed gaps that weren't there.
+- Maps: a grid that keeps changing size is a map being built, so only its first resize is MAP-004; a resolution change still always is.
 
 ### Docs
 

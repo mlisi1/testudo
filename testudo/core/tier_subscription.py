@@ -188,13 +188,14 @@ def subscribe_topic(
     manager._owning_node_by_topic[topic_name] = fully_qualified_node_name(
         publisher_info.node_namespace, publisher_info.node_name
     )
-    qos = subscription_qos([info.qos_profile for info in publisher_infos])
+    heavy = msg_type_str in manager._presence_only_msg_types
+    qos = subscription_qos([info.qos_profile for info in publisher_infos], heavy=heavy)
     if qos.durability == DurabilityPolicy.TRANSIENT_LOCAL:
         manager._latched.add(topic_name)
     else:
         manager._latched.discard(topic_name)
 
-    if msg_type_str in manager._presence_only_msg_types and topic_name not in manager._topic_config_by_name:
+    if heavy and topic_name not in manager._topic_config_by_name:
         manager._presence_only[topic_name] = msg_type_str
         return
 

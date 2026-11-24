@@ -48,7 +48,7 @@ Obstacles that stay in a costmap are never a fault, because not clearing them ca
 
 ### MAP-004 · Grid size or resolution changed { #map-004 }
 
-<span class="sev sev-warn">▲ WARN</span> The width, height or resolution differs from the previous full grid. The code stays active for 10 s.
+<span class="sev sev-warn">▲ WARN</span> The width, height or resolution differs from the previous full grid. The code stays active for 10 s. A map being built (SLAM) grows by changing size, so once a grid has resized, later size changes aren't reported; a resolution change always is.
 
 **Likely causes:** a new map loaded, or a reconfigured costmap.
 

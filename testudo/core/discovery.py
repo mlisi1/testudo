@@ -101,8 +101,16 @@ def resolve_subscription_qos(node: rclpy.node.Node, topic_name: str) -> QoSProfi
 
 #: Smallest reader history Testudo subscribes with, whatever the publisher
 #: offers: a depth-1 sensor profile drops every message but the newest
-#: whenever the executor falls a little behind.
-MIN_SUBSCRIPTION_DEPTH = 10
+#: whenever the executor falls a little behind. 100 is a quarter second at
+#: 400 Hz: on the first real robot (2026-11-24) the spin thread's pauses of a
+#: few tens of ms overflowed a depth of 10 (25 ms at 400 Hz), and the 400 Hz
+#: topics read 11% low while the 200 Hz ones read right. A reader's history
+#: only fills while Testudo is behind, so a deep one costs nothing otherwise.
+MIN_SUBSCRIPTION_DEPTH = 100
+#: The floor for heavy payloads (the types plugins keep presence-only unless
+#: declared, such as images and point clouds), where a hundred queued samples
+#: would be hundreds of MB and their rates leave a depth of 10 time enough.
+HEAVY_SUBSCRIPTION_DEPTH = 10
 
 #: Reader history for a transient_local (latched) topic. A keyless topic is
 #: one DDS instance, so a depth-1 reader keeps one sample across *all*
@@ -113,7 +121,7 @@ MIN_SUBSCRIPTION_DEPTH = 10
 LATCHED_SUBSCRIPTION_DEPTH = 100
 
 
-def subscription_qos(offers: Sequence[QoSProfile]) -> QoSProfile:
+def subscription_qos(offers: Sequence[QoSProfile], heavy: bool = False) -> QoSProfile:
     """The QoS to subscribe with so that every one of a topic's publishers (`offers`) is received.
 
     Matched the way rosbag2 adapts to a topic's offers, since a topic can
@@ -128,13 +136,17 @@ def subscription_qos(offers: Sequence[QoSProfile]) -> QoSProfile:
     - deadline, lifespan and liveliness: left at their defaults, which no
       offer can be incompatible with;
     - history: Testudo's own, KEEP_LAST never shallower than
-      `MIN_SUBSCRIPTION_DEPTH` (`LATCHED_SUBSCRIPTION_DEPTH` when latched).
+      `MIN_SUBSCRIPTION_DEPTH` (`HEAVY_SUBSCRIPTION_DEPTH` for a `heavy`
+      payload, `LATCHED_SUBSCRIPTION_DEPTH` when latched).
     """
     if not offers:
         raise ValueError("subscription_qos needs at least one offered profile")
     best_effort = any(offer.reliability == ReliabilityPolicy.BEST_EFFORT for offer in offers)
     latched = all(offer.durability == DurabilityPolicy.TRANSIENT_LOCAL for offer in offers)
-    floor = LATCHED_SUBSCRIPTION_DEPTH if latched else MIN_SUBSCRIPTION_DEPTH
+    if latched:
+        floor = LATCHED_SUBSCRIPTION_DEPTH
+    else:
+        floor = HEAVY_SUBSCRIPTION_DEPTH if heavy else MIN_SUBSCRIPTION_DEPTH
     return QoSProfile(
         history=HistoryPolicy.KEEP_LAST,
         depth=max(max(offer.depth or 0 for offer in offers), floor),

@@ -82,7 +82,7 @@ def test_resolve_subscription_qos_uses_node_query() -> None:
     node = _FakeNode(topics=[], publishers_by_topic={"/scan": [_FakeEndpointInfo(qos_profile=qos)]})
     resolved = resolve_subscription_qos(node, "/scan")
     assert resolved.reliability == qos.reliability and resolved.durability == qos.durability
-    assert resolved.depth == 10  # the offered depth 5, raised to MIN_SUBSCRIPTION_DEPTH
+    assert resolved.depth == 100  # the offered depth 5, raised to MIN_SUBSCRIPTION_DEPTH
 
 
 def test_resolve_subscription_qos_raises_on_no_publishers() -> None:
@@ -147,6 +147,16 @@ def test_subscription_qos_matches_the_offer_but_never_keeps_a_shallow_history() 
     static = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
     assert subscription_qos([static]).depth == LATCHED_SUBSCRIPTION_DEPTH
     assert subscription_qos([QoSProfile(depth=500)]).depth == 500
+
+
+def test_a_heavy_payload_keeps_a_shallower_history() -> None:
+    from rclpy.qos import QoSProfile
+
+    from testudo.core.discovery import HEAVY_SUBSCRIPTION_DEPTH, MIN_SUBSCRIPTION_DEPTH, subscription_qos
+
+    assert HEAVY_SUBSCRIPTION_DEPTH < MIN_SUBSCRIPTION_DEPTH
+    assert subscription_qos([QoSProfile(depth=1)], heavy=True).depth == HEAVY_SUBSCRIPTION_DEPTH
+    assert subscription_qos([QoSProfile(depth=1)]).depth == MIN_SUBSCRIPTION_DEPTH
 
 
 def test_subscription_qos_receives_from_every_publisher_when_their_offers_differ() -> None:

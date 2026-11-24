@@ -114,6 +114,18 @@ def test_a_size_change_is_flagged_for_a_while() -> None:
     assert plugin.get_status().codes == {}
 
 
+def test_a_map_being_built_is_flagged_only_when_it_first_resizes() -> None:
+    plugin = CostmapPlugin()
+    plugin.on_tick(100.0)
+    plugin.on_message("/map", _grid(10, 10))
+    plugin.on_message("/map", _grid(12, 10))
+    plugin.on_tick(111.0)
+    plugin.on_message("/map", _grid(14, 11))
+    assert plugin.get_status().codes == {}
+    plugin.on_message("/map", _grid(14, 11, resolution=0.1))
+    assert "MAP-004" in plugin.get_status().codes
+
+
 def test_a_resolution_change_is_flagged() -> None:
     plugin = CostmapPlugin()
     plugin.on_message("/costmap", _grid(resolution=0.05))

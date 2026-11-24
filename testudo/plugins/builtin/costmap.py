@@ -61,6 +61,7 @@ class CostmapPlugin(CheckPlugin):
         self._frame_id = ""
         self._problem: str | None = None
         self._resized: tuple[float, str] | None = None
+        self._size_changes = 0
         self._bad_update: tuple[float, str] | None = None
         self._last_update: float | None = None
         self._analysis: GridAnalysis | None = None
@@ -112,7 +113,11 @@ class CostmapPlugin(CheckPlugin):
         geometry = (info.width, info.height, info.resolution)
         if self._geometry is not None and geometry != self._geometry:
             before = f"{self._geometry[0]} x {self._geometry[1]} at {self._geometry[2]:.3g} m"
-            self._resized = (self._now, f"grid changed from {before} to {info.width} x {info.height} at {info.resolution:.3g} m")
+            resolution_changed = info.resolution != self._geometry[2]
+            self._size_changes += 0 if resolution_changed else 1
+            # A grid that resizes again and again is a map being built (SLAM): its size changing is how it grows.
+            if resolution_changed or self._size_changes == 1:
+                self._resized = (self._now, f"grid changed from {before} to {info.width} x {info.height} at {info.resolution:.3g} m")
         self._geometry = geometry
         self._frame_id = msg.header.frame_id
         self._cells = np.array(msg.data, dtype=np.int8).reshape(info.height, info.width)
