@@ -18,6 +18,7 @@ Forthcoming
 * Node profiling: ``node_profiling.nodes`` gives a node its own levels, e.g. a mapper whose memory grows with its map.
 * Testudo subscribes with a history of 100 messages (10 for images and point clouds): a pause of a few tens of ms overflowed the old 10 at 400 Hz, and on a slower host the 400 Hz topics read 11% low and showed gaps that weren't there.
 * Maps: a grid that keeps changing size is a map being built, so only its first resize is MAP-004; a resolution change still always is.
+* TF: a ``/tf_static`` checked on its own, with no ``/tf`` on the graph or in the bag, counts its transforms as static, instead of as dynamic edges that went stale (TF-003) after 10 s.
 * Docs: the GNSS clip shows the accuracy collapsing (GNSS-002) before the fix is lost (GNSS-001); the dashboard media were recorded again.
 
 1.0.0 (2026-11-19)

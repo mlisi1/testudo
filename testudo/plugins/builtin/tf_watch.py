@@ -33,6 +33,9 @@ from testudo.plugins.builtin.tf_tree_layout import tree_lines
 #: tf2's default transform buffer duration; used here only as the
 #: staleness window for the extrapolation-risk approximation.
 DEFAULT_BUFFER_WINDOW_SECONDS = 10.0
+#: The static topic when none is wired as related: a graph or bag with
+#: `/tf_static` and no `/tf` checks `/tf_static` on its own.
+TF_STATIC_TOPIC = "/tf_static"
 
 #: How many roots / multi-parent frames / stale edges a one-line value
 #: names before summarizing the rest as "+N more".
@@ -139,7 +142,7 @@ class TFWatchPlugin(CheckPlugin):
         self._now = now_seconds
 
     def on_message(self, topic: str, msg: Any) -> None:
-        is_static = topic == self.related_topics.get("tf_static")
+        is_static = topic == self.related_topics.get("tf_static", TF_STATIC_TOPIC)
         for transform in msg.transforms:
             parent = transform.header.frame_id
             child = transform.child_frame_id

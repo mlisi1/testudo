@@ -136,6 +136,19 @@ def test_tf_static_edges_are_never_stale() -> None:
     assert _plain(status.values["stale_dynamic"]) == "–"
 
 
+def test_tf_static_checked_on_its_own_keeps_its_edges_static() -> None:
+    # Drivers-only field bag (2026-11-24): /tf_static recorded, no /tf, so
+    # /tf_static is the plugin's own topic and nothing is wired as related.
+    plugin = TFWatchPlugin(buffer_window_seconds=10.0)
+    plugin.on_tick(0.0)
+    plugin.on_message("/tf_static", _tf_message(_transform("base_link", "laser")))
+    plugin.on_tick(60.0)
+    status = plugin.get_status()
+    assert status.severity == Severity.OK
+    assert "0 dynamic · 1 static" in _plain(status.values["frames"])
+    assert plugin.silence_expected("tf2_msgs/msg/TFMessage")
+
+
 def test_silence_on_tf_is_expected_while_the_whole_tree_is_static() -> None:
     # Drivers only, fixed joints (field bag, 2026-11-23): robot_state_publisher
     # advertises /tf and never publishes on it.
